@@ -1,0 +1,97 @@
+import { connection } from "next/server";
+import { invalidMentions, normalizeMentions } from "@/lib/mentions";
+import { getModel, type ModelSpec } from "@/lib/models";
+import { activeProviderId, getProvider, ProviderError } from "@/lib/providers";
+import { insertGeneration, listGenerations } from "@/lib/store";
+import type { GenerateRequest, Generation } from "@/lib/types";
+
+export async function GET() {
+  await connection();
+  return Response.json(await listGenerations());
+}
+
+const ni = (r: GenerateRequest) => r.referenceImages?.length ?? 0;
+const nv = (r: GenerateRequest) => r.referenceVideos?.length ?? 0;
+const na = (r: GenerateRequest) => r.referenceAudios?.length ?? 0;
+
+function validate(req: GenerateRequest, model: ModelSpec): string | null {
+  const frames = req.mode === "frames";
+  if (model.promptRequired && !req.prompt?.trim()) return `${model.label} needs a prompt`;
+  if (!req.prompt?.trim() && !(frames && req.firstFrame) && !req.referenceImages?.length)
+    return "Add a prompt or an image";
+  if (!model.ratios.includes(req.ratio)) return `Ratio ${req.ratio} not supported by ${model.label}`;
+  if (req.ratio === "adaptive" && !(frames && req.firstFrame)) return "Auto ratio needs a start frame";
+  if (!model.resolutions.includes(req.resolution)) return `Resolution ${req.resolution} not supported`;
+  if (!Number.isInteger(req.duration) || req.duration < model.durations.min || req.duration > model.durations.max)
+    return `Duration must be ${model.durations.min}–${model.durations.max}s`;
+  if (frames) {
+    if (req.firstFrame && !model.firstFrame) return `${model.label} doesn't support image-to-video`;
+    if (req.lastFrame && !req.firstFrame) return "An end frame needs a start frame";
+    if (req.lastFrame && !model.lastFrame) return `${model.label} doesn't support end frames`;
+  } else {
+    const { images, videos, audios, total } = model.references;
+    if (ni(req) > images) return `Max ${images} reference images`;
+    if (nv(req) > videos) return `Max ${videos} reference videos`;
+    if (na(req) > audios) return `Max ${audios} reference audio clips`;
+    if (ni(req) + nv(req) + na(req) > total) return `Max ${total} references in total`;
+    if (na(req) > 0 && ni(req) + nv(req) === 0) return "Audio needs at least one image or video reference";
+  }
+  const counts = frames ? { Image: 0, Video: 0, Audio: 0 } : { Image: ni(req), Video: nv(req), Audio: na(req) };
+  const bad = invalidMentions(req.prompt ?? "", counts);
+  if (bad.length) return `Prompt references ${bad.join(", ")}, which ${bad.length === 1 ? "isn't" : "aren't"} attached`;
+  return null;
+}
+
+export async function POST(request: Request) {
+  const req = (await request.json()) as GenerateRequest;
+  const providerId = activeProviderId();
+  const model = getModel(req.model);
+  if (!model || model.provider !== providerId)
+    return Response.json({ error: `Model "${req.model}" isn't available on ${providerId}` }, { status: 400 });
+  const invalid = validate(req, model);
+  if (invalid) return Response.json({ error: invalid }, { status: 400 });
+
+  // Drop params the provider would reject.
+  if (!model.audio) delete req.generateAudio;
+  if (!model.features.seed) delete req.seed;
+  if (!model.features.watermark) delete req.watermark;
+  if (!model.features.cameraFixed) delete req.cameraFixed;
+
+  try {
+    // Prompts are stored as written ("@Image 2"); the provider gets its own syntax.
+    const { taskId } = await getProvider(providerId).createTask({
+      ...req,
+      prompt: normalizeMentions(req.prompt, model.refSyntax),
+    });
+    const now = Date.now();
+    const frames = req.mode === "frames";
+    const gen: Generation = {
+      id: crypto.randomUUID(),
+      provider: providerId,
+      taskId,
+      status: "queued",
+      model: req.model,
+      prompt: req.prompt,
+      mode: req.mode,
+      ratio: req.ratio,
+      resolution: req.resolution,
+      duration: req.duration,
+      generateAudio: !!req.generateAudio,
+      seed: req.seed,
+      inputs: {
+        firstFrame: frames && !!req.firstFrame,
+        lastFrame: frames && !!req.firstFrame && !!req.lastFrame,
+        images: frames ? 0 : (req.referenceImages?.length ?? 0),
+        videos: frames ? 0 : (req.referenceVideos?.length ?? 0),
+        audios: frames ? 0 : (req.referenceAudios?.length ?? 0),
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+    await insertGeneration(gen);
+    return Response.json(gen, { status: 201 });
+  } catch (e) {
+    const status = e instanceof ProviderError ? e.status : 500;
+    return Response.json({ error: (e as Error).message }, { status: status >= 400 ? status : 500 });
+  }
+}

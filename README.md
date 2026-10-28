@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Seedance Studio
 
-## Getting Started
+A local, Higgsfield-style studio for generating videos with ByteDance **Seedance**, through either BytePlus ModelArk or the ArgoLink gateway.
 
-First, run the development server:
+## Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env.local   # add ARGOLINK_API_KEY or ARK_API_KEY
+npm install
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`VIDEO_PROVIDER` (`argolink` | `modelark`) picks the provider; the UI only offers that provider's models. API keys never leave the server.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| | ModelArk | ArgoLink |
+|---|---|---|
+| Models | Seedance 2.0, 1.0 Pro | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini |
+| Seed / watermark / fixed camera | yes | no (rejected upstream, so hidden) |
+| Continue from last frame | yes | no |
+| Progress % | no | yes |
+| Cost estimate in UI | no | yes (from ArgoLink's per-second prices) |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How it works
 
-## Learn More
+```
+Browser ──► /api/generations            POST: validate → create ModelArk task → save record
+        ──► /api/generations/:id        GET: sync status from ModelArk (polled every 4s); DELETE: cancel + remove
+        ──► /api/generations/:id/video  stream the cached MP4 (Range support)
+```
 
-To learn more about Next.js, take a look at the following resources:
+- `src/lib/models.ts`: model catalog (IDs, ratios, resolutions, durations, audio/frames/reference limits). **Edit this file to add or update models.** The UI and the server validation both read from it.
+- `src/lib/providers/`: one adapter per provider (`modelark.ts`, `argolink.ts`) behind a common `VideoProvider` interface. Statuses are normalized to `queued/running/succeeded/failed`. The ArgoLink adapter uploads local images through `/v1/media/uploads`, because ArgoLink only accepts HTTPS media.
+- `src/lib/store.ts`: JSON-file store in `./data/`. Finished videos are downloaded to `./data/videos/` because ModelArk's URLs expire after about 24 hours.
+- `src/components/`: studio UI (control panel, generation feed, lightbox).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Modes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Frames**: text-to-video, or image-to-video with a start frame and an optional end frame.
+- **References** (Seedance 2.0): up to 9 images, 3 videos and 3 audio clips. Images are uploaded as base64; videos and audio must be public URLs.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+"Continue from last frame" starts a new generation using the previous clip's final frame (`return_last_frame`) as its start frame.
