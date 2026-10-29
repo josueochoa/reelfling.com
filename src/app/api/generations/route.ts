@@ -1,13 +1,17 @@
-import { connection } from "next/server";
+import { errorResponse, requireUser } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { getModel, type ModelSpec } from "@/lib/models";
-import { activeProviderId, getProvider, ProviderError } from "@/lib/providers";
+import { providerForUser } from "@/lib/providers";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation } from "@/lib/types";
 
 export async function GET() {
-  await connection();
-  return Response.json(await listGenerations());
+  try {
+    const user = await requireUser();
+    return Response.json(listGenerations(user.id));
+  } catch (e) {
+    return errorResponse(e);
+  }
 }
 
 const ni = (r: GenerateRequest) => r.referenceImages?.length ?? 0;
@@ -43,26 +47,27 @@ function validate(req: GenerateRequest, model: ModelSpec): string | null {
 }
 
 export async function POST(request: Request) {
-  const req = (await request.json()) as GenerateRequest;
-  const providerId = activeProviderId();
-  const model = getModel(req.model);
-  if (!model || model.provider !== providerId)
-    return Response.json({ error: `Model "${req.model}" isn't available on ${providerId}` }, { status: 400 });
-  const invalid = validate(req, model);
-  if (invalid) return Response.json({ error: invalid }, { status: 400 });
-
-  // Drop params the provider would reject.
-  if (!model.audio) delete req.generateAudio;
-  if (!model.features.seed) delete req.seed;
-  if (!model.features.watermark) delete req.watermark;
-  if (!model.features.cameraFixed) delete req.cameraFixed;
-
   try {
+    const user = await requireUser();
+    const providerId = user.activeProvider;
+    if (!providerId) return Response.json({ error: "Add an API key in Settings to start generating" }, { status: 400 });
+    const provider = providerForUser(user.id, providerId);
+
+    const req = (await request.json()) as GenerateRequest;
+    const model = getModel(req.model);
+    if (!model || model.provider !== providerId)
+      return Response.json({ error: `Model "${req.model}" isn't available on ${provider.label}` }, { status: 400 });
+    const invalid = validate(req, model);
+    if (invalid) return Response.json({ error: invalid }, { status: 400 });
+
+    // Drop params the provider would reject.
+    if (!model.audio) delete req.generateAudio;
+    if (!model.features.seed) delete req.seed;
+    if (!model.features.watermark) delete req.watermark;
+    if (!model.features.cameraFixed) delete req.cameraFixed;
+
     // Prompts are stored as written ("@Image 2"); the provider gets its own syntax.
-    const { taskId } = await getProvider(providerId).createTask({
-      ...req,
-      prompt: normalizeMentions(req.prompt, model.refSyntax),
-    });
+    const { taskId } = await provider.createTask({ ...req, prompt: normalizeMentions(req.prompt, model.refSyntax) });
     const now = Date.now();
     const frames = req.mode === "frames";
     const gen: Generation = {
@@ -81,17 +86,16 @@ export async function POST(request: Request) {
       inputs: {
         firstFrame: frames && !!req.firstFrame,
         lastFrame: frames && !!req.firstFrame && !!req.lastFrame,
-        images: frames ? 0 : (req.referenceImages?.length ?? 0),
-        videos: frames ? 0 : (req.referenceVideos?.length ?? 0),
-        audios: frames ? 0 : (req.referenceAudios?.length ?? 0),
+        images: frames ? 0 : ni(req),
+        videos: frames ? 0 : nv(req),
+        audios: frames ? 0 : na(req),
       },
       createdAt: now,
       updatedAt: now,
     };
-    await insertGeneration(gen);
+    insertGeneration(user.id, gen);
     return Response.json(gen, { status: 201 });
   } catch (e) {
-    const status = e instanceof ProviderError ? e.status : 500;
-    return Response.json({ error: (e as Error).message }, { status: status >= 400 ? status : 500 });
+    return errorResponse(e);
   }
 }

@@ -1,10 +1,11 @@
 // BytePlus ModelArk video generation task API.
 // Docs: https://docs.byteplus.com/en/docs/ModelArk (Video Generation API)
 
+import type { ProviderCredentials } from "../keys";
 import type { GenerateRequest, TaskStatus } from "../types";
-import { ProviderError, type VideoProvider } from "./types";
+import { ProviderError, type ProviderFactory } from "./types";
 
-const BASE_URL = (process.env.ARK_BASE_URL || "https://ark.ap-southeast.bytepluses.com/api/v3").replace(/\/$/, "");
+const DEFAULT_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
 
 type ContentItem =
   | { type: "text"; text: string }
@@ -22,13 +23,11 @@ interface ArkTask {
   seed?: number;
 }
 
-async function ark<T>(path: string, init?: RequestInit): Promise<T> {
-  const key = process.env.ARK_API_KEY;
-  if (!key) throw new ProviderError("ARK_API_KEY is not set. Add it to .env.local.", 500);
-
-  const res = await fetch(`${BASE_URL}${path}`, {
+async function ark<T>(creds: ProviderCredentials, path: string, init?: RequestInit): Promise<T> {
+  const base = (creds.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
+  const res = await fetch(`${base}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...init?.headers },
+    headers: { Authorization: `Bearer ${creds.apiKey}`, "Content-Type": "application/json", ...init?.headers },
     cache: "no-store",
   });
   const text = await res.text();
@@ -76,12 +75,17 @@ export function buildTaskBody(req: GenerateRequest) {
   };
 }
 
-export const modelArk: VideoProvider = {
+export const modelArk: ProviderFactory = (creds) => ({
   id: "modelark",
   label: "BytePlus ModelArk",
 
+  async verifyKey() {
+    await ark(creds, "/contents/generations/tasks?page_num=1&page_size=1");
+    return {};
+  },
+
   async createTask(req) {
-    const { id } = await ark<{ id: string }>("/contents/generations/tasks", {
+    const { id } = await ark<{ id: string }>(creds, "/contents/generations/tasks", {
       method: "POST",
       body: JSON.stringify(buildTaskBody(req)),
     });
@@ -89,7 +93,7 @@ export const modelArk: VideoProvider = {
   },
 
   async getTask(taskId) {
-    const task = await ark<ArkTask>(`/contents/generations/tasks/${encodeURIComponent(taskId)}`);
+    const task = await ark<ArkTask>(creds, `/contents/generations/tasks/${encodeURIComponent(taskId)}`);
     return {
       status: task.status,
       videoUrl: task.content?.video_url,
@@ -102,9 +106,9 @@ export const modelArk: VideoProvider = {
 
   /** Cancels a queued task, or deletes the record of a finished one. Running tasks can't be cancelled. */
   async deleteTask(taskId) {
-    await ark(`/contents/generations/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+    await ark(creds, `/contents/generations/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
   },
 
   // Signed, unauthenticated URL.
   fetchVideo: (_taskId, { videoUrl }) => fetch(videoUrl!),
-};
+});

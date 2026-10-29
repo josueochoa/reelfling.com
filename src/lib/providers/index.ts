@@ -1,20 +1,20 @@
-import type { ProviderId } from "../models";
+import { getCredentials, type ProviderCredentials } from "../keys";
+import { PROVIDER_INFO, type ProviderId } from "../models";
 import { argoLink } from "./argolink";
 import { modelArk } from "./modelark";
-import type { VideoProvider } from "./types";
+import { ProviderError, type ProviderFactory, type VideoProvider } from "./types";
 
 export { ProviderError } from "./types";
 
-const providers: Record<ProviderId, VideoProvider> = { modelark: modelArk, argolink: argoLink };
+export const PROVIDERS: Record<ProviderId, ProviderFactory> = { argolink: argoLink, modelark: modelArk };
 
-/** VIDEO_PROVIDER wins; otherwise use whichever provider has a key (ArgoLink if both). */
-export function activeProviderId(): ProviderId {
-  const explicit = process.env.VIDEO_PROVIDER?.toLowerCase();
-  if (explicit === "modelark" || explicit === "argolink") return explicit;
-  if (process.env.ARGOLINK_API_KEY) return "argolink";
-  return "modelark";
+export function createProvider(id: ProviderId, creds: ProviderCredentials): VideoProvider {
+  return PROVIDERS[id](creds);
 }
 
-export function getProvider(id: ProviderId = activeProviderId()): VideoProvider {
-  return providers[id];
+/** The provider client for a user, using their own stored key. */
+export function providerForUser(userId: string, id: ProviderId): VideoProvider {
+  const creds = getCredentials(userId, id);
+  if (!creds) throw new ProviderError(`Add your ${PROVIDER_INFO[id].label} API key in Settings first.`, 400);
+  return createProvider(id, creds);
 }

@@ -89,7 +89,9 @@ export function GenerationCard({
             {ready && <Meta>{formatSecs(elapsed)}</Meta>}
           </div>
           <div className="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100">
-            <IconButton title="Reuse settings" onClick={onReuse}>↺</IconButton>
+            <IconButton title="Reuse settings" onClick={onReuse}>
+              ↺
+            </IconButton>
             {ready && (
               <a
                 href={`${videoSrc(gen)}?download`}
@@ -99,7 +101,9 @@ export function GenerationCard({
                 ↓
               </a>
             )}
-            <IconButton title="Delete" onClick={onDelete}>✕</IconButton>
+            <IconButton title="Delete" onClick={onDelete}>
+              ✕
+            </IconButton>
           </div>
         </div>
       </div>

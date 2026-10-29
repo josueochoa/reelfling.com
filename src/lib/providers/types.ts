@@ -1,3 +1,4 @@
+import type { ProviderCredentials } from "../keys";
 import type { ProviderId } from "../models";
 import type { GenerateRequest, TaskStatus } from "../types";
 
@@ -14,9 +15,12 @@ export interface TaskSnapshot {
   billedSeconds?: number;
 }
 
+/** A provider client bound to one user's credentials. */
 export interface VideoProvider {
   id: ProviderId;
   label: string;
+  /** Cheap authenticated call to check the key; `detail` is shown to the user (e.g. balance). */
+  verifyKey(): Promise<{ detail?: string }>;
   createTask(req: GenerateRequest): Promise<{ taskId: string }>;
   getTask(taskId: string): Promise<TaskSnapshot>;
   /** Best-effort cancel/cleanup upstream. */
@@ -24,6 +28,8 @@ export interface VideoProvider {
   /** Fetch the finished MP4. */
   fetchVideo(taskId: string, snapshot: { videoUrl?: string }): Promise<Response>;
 }
+
+export type ProviderFactory = (creds: ProviderCredentials) => VideoProvider;
 
 export class ProviderError extends Error {
   constructor(

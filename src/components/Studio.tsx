@@ -1,16 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
+import { KeysDialog } from "./KeysDialog";
 import { Lightbox } from "./Lightbox";
-import { modelsFor, type ProviderId } from "@/lib/models";
+import { UserMenu } from "./UserMenu";
+import { modelsFor, PROVIDER_INFO } from "@/lib/models";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 
 const POLL_MS = 5000;
 
 const needsPoll = (g: Generation) =>
-  !TERMINAL_STATUSES.includes(g.status) || (g.status === "succeeded" && !g.localVideo);
+  !TERMINAL_STATUSES.includes(g.status) || (g.status === "succeeded" && !g.stored);
 
 export function Studio() {
   const [generations, setGenerations] = useState<Generation[]>([]);
@@ -18,7 +21,9 @@ export function Studio() {
   const [preset, setPreset] = useState<Preset>({ key: 0 });
   const [open, setOpen] = useState<Generation | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<{ provider: ProviderId; label: string } | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const provider = me?.user.activeProvider ?? null;
   const gensRef = useRef(generations);
   useEffect(() => {
     gensRef.current = generations;
@@ -35,22 +40,21 @@ export function Studio() {
     setOpen((o) => (o?.id === gen.id ? gen : o));
   }, []);
 
+  const loadMe = useCallback(() => apiJson<Me>("/api/me").then(setMe), []);
+
   useEffect(() => {
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then(setProvider);
-    fetch("/api/generations")
-      .then((r) => r.json())
-      .then((items: Generation[]) => setGenerations(items))
+    loadMe();
+    apiJson<Generation[]>("/api/generations")
+      .then(setGenerations)
       .finally(() => setLoaded(true));
-  }, []);
+  }, [loadMe]);
 
   useEffect(() => {
     const timer = setInterval(async () => {
       const pending = gensRef.current.filter(needsPoll);
       await Promise.all(
         pending.map(async (g) => {
-          const res = await fetch(`/api/generations/${g.id}`);
+          const res = await api(`/api/generations/${g.id}`);
           if (res.ok) upsert(await res.json());
         }),
       );
@@ -60,24 +64,19 @@ export function Studio() {
 
   async function generate(req: GenerateRequest) {
     setError(null);
-    const res = await fetch("/api/generations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? "Generation failed");
+    try {
+      upsert(await apiJson<Generation>("/api/generations", { method: "POST", body: JSON.stringify(req) }));
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
       return false;
     }
-    upsert(body);
-    return true;
   }
 
   async function remove(gen: Generation) {
     setGenerations((prev) => prev.filter((g) => g.id !== gen.id));
     if (open?.id === gen.id) setOpen(null);
-    await fetch(`/api/generations/${gen.id}`, { method: "DELETE" });
+    await api(`/api/generations/${gen.id}`, { method: "DELETE" });
   }
 
   function reuse(gen: Generation, asFirstFrame?: string) {
@@ -103,23 +102,45 @@ export function Studio() {
           <div className="flex items-center gap-2">
             <div className="grid size-7 place-items-center rounded-lg bg-accent font-black text-ink">S</div>
             <span className="font-semibold tracking-tight">Studio</span>
-            {provider && <span className="text-xs text-zinc-500">via {provider.label}</span>}
+            {provider && (
+              <button onClick={() => setKeysOpen(true)} className="text-xs text-zinc-500 hover:text-zinc-300">
+                via {PROVIDER_INFO[provider].label}
+              </button>
+            )}
           </div>
-          {active > 0 && (
-            <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-xs text-zinc-400">
-              <span className="size-1.5 animate-pulse rounded-full bg-accent" />
-              {active} generating
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {active > 0 && (
+              <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-xs text-zinc-400">
+                <span className="size-1.5 animate-pulse rounded-full bg-accent" />
+                {active} generating
+              </span>
+            )}
+            {me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={() => setKeysOpen(true)} />}
+          </div>
         </header>
-        {provider && (
+        {provider ? (
           <ControlPanel
-            key={preset.key}
-            models={modelsFor(provider.provider)}
+            key={`${provider}-${preset.key}`}
+            models={modelsFor(provider)}
             preset={preset}
             onGenerate={generate}
             error={error}
           />
+        ) : (
+          me && (
+            <div className="m-5 rounded-2xl border border-dashed border-white/15 p-6 text-center">
+              <p className="font-medium">Connect a provider</p>
+              <p className="mt-1 text-sm text-zinc-400">
+                Add your ArgoLink or ModelArk API key. Generations are billed to your own account.
+              </p>
+              <button
+                onClick={() => setKeysOpen(true)}
+                className="mt-4 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink"
+              >
+                Add API key
+              </button>
+            </div>
+          )
         )}
       </aside>
 
@@ -134,7 +155,9 @@ export function Studio() {
           <div className="grid h-[60vh] place-items-center text-center">
             <div>
               <p className="text-lg font-medium text-zinc-300">No videos yet</p>
-              <p className="mt-1 text-sm text-zinc-500">Write a prompt and hit Generate to start.</p>
+              <p className="mt-1 text-sm text-zinc-500">
+                {provider ? "Write a prompt and hit Generate to start." : "Add an API key to start generating."}
+              </p>
             </div>
           </div>
         ) : (
@@ -151,6 +174,8 @@ export function Studio() {
           </div>
         )}
       </main>
+
+      {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={loadMe} />}
 
       {open && (
         <Lightbox

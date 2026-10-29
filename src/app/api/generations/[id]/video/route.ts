@@ -1,43 +1,21 @@
-import { createReadStream, promises as fs } from "node:fs";
-import { Readable } from "node:stream";
-import { ensureLocalVideo, getGeneration, videoPath } from "@/lib/store";
+import { currentUser } from "@/lib/auth";
+import { serveAsset } from "@/lib/storage";
+import { ensureStoredVideo, getGeneration } from "@/lib/store";
 
-/** Streams the locally cached MP4, with Range support so the player can seek. */
+/** Plays (or with ?download, saves) the stored MP4 — copying it from the provider first if needed. */
 export async function GET(request: Request, ctx: RouteContext<"/api/generations/[id]/video">) {
+  const user = await currentUser();
+  if (!user) return new Response("Not signed in", { status: 401 });
   const { id } = await ctx.params;
-  const gen = await getGeneration(id);
-  if (!gen) return new Response("Not found", { status: 404 });
+  const gen = getGeneration(user.id, id);
+  if (!gen || gen.status !== "succeeded") return new Response("Not found", { status: 404 });
 
-  const file = videoPath(id);
-  let stat = await fs.stat(file).catch(() => null);
-  if (!stat && gen.status === "succeeded") {
-    // Not cached yet — download it now (shared with any in-flight poll).
-    await ensureLocalVideo(gen).catch(() => {});
-    stat = await fs.stat(file).catch(() => null);
-  }
-  if (!stat) return new Response("Video not ready", { status: 404 });
+  const asset = await ensureStoredVideo(user.id, gen).catch((e) => {
+    console.error(`[${id}]`, e);
+    return undefined;
+  });
+  if (!asset) return new Response("Video not ready", { status: 404 });
 
   const download = new URL(request.url).searchParams.has("download");
-  const headers: Record<string, string> = {
-    "Content-Type": "video/mp4",
-    "Accept-Ranges": "bytes",
-    "Cache-Control": "private, max-age=31536000, immutable",
-    ...(download && { "Content-Disposition": `attachment; filename="seedance-${id.slice(0, 8)}.mp4"` }),
-  };
-
-  const range = request.headers.get("range")?.match(/bytes=(\d*)-(\d*)/);
-  if (range) {
-    const start = range[1] ? Number(range[1]) : Math.max(0, stat.size - Number(range[2]));
-    const end = range[1] && range[2] ? Math.min(Number(range[2]), stat.size - 1) : stat.size - 1;
-    if (start >= stat.size || start > end)
-      return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${stat.size}` } });
-    const stream = Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream;
-    return new Response(stream, {
-      status: 206,
-      headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${stat.size}`, "Content-Length": String(end - start + 1) },
-    });
-  }
-
-  const stream = Readable.toWeb(createReadStream(file)) as ReadableStream;
-  return new Response(stream, { headers: { ...headers, "Content-Length": String(stat.size) } });
+  return serveAsset(asset, request, download ? { downloadName: `seedance-${id.slice(0, 8)}.mp4` } : {});
 }

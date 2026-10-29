@@ -22,13 +22,7 @@ export interface GenerateRequest {
 }
 
 /** Upstream ModelArk task status. */
-export type TaskStatus =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled"
-  | "expired";
+export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "expired";
 
 export const TERMINAL_STATUSES: TaskStatus[] = ["succeeded", "failed", "cancelled", "expired"];
 
@@ -52,8 +46,8 @@ export interface Generation {
   inputs: { firstFrame: boolean; lastFrame: boolean; images: number; videos: number; audios: number };
   /** Temporary signed URL from ModelArk (expires ~24h). */
   remoteVideoUrl?: string;
-  /** Set once the video has been copied to ./data/videos. */
-  localVideo?: boolean;
+  /** Set once the video has been copied into the user's storage (see storage.ts). */
+  stored?: boolean;
   lastFrameUrl?: string;
   error?: string;
   tokens?: number;

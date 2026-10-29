@@ -3,6 +3,25 @@
 // provider's models are offered. Add or edit entries as new versions ship.
 
 export type ProviderId = "modelark" | "argolink";
+
+/** Client-safe provider metadata. */
+export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; blurb: string }> = {
+  argolink: {
+    label: "ArgoLink",
+    keyUrl: "https://argolink.io",
+    blurb: "Prepaid gateway with Seedance 2.5, 2.0, Fast and Mini.",
+  },
+  modelark: {
+    label: "BytePlus ModelArk",
+    keyUrl: "https://console.byteplus.com/ark",
+    blurb: "ByteDance's official API. Seed, watermark and last-frame chaining.",
+  },
+};
+
+export const MODELARK_REGIONS = {
+  "https://ark.ap-southeast.bytepluses.com/api/v3": "International (BytePlus)",
+  "https://ark.cn-beijing.volces.com/api/v3": "China (Volcengine)",
+} as const;
 export type Ratio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16" | "21:9" | "adaptive";
 export type Resolution = "480p" | "720p" | "1080p" | "4k";
 

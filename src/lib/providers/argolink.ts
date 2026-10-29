@@ -1,10 +1,12 @@
 // ArgoLink gateway video API (resells Seedance).
 // Docs: https://argolink.io/en/docs, https://argolink.io/en/models/seedance-2.5
 
+import type { ProviderCredentials } from "../keys";
 import type { GenerateRequest } from "../types";
-import { ProviderError, type TaskSnapshot, type VideoProvider } from "./types";
+import { ProviderError, type ProviderFactory, type TaskSnapshot } from "./types";
 
-const BASE_URL = (process.env.ARGOLINK_BASE_URL || "https://argolink.io").replace(/\/$/, "");
+const DEFAULT_BASE_URL = "https://argolink.io";
+const baseOf = (creds: ProviderCredentials) => (creds.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
 
 interface ArgoTask {
   request_id: string;
@@ -15,16 +17,10 @@ interface ArgoTask {
   usage?: { output_seconds?: number; billed_seconds?: number };
 }
 
-function key() {
-  const k = process.env.ARGOLINK_API_KEY;
-  if (!k) throw new ProviderError("ARGOLINK_API_KEY is not set. Add it to .env.local.", 500);
-  return k;
-}
-
-async function argo<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+async function argo<T>(creds: ProviderCredentials, path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${baseOf(creds)}${path}`, {
     ...init,
-    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json", ...init?.headers },
+    headers: { Authorization: `Bearer ${creds.apiKey}`, "Content-Type": "application/json", ...init?.headers },
     cache: "no-store",
   });
   const text = await res.text();
@@ -43,12 +39,12 @@ async function argo<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** ArgoLink only takes HTTPS media, so push data: URIs through its upload tickets. */
-async function toMediaUrl(model: string, url: string): Promise<string> {
+async function toMediaUrl(creds: ProviderCredentials, model: string, url: string): Promise<string> {
   const match = url.match(/^data:([^;,]+);base64,(.*)$/);
   if (!match) return url;
   const [, contentType, b64] = match;
   const bytes = Buffer.from(b64, "base64");
-  const ticket = await argo<{ upload_url: string; media_url: string }>("/v1/media/uploads", {
+  const ticket = await argo<{ upload_url: string; media_url: string }>(creds, "/v1/media/uploads", {
     method: "POST",
     body: JSON.stringify({
       model,
@@ -62,8 +58,8 @@ async function toMediaUrl(model: string, url: string): Promise<string> {
   return ticket.media_url;
 }
 
-async function buildBody(req: GenerateRequest) {
-  const media = (url: string) => toMediaUrl(req.model, url).then((u) => ({ url: u }));
+async function buildBody(creds: ProviderCredentials, req: GenerateRequest) {
+  const media = (url: string) => toMediaUrl(creds, req.model, url).then((u) => ({ url: u }));
   const frames = req.mode === "frames";
 
   return {
@@ -82,20 +78,25 @@ async function buildBody(req: GenerateRequest) {
   };
 }
 
-export const argoLink: VideoProvider = {
+export const argoLink: ProviderFactory = (creds) => ({
   id: "argolink",
   label: "ArgoLink",
 
+  async verifyKey() {
+    const b = await argo<{ available?: number; currency?: string }>(creds, "/v1/account/balance");
+    return { detail: b.available !== undefined ? `$${b.available.toFixed(2)} available` : undefined };
+  },
+
   async createTask(req) {
-    const { request_id } = await argo<{ request_id: string }>("/v1/videos/generations", {
+    const { request_id } = await argo<{ request_id: string }>(creds, "/v1/videos/generations", {
       method: "POST",
-      body: JSON.stringify(await buildBody(req)),
+      body: JSON.stringify(await buildBody(creds, req)),
     });
     return { taskId: request_id };
   },
 
   async getTask(taskId) {
-    const t = await argo<ArgoTask>(`/v1/videos/${encodeURIComponent(taskId)}`);
+    const t = await argo<ArgoTask>(creds, `/v1/videos/${encodeURIComponent(taskId)}`);
     const snap: TaskSnapshot = {
       status:
         t.status === "done" ? "succeeded" : t.status === "pending" ? (t.progress ? "running" : "queued") : t.status,
@@ -111,7 +112,7 @@ export const argoLink: VideoProvider = {
   async deleteTask() {},
 
   fetchVideo: (taskId) =>
-    fetch(`${BASE_URL}/v1/videos/${encodeURIComponent(taskId)}/content`, {
-      headers: { Authorization: `Bearer ${key()}` },
+    fetch(`${baseOf(creds)}/v1/videos/${encodeURIComponent(taskId)}/content`, {
+      headers: { Authorization: `Bearer ${creds.apiKey}` },
     }),
-};
+});
