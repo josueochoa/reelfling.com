@@ -1,14 +1,16 @@
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
+import { env } from "./db";
 
 let cachedKey: Buffer | undefined;
 
 /** 32-byte key for API-key encryption, derived from AUTH_SECRET. */
-function encryptionKey() {
+function encryptionKey(): Buffer {
   if (cachedKey) return cachedKey;
-  const secret = process.env.AUTH_SECRET;
-  if (!secret || secret.length < 32) throw new Error("AUTH_SECRET must be set (32+ chars). See .env.example.");
-  cachedKey = Buffer.from(hkdfSync("sha256", secret, "seedance-studio", "api-keys", 32));
-  return cachedKey;
+  const secret = env().AUTH_SECRET;
+  if (!secret || secret.length < 32) throw new Error("AUTH_SECRET must be set (32+ chars). See .dev.vars.example.");
+  const key = Buffer.from(hkdfSync("sha256", secret, "reelfling", "api-keys", 32));
+  cachedKey = key;
+  return key;
 }
 
 /** AES-256-GCM. Output: "v1.<iv>.<tag>.<ciphertext>" (base64url parts). */

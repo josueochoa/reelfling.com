@@ -15,7 +15,8 @@ export function formatBytes(n: number) {
 }
 
 export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => void; onOpenKeys: () => void }) {
-  const { user, storage } = me;
+  const { user, storage, auth } = me;
+  const full = storage.bytes >= storage.quotaBytes;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -27,10 +28,15 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
   }, [open]);
 
   async function signOut() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    // Full reload on purpose: drops all signed-in client state.
+    // Full page loads on purpose: they drop all signed-in client state.
+    if (auth.mode === "access") {
+      // Cloudflare Access ends its own session at this URL.
+      window.location.assign(auth.signOutUrl);
+      return;
+    }
+    await fetch(auth.signOutUrl, { method: "POST" });
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = "/login";
+    window.location.assign("/login");
   }
 
   const initial = (user.name ?? user.email).charAt(0).toUpperCase();
@@ -63,11 +69,20 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
           <div className="px-2.5 py-2 text-xs">
             <div className="flex justify-between text-zinc-400">
               <span>Storage</span>
-              <span className="text-zinc-200 tabular-nums">{formatBytes(storage.bytes)}</span>
+              <span className={`tabular-nums ${full ? "text-red-300" : "text-zinc-200"}`}>
+                {formatBytes(storage.bytes)} of {formatBytes(storage.quotaBytes)}
+              </span>
             </div>
-            <p className="mt-0.5 text-zinc-600">
-              {storage.objects} {storage.objects === 1 ? "file" : "files"} ·{" "}
-              {storage.driver === "r2" ? "Cloudflare R2" : "Local disk"}
+            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full ${full ? "bg-red-400" : "bg-accent"}`}
+                style={{ width: `${Math.min(100, (storage.bytes / storage.quotaBytes) * 100)}%` }}
+              />
+            </div>
+            <p className="mt-1.5 text-zinc-600">
+              {full
+                ? "Full. Delete videos to keep generating."
+                : `${storage.objects} ${storage.objects === 1 ? "video" : "videos"}`}
             </p>
           </div>
           <div className="my-1 h-px bg-white/5" />

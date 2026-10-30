@@ -17,7 +17,7 @@ interface ArgoTask {
   usage?: { output_seconds?: number; billed_seconds?: number };
 }
 
-async function argo<T>(creds: ProviderCredentials, path: string, init?: RequestInit): Promise<T> {
+export async function argo<T>(creds: ProviderCredentials, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${baseOf(creds)}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${creds.apiKey}`, "Content-Type": "application/json", ...init?.headers },

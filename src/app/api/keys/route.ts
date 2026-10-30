@@ -25,8 +25,8 @@ export async function PUT(request: Request) {
       );
     }
 
-    saveKey(user.id, body.provider, apiKey, baseUrl);
-    if (!user.activeProvider) setActiveProvider(user.id, body.provider);
+    await saveKey(user.id, body.provider, apiKey, baseUrl);
+    if (!user.activeProvider) await setActiveProvider(user.id, body.provider);
     return Response.json({ ok: true, detail });
   } catch (e) {
     return errorResponse(e);
@@ -38,8 +38,9 @@ export async function DELETE(request: Request) {
   try {
     const user = await requireUser();
     const provider = new URL(request.url).searchParams.get("provider") as ProviderId;
-    deleteKey(user.id, provider);
-    if (user.activeProvider === provider) setActiveProvider(user.id, listKeys(user.id)[0]?.provider ?? null);
+    await deleteKey(user.id, provider);
+    if (user.activeProvider === provider)
+      await setActiveProvider(user.id, (await listKeys(user.id))[0]?.provider ?? null);
     return new Response(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

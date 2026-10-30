@@ -19,11 +19,11 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/generations/
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const gen = getGeneration(user.id, id);
+    const gen = await getGeneration(user.id, id);
     if (!gen) return Response.json({ error: "Not found" }, { status: 404 });
     // Best effort: running tasks can't always be cancelled, and the key may be gone.
-    await Promise.resolve()
-      .then(() => providerForUser(user.id, gen.provider ?? "modelark").deleteTask(gen.taskId))
+    await providerForUser(user.id, gen.provider ?? "modelark")
+      .then((p) => p.deleteTask(gen.taskId))
       .catch(() => {});
     await removeGeneration(user.id, id);
     return new Response(null, { status: 204 });

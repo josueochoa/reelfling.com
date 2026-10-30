@@ -30,9 +30,14 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files. Never use .env* for secrets here: OpenNext bundles them into the Worker.
 .env*
-!.env.example
+.dev.vars*
+!.dev.vars.example
+
+# cloudflare
+.open-next
+.wrangler
 
 # vercel
 .vercel
@@ -41,5 +46,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# generated videos + local generation history
+# pre-Cloudflare local data (SQLite + videos)
 /data

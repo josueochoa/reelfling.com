@@ -3,19 +3,19 @@
 
 import { createHash } from "node:crypto";
 import { randomToken } from "./crypto";
+import { env } from "./db";
 
 export const OAUTH_COOKIE = "oauth_google";
 
 export function googleConfig() {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const { GOOGLE_CLIENT_ID: clientId, GOOGLE_CLIENT_SECRET: clientSecret } = env();
   if (!clientId || !clientSecret) return undefined;
   return { clientId, clientSecret };
 }
 
 /** APP_URL wins (needed behind proxies); otherwise the request's own origin. */
 export function redirectUri(requestUrl: string) {
-  const origin = process.env.APP_URL?.replace(/\/$/, "") || new URL(requestUrl).origin;
+  const origin = env().APP_URL?.replace(/\/$/, "") || new URL(requestUrl).origin;
   return `${origin}/api/auth/google/callback`;
 }
 

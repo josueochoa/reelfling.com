@@ -1,46 +1,56 @@
-// Where users' assets live. With R2 configured, every user gets their own bucket in
-// the app's Cloudflare account; otherwise files go to $DATA_DIR on local disk.
-// The `assets` table indexes every stored object, and storage usage is summed from it.
+// Users' assets in Cloudflare R2: every user gets their own bucket in the app's
+// Cloudflare account, managed over R2's S3 API (bindings are fixed at deploy time,
+// so they can't address per-user buckets). The `assets` table indexes every stored
+// object; usage and the storage quota are summed from it.
 
-import { createReadStream, promises as fs } from "node:fs";
-import path from "node:path";
-import { Readable } from "node:stream";
+import { createHash } from "node:crypto";
 import { AwsClient } from "aws4fetch";
-import { DATA_DIR, db } from "./db";
-
-export type Driver = "local" | "r2";
+import { all, env, first, run } from "./db";
+import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
 
 export interface Asset {
   userId: string;
   key: string;
-  driver: Driver;
-  bucket: string | null;
+  bucket: string;
   bytes: number;
   contentType: string;
   generationId: string | null;
   createdAt: number;
+  /** Library uploads: display name. */
+  name?: string | null;
+  meta?: AssetMeta | null;
+}
+
+/** Library details, stored as JSON. */
+export interface AssetMeta {
+  duration?: number;
+  peaks?: number[];
+  /** Key of a small JPEG preview, for images and videos. */
+  thumb?: string;
 }
 
 interface AssetRow {
   user_id: string;
   key: string;
-  driver: Driver;
-  bucket: string | null;
+  bucket: string;
   bytes: number;
   content_type: string;
   generation_id: string | null;
   created_at: number;
+  name: string | null;
+  meta: string | null;
 }
 
 const toAsset = (r: AssetRow): Asset => ({
   userId: r.user_id,
   key: r.key,
-  driver: r.driver,
   bucket: r.bucket,
   bytes: r.bytes,
   contentType: r.content_type,
   generationId: r.generation_id,
   createdAt: r.created_at,
+  name: r.name,
+  meta: r.meta ? (JSON.parse(r.meta) as AssetMeta) : null,
 });
 
 export class StorageError extends Error {
@@ -60,18 +70,21 @@ interface R2Config {
   client: AwsClient;
 }
 
-let r2Cache: R2Config | null | undefined;
-
-/** R2 is on when the account ID and S3 credentials are all set. */
-function r2(): R2Config | null {
-  if (r2Cache !== undefined) return r2Cache;
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_PREFIX } = process.env;
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return (r2Cache = null);
+function r2(): R2Config {
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_PREFIX } = env();
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY)
+    throw new StorageError(
+      "Storage isn't configured: set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
+      500,
+    );
   const prefix = (R2_BUCKET_PREFIX || "seedance").toLowerCase();
   // Bucket names: 3–63 chars of [a-z0-9-]. The prefix plus a 36-char user ID must fit.
   if (!/^[a-z0-9][a-z0-9-]{0,20}$/.test(prefix))
-    throw new Error("R2_BUCKET_PREFIX must be 1–21 chars of a-z, 0-9 and '-', starting with a letter or digit.");
-  r2Cache = {
+    throw new StorageError(
+      "R2_BUCKET_PREFIX must be 1–21 chars of a-z, 0-9 and '-', starting with a letter or digit",
+      500,
+    );
+  return {
     endpoint: (R2_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`).replace(/\/+$/, ""),
     prefix,
     client: new AwsClient({
@@ -81,20 +94,27 @@ function r2(): R2Config | null {
       region: "auto",
     }),
   };
-  return r2Cache;
 }
 
-export const activeDriver = (): Driver => (r2() ? "r2" : "local");
-
-/** Path-style URL; keys are made of safe characters (see assetKey) so no escaping is needed. */
+/** Path-style URL; keys are made of safe characters (see videoKey) so no escaping is needed. */
 const objectUrl = (cfg: R2Config, bucket: string, key = "") => `${cfg.endpoint}/${bucket}${key && `/${key}`}`;
 
-async function s3(cfg: R2Config, url: string, init: RequestInit & { headers?: Record<string, string> } = {}) {
-  const res = await cfg.client.fetch(url, {
-    ...init,
-    // Videos are large; skip hashing the body (R2 accepts unsigned payloads).
-    headers: { "x-amz-content-sha256": "UNSIGNED-PAYLOAD", ...init.headers },
-  });
+/**
+ * Signed S3 request. The payload isn't signed (aws4fetch's S3 default), so the body can be
+ * a stream: it's attached after signing.
+ */
+async function s3(
+  cfg: R2Config,
+  url: string,
+  { method, headers = {}, body }: { method: string; headers?: Record<string, string>; body?: BodyInit },
+) {
+  const signed = await cfg.client.sign(url, { method, headers });
+  const res = await fetch(signed.url, {
+    method,
+    headers: signed.headers,
+    body,
+    ...(body instanceof ReadableStream && { duplex: "half" }),
+  } as RequestInit);
   if (res.ok) return res;
   const xml = await res.text().catch(() => "");
   const code = xml.match(/<Code>([^<]+)<\/Code>/)?.[1];
@@ -107,203 +127,355 @@ async function s3(cfg: R2Config, url: string, init: RequestInit & { headers?: Re
 
 // ---------------------------------------------------------------- buckets
 
-export const bucketName = (userId: string) => `${r2()!.prefix}-${userId.toLowerCase()}`;
-
-export function getBucket(userId: string): string | undefined {
-  const row = db.prepare("SELECT name FROM buckets WHERE user_id = ?").get(userId) as { name: string } | undefined;
-  return row?.name;
+export async function getBucket(userId: string): Promise<string | undefined> {
+  return (await first<{ name: string }>("SELECT name FROM buckets WHERE user_id = ?", userId))?.name;
 }
 
-const creating = new Map<string, Promise<string>>();
-
-/** Creates the user's bucket on first use (idempotent; concurrent callers share one request). */
-export function ensureBucket(userId: string): Promise<string> {
+/** Creates the user's bucket on first use. Idempotent, so concurrent or retried calls are safe. */
+export async function ensureBucket(userId: string): Promise<string> {
+  const existing = await getBucket(userId);
+  if (existing) return existing;
   const cfg = r2();
-  if (!cfg) return Promise.reject(new StorageError("R2 isn't configured", 500));
-  const existing = getBucket(userId);
-  if (existing) return Promise.resolve(existing);
-
-  if (!creating.has(userId)) {
-    const job = (async () => {
-      const name = bucketName(userId);
-      try {
-        await s3(cfg, objectUrl(cfg, name), { method: "PUT" });
-      } catch (e) {
-        // Already ours from an earlier attempt that didn't get recorded.
-        if ((e as { code?: string }).code !== "BucketAlreadyOwnedByYou") throw e;
-      }
-      db.prepare("INSERT OR IGNORE INTO buckets (user_id, name, created_at) VALUES (?, ?, ?)").run(
-        userId,
-        name,
-        Date.now(),
-      );
-      return name;
-    })().finally(() => creating.delete(userId));
-    creating.set(userId, job);
+  const name = `${cfg.prefix}-${userId.toLowerCase()}`;
+  try {
+    await s3(cfg, objectUrl(cfg, name), { method: "PUT" });
+  } catch (e) {
+    // Created by a concurrent request, or by an earlier attempt that didn't get recorded.
+    if ((e as { code?: string }).code !== "BucketAlreadyOwnedByYou") throw e;
   }
-  return creating.get(userId)!;
+  await run("INSERT OR IGNORE INTO buckets (user_id, name, created_at) VALUES (?, ?, ?)", userId, name, Date.now());
+  return name;
+}
+
+/**
+ * Lets browsers PUT uploads straight into the bucket. Any origin is fine: every request
+ * still needs a URL signed by the server, which is the actual access control.
+ */
+async function ensureCors(userId: string, bucket: string) {
+  const row = await first<{ cors: number }>("SELECT cors FROM buckets WHERE user_id = ?", userId);
+  if (row?.cors) return;
+  const cfg = r2();
+  const xml =
+    "<CORSConfiguration><CORSRule>" +
+    "<AllowedOrigin>*</AllowedOrigin>" +
+    "<AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod>" +
+    "<AllowedHeader>content-type</AllowedHeader>" +
+    "<MaxAgeSeconds>3600</MaxAgeSeconds>" +
+    "</CORSRule></CORSConfiguration>";
+  await s3(cfg, `${objectUrl(cfg, bucket)}?cors`, {
+    method: "PUT",
+    body: xml,
+    headers: { "Content-Type": "application/xml", "Content-MD5": createHash("md5").update(xml).digest("base64") },
+  });
+  await run("UPDATE buckets SET cors = 1 WHERE user_id = ?", userId);
 }
 
 // ---------------------------------------------------------------- assets
 
 export const videoKey = (generationId: string) => `videos/${generationId.replace(/[^a-zA-Z0-9_-]/g, "")}.mp4`;
 
-const localPath = (key: string) => path.join(DATA_DIR, key);
-
-export function getAsset(userId: string, key: string): Asset | undefined {
-  const row = db.prepare("SELECT * FROM assets WHERE user_id = ? AND key = ?").get(userId, key) as
-    AssetRow | undefined;
+export async function getAsset(userId: string, key: string): Promise<Asset | undefined> {
+  const row = await first<AssetRow>("SELECT * FROM assets WHERE user_id = ? AND key = ?", userId, key);
   return row && toAsset(row);
 }
 
-function recordAsset(a: Asset) {
-  db.prepare(
-    `INSERT INTO assets (user_id, key, driver, bucket, bytes, content_type, generation_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (user_id, key) DO UPDATE SET
-       driver = excluded.driver, bucket = excluded.bucket, bytes = excluded.bytes,
-       content_type = excluded.content_type, created_at = excluded.created_at`,
-  ).run(a.userId, a.key, a.driver, a.bucket, a.bytes, a.contentType, a.generationId, a.createdAt);
-  return a;
+/**
+ * The response body with a known length, ready to upload. Workers have 128 MB of memory,
+ * so on Workers a body with a Content-Length is streamed through rather than buffered.
+ */
+async function uploadBody(res: Response): Promise<{ body: BodyInit; bytes: number }> {
+  const length = Number(res.headers.get("content-length"));
+  const FixedLength = (globalThis as { FixedLengthStream?: new (n: number) => TransformStream }).FixedLengthStream;
+  if (FixedLength && res.body && length > 0) {
+    const { readable, writable } = new FixedLength(length);
+    // A failed read also fails the upload that consumes `readable`, which reports it.
+    res.body.pipeTo(writable).catch(() => {});
+    return { body: readable, bytes: length };
+  }
+  // Unknown length (or Node in `next dev`): buffer it.
+  const buf = new Uint8Array(await res.arrayBuffer());
+  return { body: buf, bytes: buf.byteLength };
 }
 
-/** Writes an object to the active driver and indexes it. */
+/** Copies a fetched file (e.g. a provider's video) into the user's bucket and indexes it. */
 export async function putAsset(
   userId: string,
-  { key, body, contentType, generationId = null }: { key: string; body: Buffer; contentType: string; generationId?: string | null },
+  {
+    key,
+    source,
+    contentType,
+    generationId = null,
+  }: {
+    key: string;
+    source: Response;
+    contentType: string;
+    generationId?: string | null;
+  },
 ): Promise<Asset> {
   const cfg = r2();
-  let bucket: string | null = null;
-  if (cfg) {
-    bucket = await ensureBucket(userId);
-    await s3(cfg, objectUrl(cfg, bucket, key), {
-      method: "PUT",
-      body: new Uint8Array(body),
-      headers: { "Content-Type": contentType, "Content-Length": String(body.length) },
-    });
-  } else {
-    const file = localPath(key);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(`${file}.part`, body);
-    await fs.rename(`${file}.part`, file);
-  }
-  return recordAsset({
+  const bucket = await ensureBucket(userId);
+  const { body, bytes } = await uploadBody(source);
+  await s3(cfg, objectUrl(cfg, bucket, key), {
+    method: "PUT",
+    body,
+    // Content-Length comes from the body: a byte array or a FixedLengthStream.
+    headers: { "Content-Type": contentType },
+  });
+  return recordAsset({ userId, key, bucket, bytes, contentType, generationId, createdAt: Date.now() });
+}
+
+async function recordAsset(asset: Asset): Promise<Asset> {
+  const { userId, key, bucket, bytes, contentType, generationId } = asset;
+  await run(
+    `INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name, meta)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (user_id, key) DO UPDATE SET
+       bucket = excluded.bucket, bytes = excluded.bytes, content_type = excluded.content_type,
+       created_at = excluded.created_at, name = excluded.name, meta = excluded.meta`,
     userId,
     key,
-    driver: cfg ? "r2" : "local",
     bucket,
-    bytes: body.length,
+    bytes,
     contentType,
     generationId,
-    createdAt: Date.now(),
-  });
+    asset.createdAt,
+    asset.name ?? null,
+    asset.meta ? JSON.stringify(asset.meta) : null,
+  );
+  return asset;
 }
 
 export async function deleteAsset(asset: Asset) {
-  if (asset.driver === "r2") {
-    const cfg = r2();
-    if (!cfg) throw new StorageError("Can't delete from R2: it isn't configured anymore", 500);
-    await s3(cfg, objectUrl(cfg, asset.bucket!, asset.key), { method: "DELETE" }).catch((e) => {
-      if ((e as { upstreamStatus?: number }).upstreamStatus !== 404) throw e;
-    });
-  } else {
-    await fs.rm(localPath(asset.key), { force: true });
-  }
-  db.prepare("DELETE FROM assets WHERE user_id = ? AND key = ?").run(asset.userId, asset.key);
+  const cfg = r2();
+  if (asset.meta?.thumb) await deleteObject(cfg, asset.bucket, asset.meta.thumb);
+  await deleteObject(cfg, asset.bucket, asset.key);
+  await run("DELETE FROM assets WHERE user_id = ? AND key = ?", asset.userId, asset.key);
 }
 
-export async function deleteGenerationAssets(userId: string, generationId: string) {
-  const rows = db.prepare("SELECT * FROM assets WHERE user_id = ? AND generation_id = ?").all(userId, generationId);
-  for (const row of rows as unknown as AssetRow[]) await deleteAsset(toAsset(row));
-}
-
-/**
- * Indexes a file that was written to local disk before the assets table existed.
- * Returns undefined if there's no such file.
- */
-export async function adoptLegacyFile(userId: string, key: string, generationId: string, contentType: string) {
-  const stat = await fs.stat(localPath(key)).catch(() => null);
-  if (!stat) return undefined;
-  return recordAsset({
-    userId,
-    key,
-    driver: "local",
-    bucket: null,
-    bytes: stat.size,
-    contentType,
-    generationId,
-    createdAt: stat.mtimeMs,
+async function deleteObject(cfg: R2Config, bucket: string, key: string) {
+  await s3(cfg, objectUrl(cfg, bucket, key), { method: "DELETE" }).catch((e) => {
+    if ((e as { upstreamStatus?: number }).upstreamStatus !== 404) throw e;
   });
 }
 
-/** Moves a local asset into the user's bucket once R2 is switched on. */
-export async function migrateToR2(asset: Asset): Promise<Asset> {
-  if (asset.driver === "r2" || !r2()) return asset;
-  const body = await fs.readFile(localPath(asset.key));
-  const moved = await putAsset(asset.userId, { ...asset, body });
-  await fs.rm(localPath(asset.key), { force: true });
-  return moved;
+export async function deleteGenerationAssets(userId: string, generationId: string) {
+  const rows = await all<AssetRow>(
+    "SELECT * FROM assets WHERE user_id = ? AND generation_id = ?",
+    userId,
+    generationId,
+  );
+  for (const row of rows) await deleteAsset(toAsset(row));
 }
 
-export function storageUsage(userId: string) {
-  const row = db.prepare("SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE user_id = ?").get(
+// ---------------------------------------------------------------- browser uploads
+
+const UPLOAD_URL_TTL_S = 15 * 60;
+
+/** Signed URLs the browser PUTs files to, straight into the user's bucket. */
+export async function createUpload(userId: string, keys: string[]) {
+  const cfg = r2();
+  const bucket = await ensureBucket(userId);
+  await ensureCors(userId, bucket);
+  return Promise.all(keys.map((key) => presign(cfg, "PUT", bucket, key, UPLOAD_URL_TTL_S)));
+}
+
+async function headObject(cfg: R2Config, bucket: string, key: string) {
+  const res = await s3(cfg, objectUrl(cfg, bucket, key), { method: "HEAD" }).catch((e) => {
+    if ((e as { upstreamStatus?: number }).upstreamStatus === 404) return undefined;
+    throw e;
+  });
+  return (
+    res && {
+      bytes: Number(res.headers.get("content-length")) || 0,
+      contentType: res.headers.get("content-type") ?? "application/octet-stream",
+    }
+  );
+}
+
+/**
+ * Indexes a file the browser uploaded, plus its thumbnail if one was sent. Size and type
+ * come from what actually landed in the bucket. Returns undefined if the file isn't there.
+ */
+export async function completeUpload(userId: string, key: string, { name, meta }: { name: string; meta: AssetMeta }) {
+  const cfg = r2();
+  const bucket = await ensureBucket(userId);
+  const file = await headObject(cfg, bucket, key);
+  if (!file) return undefined;
+  const thumb = meta.thumb ? await headObject(cfg, bucket, meta.thumb) : undefined;
+  return recordAsset({
     userId,
-  ) as { objects: number; bytes: number };
-  return { driver: activeDriver(), bucket: r2() ? (getBucket(userId) ?? null) : null, ...row };
+    key,
+    bucket,
+    // The thumbnail counts toward the quota too.
+    bytes: file.bytes + (thumb?.bytes ?? 0),
+    contentType: file.contentType,
+    generationId: null,
+    createdAt: Date.now(),
+    name,
+    meta: { ...meta, thumb: thumb ? meta.thumb : undefined },
+  });
+}
+
+/**
+ * Every asset the user would want to see, newest first: uploads, generated videos and
+ * generated images, with the prompt and model of the generation that made them.
+ */
+export async function listAssets(userId: string): Promise<AssetItem[]> {
+  const [rows, videoGens, imageGens] = await Promise.all([
+    all<AssetRow>(
+      `SELECT * FROM assets WHERE user_id = ? AND (key LIKE 'uploads/%' OR key LIKE 'videos/%' OR key LIKE 'images/%')
+       ORDER BY created_at DESC LIMIT 2000`,
+      userId,
+    ),
+    all<{ id: string; model: string; prompt: string; duration: number }>(
+      `SELECT id, json_extract(data, '$.model') AS model, json_extract(data, '$.prompt') AS prompt,
+              json_extract(data, '$.duration') AS duration FROM generations WHERE user_id = ?`,
+      userId,
+    ),
+    all<{ id: string; model: string; prompt: string }>(
+      `SELECT id, json_extract(data, '$.model') AS model, json_extract(data, '$.prompt') AS prompt
+       FROM image_generations WHERE user_id = ?`,
+      userId,
+    ),
+  ]);
+  const videos = new Map(videoGens.map((g) => [g.id, g]));
+  const images = new Map(imageGens.map((g) => [g.id, g]));
+
+  return rows.flatMap((row): AssetItem[] => {
+    const a = toAsset(row);
+    const kind = uploadKindOf(a.contentType) ?? (a.contentType.startsWith("image/") ? "image" : undefined);
+    if (!kind) return [];
+    const base = {
+      key: a.key,
+      kind,
+      contentType: a.contentType,
+      bytes: a.bytes,
+      duration: a.meta?.duration,
+      peaks: a.meta?.peaks,
+      hasThumb: !!a.meta?.thumb,
+      createdAt: a.createdAt,
+    };
+    if (a.key.startsWith("uploads/")) return [{ ...base, source: "upload", name: a.name ?? a.key.split("/").pop()! }];
+    const tab = a.key.startsWith("videos/") ? "video" : "image";
+    const gen = a.generationId ? (tab === "video" ? videos : images).get(a.generationId) : undefined;
+    // A file whose generation is gone shouldn't linger in the list.
+    if (!gen) return [];
+    return [
+      {
+        ...base,
+        source: "generated",
+        name: gen.prompt?.slice(0, 120) || "Untitled",
+        duration: base.duration ?? (tab === "video" ? (videos.get(gen.id)?.duration ?? undefined) : undefined),
+        generation: { id: gen.id, tab, model: gen.model, prompt: gen.prompt },
+      },
+    ];
+  });
+}
+
+/** A signed URL for the browser to PUT a thumbnail it made for a generated image or video. */
+export async function createThumbUpload(userId: string, asset: Asset) {
+  const cfg = r2();
+  await ensureCors(userId, asset.bucket);
+  return presign(cfg, "PUT", asset.bucket, thumbKeyFor(asset.key), UPLOAD_URL_TTL_S);
+}
+
+/** Records a thumbnail the browser uploaded, if it's there and small. */
+export async function attachThumb(asset: Asset) {
+  const cfg = r2();
+  const key = thumbKeyFor(asset.key);
+  const thumb = await headObject(cfg, asset.bucket, key);
+  if (!thumb) return false;
+  if (thumb.bytes > 1024 * 1024 || thumb.contentType !== "image/jpeg") {
+    await deleteObject(cfg, asset.bucket, key);
+    return false;
+  }
+  await recordAsset({ ...asset, bytes: asset.bytes + thumb.bytes, meta: { ...asset.meta, thumb: key } });
+  return true;
+}
+
+export async function renameAsset(userId: string, key: string, name: string) {
+  await run("UPDATE assets SET name = ? WHERE user_id = ? AND key = ?", name, userId, key);
+}
+
+/** Removes an uploaded object that never got indexed (e.g. it failed validation). */
+export async function discardUpload(userId: string, key: string) {
+  const bucket = await getBucket(userId);
+  if (bucket) await deleteObject(r2(), bucket, key);
+}
+
+/**
+ * Pre-library reference uploads (`refs/`) that never made it into a generation. Library
+ * uploads (`uploads/`) are kept until the user deletes them.
+ */
+export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
+  const rows = await all<AssetRow>(
+    "SELECT * FROM assets WHERE generation_id IS NULL AND key LIKE ? AND created_at < ? LIMIT 50",
+    `${prefix}%`,
+    Date.now() - olderThanMs,
+  );
+  for (const row of rows) await deleteAsset(toAsset(row));
+  return rows.length;
+}
+
+// ---------------------------------------------------------------- usage & quota
+
+const GB = 1024 ** 3;
+
+export async function storageUsage(userId: string) {
+  const row = await first<{ objects: number; bytes: number }>(
+    "SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE user_id = ?",
+    userId,
+  );
+  const quotaGb = Number(env().STORAGE_QUOTA_GB) || 2;
+  return { objects: row?.objects ?? 0, bytes: row?.bytes ?? 0, quotaBytes: Math.round(quotaGb * GB) };
+}
+
+/** Thrown before a generation or upload that would go over the user's quota. */
+export async function assertStorageAvailable(userId: string, extraBytes = 0) {
+  const { bytes, quotaBytes } = await storageUsage(userId);
+  if (bytes + extraBytes > quotaBytes || bytes >= quotaBytes) {
+    const gb = +(quotaBytes / GB).toFixed(1);
+    throw new StorageError(`Your storage is full (${gb} GB). Delete some videos to keep generating.`, 403);
+  }
 }
 
 // ---------------------------------------------------------------- serving
 
 const SIGNED_URL_TTL_S = 3600;
+// Providers can queue a job for minutes before fetching its references.
+const PROVIDER_URL_TTL_S = 24 * 3600;
+
+async function presign(
+  cfg: R2Config,
+  method: "GET" | "PUT",
+  bucket: string,
+  key: string,
+  ttlSeconds: number,
+  query: Record<string, string> = {},
+) {
+  const url = new URL(objectUrl(cfg, bucket, key));
+  url.searchParams.set("X-Amz-Expires", String(ttlSeconds));
+  for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  return (await cfg.client.sign(new Request(url, { method }), { aws: { signQuery: true } })).url;
+}
+
+/** A link the video provider can download a reference from, without credentials. */
+export const providerUrl = (asset: Asset) => presign(r2(), "GET", asset.bucket, asset.key, PROVIDER_URL_TTL_S);
 
 /**
- * R2: redirects to a short-lived signed URL, so bytes (and Range requests) go straight
- * from Cloudflare to the browser. Local: streams the file with Range support.
+ * Redirects to a short-lived signed URL, so the bytes (and the player's Range
+ * requests) go straight from R2 to the browser. R2 doesn't charge for egress.
  */
-export async function serveAsset(asset: Asset, request: Request, opts: { downloadName?: string } = {}) {
-  const disposition = opts.downloadName && `attachment; filename="${opts.downloadName}"`;
-
-  if (asset.driver === "r2") {
-    const cfg = r2();
-    if (!cfg) return new Response("Storage unavailable", { status: 503 });
-    const url = new URL(objectUrl(cfg, asset.bucket!, asset.key));
-    url.searchParams.set("X-Amz-Expires", String(SIGNED_URL_TTL_S));
-    if (disposition) url.searchParams.set("response-content-disposition", disposition);
-    const signed = await cfg.client.sign(new Request(url, { method: "GET" }), { aws: { signQuery: true } });
-    return new Response(null, {
-      status: 302,
-      // Cache the redirect for well under the signature's lifetime.
-      headers: { Location: signed.url, "Cache-Control": "private, max-age=600" },
-    });
-  }
-
-  const file = localPath(asset.key);
-  const stat = await fs.stat(file).catch(() => null);
-  if (!stat) return new Response("Not found", { status: 404 });
-  const headers: Record<string, string> = {
-    "Content-Type": asset.contentType,
-    "Accept-Ranges": "bytes",
-    "Cache-Control": "private, max-age=31536000, immutable",
-    ...(disposition && { "Content-Disposition": disposition }),
-  };
-
-  const range = request.headers.get("range")?.match(/bytes=(\d*)-(\d*)/);
-  if (range) {
-    const start = range[1] ? Number(range[1]) : Math.max(0, stat.size - Number(range[2]));
-    const end = range[1] && range[2] ? Math.min(Number(range[2]), stat.size - 1) : stat.size - 1;
-    if (start >= stat.size || start > end)
-      return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${stat.size}` } });
-    const stream = Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream;
-    return new Response(stream, {
-      status: 206,
-      headers: {
-        ...headers,
-        "Content-Range": `bytes ${start}-${end}/${stat.size}`,
-        "Content-Length": String(end - start + 1),
-      },
-    });
-  }
-
-  const stream = Readable.toWeb(createReadStream(file)) as ReadableStream;
-  return new Response(stream, { headers: { ...headers, "Content-Length": String(stat.size) } });
+export async function serveAsset(asset: Asset, opts: { downloadName?: string; thumb?: boolean } = {}) {
+  const query: Record<string, string> = opts.downloadName
+    ? { "response-content-disposition": `attachment; filename="${opts.downloadName}"` }
+    : {};
+  // The thumbnail when asked for and there is one; otherwise the file itself.
+  const key = opts.thumb && asset.meta?.thumb ? asset.meta.thumb : asset.key;
+  const location = await presign(r2(), "GET", asset.bucket, key, SIGNED_URL_TTL_S, query);
+  return new Response(null, {
+    status: 302,
+    // Cache the redirect for well under the signature's lifetime.
+    headers: { Location: location, "Cache-Control": "private, max-age=600" },
+  });
 }

@@ -1,7 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { createSession, upsertGoogleUser } from "@/lib/auth";
+import { connection, NextResponse, type NextRequest } from "next/server";
+import { authMode, createSession, upsertUser } from "@/lib/auth";
 import { finishAuth, googleConfig, OAUTH_COOKIE, redirectUri } from "@/lib/google";
-import { activeDriver, ensureBucket } from "@/lib/storage";
+import { ensureBucket } from "@/lib/storage";
 
 export async function GET(request: NextRequest) {
   const fail = (error: string) => {
@@ -10,6 +10,8 @@ export async function GET(request: NextRequest) {
     return res;
   };
 
+  await connection();
+  if (authMode() !== "google") return NextResponse.redirect(new URL("/", request.url));
   const cfg = googleConfig();
   if (!cfg) return fail("not_configured");
 
@@ -28,10 +30,10 @@ export async function GET(request: NextRequest) {
   try {
     const profile = await finishAuth(cfg, code, saved.verifier, redirectUri(request.url));
     if (!profile.email_verified) return fail("unverified_email");
-    const user = upsertGoogleUser(profile);
+    const user = await upsertUser({ email: profile.email, name: profile.name, avatarUrl: profile.picture });
     await createSession(user.id);
     // Provision the user's bucket up front. Not fatal: uploads retry it on first use.
-    if (activeDriver() === "r2") await ensureBucket(user.id).catch((e) => console.error("Bucket setup failed:", e));
+    await ensureBucket(user.id).catch((e) => console.error("Bucket setup failed:", e));
   } catch (e) {
     console.error("Google sign-in failed:", e);
     return fail("google_error");

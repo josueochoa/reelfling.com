@@ -1,0 +1,20 @@
+# Copy to .dev.vars for local development (`npm run dev` / `npm run preview`).
+# In production, set each with: npx wrangler secret put <NAME>
+
+# Encrypts users' stored API keys. Generate with: openssl rand -base64 32
+# Changing it makes every saved key unreadable (users would re-enter them).
+AUTH_SECRET=
+
+# Cloudflare R2 S3 credentials: R2 → Manage API tokens → Create Account API token
+# with "Admin Read & Write" (it creates a bucket per user). Set R2_ACCOUNT_ID in wrangler.jsonc.
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+# Keeps local test buckets apart from production ones (overrides wrangler.jsonc).
+R2_BUCKET_PREFIX=dev
+
+# Local dev only (ignored in production): who you're signed in as, since there's
+# no Cloudflare Access on localhost.
+DEV_USER_EMAIL=dev@localhost.test
+
+# Only with AUTH_MODE=google (set GOOGLE_CLIENT_ID in wrangler.jsonc vars).
+# GOOGLE_CLIENT_SECRET=

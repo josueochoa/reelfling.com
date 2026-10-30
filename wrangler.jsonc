@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "reelfling",
+  // Wraps the OpenNext worker to add the cron handler (see worker.ts).
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "reelfling" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "reelfling",
+      // Fill in from `npx wrangler d1 create reelfling`.
+      "database_id": "a8bb7038-266c-4b34-9fe3-d47e28e80e72",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Image generation jobs: POST /api/images sends, this Worker consumes (worker.ts).
+  "queues": {
+    "producers": [{ "binding": "IMAGE_JOBS", "queue": "reelfling-image-jobs" }],
+    "consumers": [{ "queue": "reelfling-image-jobs", "max_batch_size": 1, "max_batch_timeout": 1, "max_retries": 0 }]
+  },
+  // Finishes generations whose tab was closed: polls providers, copies videos to R2.
+  "triggers": { "crons": ["* * * * *"] },
+  // Served only on the custom domain, which Cloudflare Access protects. The workers.dev
+  // and preview URLs would bypass Access, so they're off.
+  "routes": [{ "pattern": "reelfling.com", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Non-secret settings. Secrets (AUTH_SECRET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
+  // GOOGLE_CLIENT_SECRET) go in .dev.vars locally and `wrangler secret put` in production.
+  "vars": {
+    // "access" (Cloudflare Access in front of the app) or "google" (built-in Google sign-in).
+    "AUTH_MODE": "access",
+    // e.g. https://your-team.cloudflareaccess.com
+    "ACCESS_TEAM_DOMAIN": "https://lucky-wind-ede2.cloudflareaccess.com",
+    // The Access application's AUD tag.
+    "ACCESS_AUD": "eccac565bac5751109918539fd189d9cceeb3c34b67e80edc3b4b4dbc060770b",
+    "R2_ACCOUNT_ID": "fca019314f738e7878872679ea3604c6",
+    "R2_BUCKET_PREFIX": "reelfling",
+    "STORAGE_QUOTA_GB": "2"
+  }
+}

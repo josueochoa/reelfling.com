@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Seedance Studio",
-  description: "Video generation studio powered by Seedance",
+  title: "ReelFling",
+  description: "Generate videos and images with Seedance, Nano Banana and GPT Image, on your own API key.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
