@@ -8,7 +8,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 export interface AppEnv {
   DB: D1Database;
   /** Image generation jobs (see images.ts). */
-  IMAGE_JOBS?: Queue<{ userId: string; id: string }>;
+  IMAGE_JOBS?: Queue<{ workspaceId: string; id: string }>;
   AUTH_MODE?: string;
   AUTH_SECRET?: string;
   ACCESS_TEAM_DOMAIN?: string;
@@ -23,6 +23,8 @@ export interface AppEnv {
   R2_ENDPOINT?: string;
   R2_BUCKET_PREFIX?: string;
   STORAGE_QUOTA_GB?: string;
+  /** "true": new accounts need an invite. Otherwise Cloudflare Access decides who's in. */
+  INVITE_ONLY?: string;
 }
 
 /** The current request's Worker env. Only callable while handling a request. */

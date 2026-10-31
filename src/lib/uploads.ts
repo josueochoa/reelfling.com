@@ -56,11 +56,20 @@ export interface UploadItem {
 
 export type AssetSource = "upload" | "generated";
 
+/** Who made something, for team workspaces. */
+export interface Creator {
+  id: string;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
 /** Anything in the user's bucket they'd want to see: uploads plus generated videos and images. */
 export interface AssetItem extends UploadItem {
   source: AssetSource;
   /** For generated assets: what made it. */
   generation?: { id: string; tab: "video" | "image"; model: string; prompt: string };
+  createdBy?: Creator;
 }
 
 /** Keys of assets the app lists and lets users reference (not thumbnails or old `refs/`). */

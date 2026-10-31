@@ -1,14 +1,16 @@
-import { errorResponse, requireUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/auth";
 import { attachThumb, createThumbUpload, getAsset } from "@/lib/storage";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
+import { requireWorkspace } from "@/lib/workspaces";
 
 // Generated images and videos get their thumbnail lazily: the first time a browser shows
 // one without a thumbnail, it draws a small JPEG and sends it here.
 
 async function generatedAsset(request: Request) {
-  const user = await requireUser();
+  // Any member viewing it can make its thumbnail.
+  const { workspace } = await requireWorkspace(request);
   const { key } = (await request.json()) as { key: string };
-  const asset = isAssetKey(key) && !key.startsWith("uploads/") ? await getAsset(user.id, key) : undefined;
+  const asset = isAssetKey(key) && !key.startsWith("uploads/") ? await getAsset(workspace.id, key) : undefined;
   const kind = asset && (uploadKindOf(asset.contentType) ?? (asset.contentType.startsWith("image/") ? "image" : null));
   return asset && (kind === "image" || kind === "video") ? asset : undefined;
 }
@@ -19,7 +21,7 @@ export async function POST(request: Request) {
     const asset = await generatedAsset(request);
     if (!asset) return Response.json({ error: "Not found" }, { status: 404 });
     if (asset.meta?.thumb) return Response.json({ done: true });
-    return Response.json({ uploadUrl: await createThumbUpload(asset.userId, asset) });
+    return Response.json({ uploadUrl: await createThumbUpload(asset.workspaceId, asset) });
   } catch (e) {
     return errorResponse(e);
   }

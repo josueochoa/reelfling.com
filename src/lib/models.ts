@@ -2,7 +2,7 @@
 // (to validate requests). Each entry belongs to one provider; only the active
 // provider's models are offered. Add or edit entries as new versions ship.
 
-export type ProviderId = "modelark" | "argolink";
+export type ProviderId = "modelark" | "argolink" | "openrouter";
 
 /** Client-safe provider metadata. */
 export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; blurb: string }> = {
@@ -10,6 +10,11 @@ export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; 
     label: "ArgoLink",
     keyUrl: "https://argolink.io",
     blurb: "Prepaid gateway with Seedance 2.5, 2.0, Fast and Mini.",
+  },
+  openrouter: {
+    label: "OpenRouter",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    blurb: "One key for Seedance 2.5, 2.0, Fast, Mini and 1.5 Pro, plus the image models.",
   },
   modelark: {
     label: "BytePlus ModelArk",
@@ -69,6 +74,19 @@ const argolink = {
   features: { seed: false, watermark: false, cameraFixed: false, lastFrameOutput: false },
   refSyntax: (kind, n) => `@${kind} ${n}`,
   promptRequired: true,
+} satisfies Partial<ModelSpec>;
+
+// https://openrouter.ai/api/v1/videos/models — BytePlus Seedance behind OpenRouter. Prices are
+// its per-token rates at 24 fps and 16:9 (tokens = width × height × fps × seconds / 1024).
+const openrouter = {
+  provider: "openrouter",
+  ratios: ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9"],
+  audio: true,
+  firstFrame: true,
+  lastFrame: true,
+  features: { seed: true, watermark: false, cameraFixed: false, lastFrameOutput: false },
+  refSyntax: (kind, n) => `[${kind} ${n}]`,
+  promptRequired: false,
 } satisfies Partial<ModelSpec>;
 
 export const MODELS: ModelSpec[] = [
@@ -137,6 +155,56 @@ export const MODELS: ModelSpec[] = [
     durations: { min: 4, max: 15, default: 5 },
     references: { images: 9, videos: 3, audios: 3, total: 15 },
     pricePerSecond: { "480p": 0.0299, "720p": 0.0643 },
+  },
+  {
+    ...openrouter,
+    id: "bytedance/seedance-2.5",
+    label: "Seedance 2.5",
+    description: "Newest model, up to 30s, 30 reference images",
+    resolutions: ["480p", "720p"],
+    durations: { min: 4, max: 30, default: 5 },
+    references: { images: 30, videos: 10, audios: 10, total: 50 },
+    pricePerSecond: { "480p": 0.1028, "720p": 0.2311 },
+  },
+  {
+    ...openrouter,
+    id: "bytedance/seedance-2.0",
+    label: "Seedance 2.0",
+    description: "Multimodal references, native audio, up to 4K",
+    resolutions: ["480p", "720p", "1080p", "4k"],
+    durations: { min: 4, max: 15, default: 5 },
+    references: { images: 9, videos: 3, audios: 3, total: 15 },
+    pricePerSecond: { "480p": 0.0673, "720p": 0.1512, "1080p": 0.3742, "4k": 0.7776 },
+  },
+  {
+    ...openrouter,
+    id: "bytedance/seedance-2.0-fast",
+    label: "Seedance 2.0 Fast",
+    description: "Faster, cheaper 2.0 — up to 720p",
+    resolutions: ["480p", "720p"],
+    durations: { min: 4, max: 15, default: 5 },
+    references: { images: 9, videos: 3, audios: 3, total: 15 },
+    pricePerSecond: { "480p": 0.0404, "720p": 0.0907 },
+  },
+  {
+    ...openrouter,
+    id: "bytedance/seedance-2.0-mini",
+    label: "Seedance 2.0 Mini",
+    description: "Cheapest drafts — up to 720p",
+    resolutions: ["480p", "720p"],
+    durations: { min: 4, max: 15, default: 5 },
+    references: { images: 9, videos: 3, audios: 3, total: 15 },
+    pricePerSecond: { "480p": 0.0336, "720p": 0.0756 },
+  },
+  {
+    ...openrouter,
+    id: "bytedance/seedance-1-5-pro",
+    label: "Seedance 1.5 Pro",
+    description: "Text & image to video with audio, 1080p",
+    resolutions: ["480p", "720p", "1080p"],
+    durations: { min: 4, max: 12, default: 5 },
+    references: { images: 0, videos: 0, audios: 0, total: 0 },
+    pricePerSecond: { "480p": 0.0231, "720p": 0.0518, "1080p": 0.1166 },
   },
 ];
 

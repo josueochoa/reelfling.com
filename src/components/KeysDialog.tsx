@@ -4,9 +4,12 @@ import { useEffect, useState } from "react";
 import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/models";
 import { apiJson, type Me } from "./api";
 
-const ORDER: ProviderId[] = ["argolink", "modelark"];
+const ORDER: ProviderId[] = ["argolink", "openrouter", "modelark"];
 
 export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
+  const team = me.workspace.kind === "team";
+  // In a team, the keys are shared and only owners and admins manage them.
+  const canManage = !team || me.workspace.role !== "member";
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -23,9 +26,14 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
       >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold">API keys</h2>
+            <h2 className="text-lg font-semibold">{team ? `${me.workspace.name} API keys` : "API keys"}</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Generations run on your own provider account. Keys are encrypted and never sent to the browser.
+              {team
+                ? canManage
+                  ? "Everyone in the team generates with these keys, billed to the account they belong to."
+                  : "Everyone in the team generates with these keys. Only the team's owner and admins can change them."
+                : "Generations run on your own provider account."}{" "}
+              Keys are encrypted and never sent to the browser.
             </p>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white" aria-label="Close">
@@ -39,7 +47,8 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
               key={p}
               provider={p}
               saved={me.keys.find((k) => k.provider === p)}
-              active={me.user.activeProvider === p}
+              active={me.workspace.activeProvider === p}
+              canManage={canManage}
               onChanged={onChanged}
             />
           ))}
@@ -53,15 +62,17 @@ function ProviderRow({
   provider,
   saved,
   active,
+  canManage,
   onChanged,
 }: {
   provider: ProviderId;
   saved?: Me["keys"][number];
   active: boolean;
+  canManage: boolean;
   onChanged: () => void;
 }) {
   const info = PROVIDER_INFO[provider];
-  const [editing, setEditing] = useState(!saved);
+  const [editing, setEditing] = useState(!saved && canManage);
   const [apiKey, setApiKey] = useState("");
   const [region, setRegion] = useState(saved?.baseUrl ?? Object.keys(MODELARK_REGIONS)[0]);
   const [busy, setBusy] = useState(false);
@@ -94,7 +105,7 @@ function ProviderRow({
 
   const remove = () =>
     run(async () => {
-      if (!confirm(`Remove your ${info.label} key?`)) return;
+      if (!confirm(`Remove the ${info.label} key?`)) return;
       await apiJson(`/api/keys?provider=${provider}`, { method: "DELETE" });
       setEditing(true);
     });
@@ -114,9 +125,11 @@ function ProviderRow({
               <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-ink">In use</span>
             )}
           </div>
-          <p className="mt-0.5 text-xs text-zinc-500">{saved ? `Key ••••${saved.last4}` : info.blurb}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {saved ? `Key ••••${saved.last4}` : canManage ? info.blurb : "Not set up"}
+          </p>
         </div>
-        {saved && (
+        {saved && canManage && (
           <div className="flex shrink-0 gap-1.5 text-xs">
             {!active && (
               <button

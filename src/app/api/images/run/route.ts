@@ -11,7 +11,8 @@ declare global {
 export async function POST(request: Request) {
   const token = request.headers.get("x-job-token");
   if (!token || !globalThis.__jobTokens?.has(token)) return new Response("Not found", { status: 404 });
-  const { userId, id } = (await request.json()) as { userId: string; id: string };
-  await runImageJob(userId, id);
+  // Messages sent before workspaces carried userId, which is that user's Personal workspace id.
+  const body = (await request.json()) as { workspaceId?: string; userId?: string; id: string };
+  await runImageJob((body.workspaceId ?? body.userId)!, body.id);
   return new Response(null, { status: 204 });
 }

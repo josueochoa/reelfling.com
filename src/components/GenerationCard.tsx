@@ -3,8 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { getModel } from "@/lib/models";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
+import { withWorkspace } from "./api";
+import { Avatar } from "./Teams";
 
-export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
+export const videoSrc = (g: Generation, download = false) =>
+  withWorkspace(`/api/generations/${g.id}/video${download ? "?download" : ""}`);
 
 export function useElapsed(gen: Generation) {
   const running = !TERMINAL_STATUSES.includes(gen.status);
@@ -36,11 +39,14 @@ export function GenerationCard({
   onOpen,
   onReuse,
   onDelete,
+  showCreator,
 }: {
   gen: Generation;
   onOpen: () => void;
   onReuse: () => void;
   onDelete: () => void;
+  /** In a team: whose generation it is. */
+  showCreator?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
@@ -81,7 +87,8 @@ export function GenerationCard({
           {gen.prompt || <span className="text-zinc-500 italic">No prompt</span>}
         </p>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
+          <div className="flex flex-wrap items-center gap-1 text-[10px] text-zinc-500">
+            {showCreator && gen.creator && <Avatar person={gen.creator} size="size-5" />}
             <Meta>{model?.label ?? gen.model}</Meta>
             <Meta>{gen.resolution}</Meta>
             <Meta>{gen.duration}s</Meta>
@@ -94,7 +101,7 @@ export function GenerationCard({
             </IconButton>
             {ready && (
               <a
-                href={`${videoSrc(gen)}?download`}
+                href={videoSrc(gen, true)}
                 title="Download"
                 className="grid size-7 place-items-center rounded-lg text-sm text-zinc-400 hover:bg-white/10 hover:text-white"
               >

@@ -3,19 +3,21 @@
 // The Image tab: generated images in a grid, with the prompt bar floating over it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { getImageModel, IMAGE_MODELS, nearestRatio, ratioAllowed } from "@/lib/imageModels";
+import { getImageModel, IMAGE_MODELS, imageProviderFor, nearestRatio, ratioAllowed } from "@/lib/imageModels";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
-import { api, apiJson, type Me } from "./api";
+import { PROVIDER_INFO } from "@/lib/models";
+import { api, apiJson, withWorkspace, type Me } from "./api";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
+import { Avatar } from "./Teams";
 import { UploadsPanel } from "./UploadsPanel";
 
 const POLL_MS = 4000;
 const pending = (g: ImageGeneration) => g.status === "queued" || g.status === "running";
 const imageUrl = (g: ImageGeneration, i: number, download = false) =>
-  `/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`;
+  withWorkspace(`/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`);
 const aspectStyle = (ratio?: string) => ({ aspectRatio: (ratio ?? "1:1").replace(":", " / ") });
 
 /** Re-renders every second while something is generating, for the elapsed timers. */
@@ -71,7 +73,14 @@ export function ImageStudio({
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const references = refIds.flatMap((id) => byId.get(id) ?? []);
-  const needsKey = !!me && !me.keys.some((k) => k.provider === "argolink");
+  // Before /api/me loads, assume a key so the "add a key" banner doesn't flash.
+  const provider = me
+    ? imageProviderFor(
+        me.workspace.activeProvider,
+        me.keys.map((k) => k.provider),
+      )
+    : "argolink";
+  const team = me?.workspace.kind === "team";
   const now = useNow(gens.some(pending));
 
   const upsert = useCallback((gen: ImageGeneration) => {
@@ -227,6 +236,11 @@ export function ImageStudio({
                 key={`${gen.id}-${i}`}
                 className="group relative mb-3 break-inside-avoid overflow-hidden rounded-xl bg-white/[0.04]"
               >
+                {team && gen.creator && (
+                  <span className="absolute top-2 left-2 z-10">
+                    <Avatar person={gen.creator} size="size-6" />
+                  </span>
+                )}
                 {gen.status === "succeeded" ? (
                   <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -295,7 +309,7 @@ export function ImageStudio({
             onGenerate={() => void generate()}
             submitting={submitting}
             error={error}
-            needsKey={needsKey}
+            provider={provider}
             onOpenKeys={onOpenKeys}
           />
         </div>
@@ -369,7 +383,8 @@ function ImageLightbox({
     ...(gen.quality ? [["Quality", gen.quality] as [string, string]] : []),
     ["Images", String(gen.count)],
     ["References", String(gen.references.length)],
-    ["Est. cost", `$${gen.cost.toFixed(3)}`],
+    ["Provider", PROVIDER_INFO[gen.provider ?? "argolink"].label],
+    gen.billedCost !== undefined ? ["Cost", `$${gen.billedCost.toFixed(3)}`] : ["Est. cost", `$${gen.cost.toFixed(3)}`],
   ];
 
   return (

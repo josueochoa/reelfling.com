@@ -6,10 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import { getImageModel } from "@/lib/imageModels";
 import { getModel } from "@/lib/models";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
-import type { Me } from "./api";
+import { withWorkspace, type Me } from "./api";
 import type { Library, LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { MediaPreview } from "./MediaPreview";
+import { Avatar } from "./Teams";
 import { formatBytes } from "./UserMenu";
 
 const KINDS: { value: UploadKind | "all"; label: string; icon: string }[] = [
@@ -45,7 +46,7 @@ function dayLabel(ts: number, now: number) {
 function download(item: LibraryItem) {
   if (!item.key) return;
   const a = document.createElement("a");
-  a.href = assetFileUrl(item.key, { download: true });
+  a.href = withWorkspace(assetFileUrl(item.key, { download: true }));
   a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
@@ -72,6 +73,8 @@ export function AssetsStudio({
   const [kind, setKind] = useState<UploadKind | "all">("all");
   const [source, setSource] = useState<AssetSource | "all">("all");
   const [model, setModel] = useState("");
+  const [creator, setCreator] = useState("");
+  const team = me?.workspace.kind === "team";
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -91,11 +94,15 @@ export function AssetsStudio({
       (kind === "all" || i.kind === kind) &&
       (source === "all" || i.source === source) &&
       (!model || i.generation?.model === model) &&
+      (!creator || i.createdBy?.id === creator) &&
       (!q || i.name.toLowerCase().includes(q) || i.generation?.prompt.toLowerCase().includes(q)),
   );
   useLazyThumbs(grid, shown, library.ensureThumb);
 
   const models = [...new Set(items.flatMap((i) => (i.generation ? [i.generation.model] : [])))];
+  const creators = [
+    ...new Map(items.flatMap((i) => (i.createdBy ? [[i.createdBy.id, i.createdBy] as const] : []))).values(),
+  ];
   const stats = (k: UploadKind | "all") => {
     const list = items.filter((i) => k === "all" || i.kind === k);
     return { count: list.length, bytes: list.reduce((n, i) => n + i.bytes, 0) };
@@ -235,6 +242,23 @@ export function AssetsStudio({
                   ))}
                 </select>
               )}
+              {team && creators.length > 0 && (
+                <select
+                  value={creator}
+                  onChange={(e) => setCreator(e.target.value)}
+                  aria-label="Created by"
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs outline-none"
+                >
+                  <option value="" className="bg-panel">
+                    Everyone
+                  </option>
+                  {creators.map((c) => (
+                    <option key={c.id} value={c.id} className="bg-panel">
+                      {c.id === me?.user.id ? "Me" : (c.name ?? c.email)}
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -310,6 +334,11 @@ export function AssetsStudio({
                         <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-200">
                           {item.source === "generated" ? `✦ ${modelLabel(item.generation?.model ?? "")}` : "⇪ Upload"}
                         </span>
+                        {team && item.createdBy && (
+                          <span className="absolute top-2 right-2">
+                            <Avatar person={item.createdBy} size="size-6" />
+                          </span>
+                        )}
                       </div>
                     );
                   })}

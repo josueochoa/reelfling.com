@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { estimateCost, getModel } from "@/lib/models";
+import { estimateCost, getModel, PROVIDER_INFO } from "@/lib/models";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 
@@ -31,7 +31,7 @@ export function Lightbox({
   const cost = model && estimateCost(model, gen.resolution, gen.billedSeconds ?? gen.duration);
   const details: [string, React.ReactNode][] = [
     ["Model", model?.label ?? gen.model],
-    ["Provider", gen.provider ?? "modelark"],
+    ["Provider", PROVIDER_INFO[gen.provider ?? "modelark"].label],
     ["Resolution", gen.resolution],
     ["Duration", `${gen.duration}s`],
     ["Ratio", gen.ratio],
@@ -41,7 +41,8 @@ export function Lightbox({
   if (gen.seed !== undefined) details.push(["Seed", gen.seed]);
   if (gen.tokens !== undefined) details.push(["Tokens", gen.tokens.toLocaleString()]);
   if (gen.billedSeconds !== undefined) details.push(["Billed", `${gen.billedSeconds}s`]);
-  if (cost !== undefined) details.push(["Est. cost", `$${cost.toFixed(2)}`]);
+  if (gen.cost !== undefined) details.push(["Cost", `$${gen.cost.toFixed(2)}`]);
+  else if (cost !== undefined) details.push(["Est. cost", `$${cost.toFixed(2)}`]);
   details.push([
     "Task",
     <code key="t" className="text-[11px] break-all">
@@ -82,7 +83,7 @@ export function Lightbox({
           <div className="mt-auto grid gap-2">
             {ready && (
               <a
-                href={`${videoSrc(gen)}?download`}
+                href={videoSrc(gen, true)}
                 className="rounded-xl bg-accent py-2.5 text-center text-sm font-semibold text-ink"
               >
                 Download

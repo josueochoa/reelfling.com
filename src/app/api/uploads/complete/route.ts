@@ -1,6 +1,7 @@
-import { errorResponse, requireUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/auth";
 import { completeUpload, deleteAsset, discardUpload, storageUsage } from "@/lib/storage";
 import { LIBRARY_PREFIX, thumbKeyFor, UPLOAD_RULES, uploadKindOf } from "@/lib/uploads";
+import { requireWorkspace } from "@/lib/workspaces";
 
 const KEY_RE = new RegExp(`^${LIBRARY_PREFIX}[0-9a-f-]{36}\\.[a-z0-9]+$`);
 
@@ -11,7 +12,7 @@ const KEY_RE = new RegExp(`^${LIBRARY_PREFIX}[0-9a-f-]{36}\\.[a-z0-9]+$`);
  */
 export async function POST(request: Request) {
   try {
-    const user = await requireUser();
+    const { user, workspace } = await requireWorkspace(request);
     const body = (await request.json()) as {
       key: string;
       name?: string;
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
     const { key } = body;
     if (!KEY_RE.test(key ?? "")) return Response.json({ error: "Invalid upload key" }, { status: 400 });
 
-    const asset = await completeUpload(user.id, key, {
+    const asset = await completeUpload(workspace.id, key, {
+      createdBy: user.id,
       name: body.name?.trim().slice(0, 120) || key.split("/").pop()!,
       meta: {
         duration: Number.isFinite(body.duration) ? Math.round(body.duration! * 100) / 100 : undefined,
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
 
     const kind = uploadKindOf(asset.contentType);
     const rules = kind && UPLOAD_RULES[kind];
-    const usage = await storageUsage(user.id);
+    const usage = await storageUsage(workspace.id);
     const problem = !rules
       ? "Unsupported file type"
       : asset.bytes > rules.maxBytes * 1.1 // allowance for the thumbnail
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
           ? "Your storage is full. Delete some uploads or videos to make room."
           : undefined;
     if (problem) {
-      await deleteAsset(asset).catch(() => discardUpload(user.id, key));
+      await deleteAsset(asset).catch(() => discardUpload(workspace.id, key));
       return Response.json({ error: problem }, { status: 400 });
     }
     return Response.json({ key, bytes: asset.bytes });

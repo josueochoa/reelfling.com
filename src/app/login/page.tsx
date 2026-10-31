@@ -6,7 +6,7 @@ import { LoginError } from "./LoginError";
 
 export const metadata: Metadata = { title: "Sign in · ReelFling" };
 
-export default function LoginPage() {
+export default function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <main className="grid min-h-dvh place-items-center bg-ink px-4 text-zinc-100">
       <div className="w-full max-w-sm rounded-2xl border border-white/5 bg-panel p-8">
@@ -15,7 +15,7 @@ export default function LoginPage() {
           <span className="text-lg font-semibold tracking-tight">ReelFling</span>
         </div>
         <Suspense>
-          <SignIn />
+          <SignIn searchParams={searchParams} />
         </Suspense>
       </div>
     </main>
@@ -23,8 +23,35 @@ export default function LoginPage() {
 }
 
 /** Read per request: the sign-in method is a runtime setting (AUTH_MODE). */
-async function SignIn() {
+async function SignIn({ searchParams }: { searchParams: PageProps<"/login">["searchParams"] }) {
   await connection();
+
+  if (authMode() === "access" && (await searchParams).error === "not_invited") {
+    // Signed in fine, but new accounts are invite-only.
+    return (
+      <>
+        <h1 className="text-xl font-semibold">You&apos;re not on a team yet</h1>
+        <p className="mt-1 text-sm text-zinc-400">
+          ReelFling is invite-only. Ask a team admin to invite your email address, or to send you an invite link.
+        </p>
+        <div className="mt-6 flex gap-2">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a
+            href="/"
+            className="flex-1 rounded-xl bg-white py-3 text-center text-sm font-medium text-zinc-900 hover:bg-zinc-200"
+          >
+            I&apos;ve been invited
+          </a>
+          <a
+            href="/cdn-cgi/access/logout"
+            className="flex-1 rounded-xl border border-white/10 py-3 text-center text-sm text-zinc-300 hover:bg-white/5"
+          >
+            Use another email
+          </a>
+        </div>
+      </>
+    );
+  }
 
   if (authMode() === "access") {
     // Access sits in front of every page, so landing here means its token didn't verify.

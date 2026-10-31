@@ -1,12 +1,17 @@
-import { errorResponse, requireUser, setActiveProvider } from "@/lib/auth";
+import { errorResponse } from "@/lib/auth";
 import { deleteKey, listKeys, saveKey } from "@/lib/keys";
 import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/models";
 import { createProvider, PROVIDERS } from "@/lib/providers";
+import { requireAdmin, requireWorkspace, setActiveProvider } from "@/lib/workspaces";
+
+// Keys belong to the workspace: a user's own in Personal; in a team, shared keys that
+// only owners and admins manage.
 
 /** { provider, apiKey, baseUrl? } — verifies the key against the provider, then stores it encrypted. */
 export async function PUT(request: Request) {
   try {
-    const user = await requireUser();
+    const { user, workspace } = await requireWorkspace(request);
+    requireAdmin(workspace);
     const body = (await request.json()) as { provider: ProviderId; apiKey: string; baseUrl?: string };
     const apiKey = body.apiKey?.trim();
     if (!(body.provider in PROVIDERS)) return Response.json({ error: "Unknown provider" }, { status: 400 });
@@ -25,22 +30,23 @@ export async function PUT(request: Request) {
       );
     }
 
-    await saveKey(user.id, body.provider, apiKey, baseUrl);
-    if (!user.activeProvider) await setActiveProvider(user.id, body.provider);
+    await saveKey(workspace.id, body.provider, apiKey, baseUrl, user.id);
+    if (!workspace.activeProvider) await setActiveProvider(workspace.id, body.provider);
     return Response.json({ ok: true, detail });
   } catch (e) {
     return errorResponse(e);
   }
 }
 
-/** ?provider=… — forget a key. Falls back to the user's other key, if any. */
+/** ?provider=… — forget a key. Falls back to the workspace's other key, if any. */
 export async function DELETE(request: Request) {
   try {
-    const user = await requireUser();
+    const { workspace } = await requireWorkspace(request);
+    requireAdmin(workspace);
     const provider = new URL(request.url).searchParams.get("provider") as ProviderId;
-    await deleteKey(user.id, provider);
-    if (user.activeProvider === provider)
-      await setActiveProvider(user.id, (await listKeys(user.id))[0]?.provider ?? null);
+    await deleteKey(workspace.id, provider);
+    if (workspace.activeProvider === provider)
+      await setActiveProvider(workspace.id, (await listKeys(workspace.id))[0]?.provider ?? null);
     return new Response(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

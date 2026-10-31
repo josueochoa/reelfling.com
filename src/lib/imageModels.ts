@@ -1,5 +1,19 @@
-// Image models (the Image tab), all through ArgoLink's OpenAI-style images API.
-// Docs: https://argolink.io/en/models/nano-banana-2.1, https://argolink.io/en/models/gpt-image-2.5-sunburst
+// Image models (the Image tab), through ArgoLink's OpenAI-style images API or OpenRouter's.
+// Docs: https://argolink.io/en/models/nano-banana-2.1, https://argolink.io/en/models/gpt-image-2.5-sunburst,
+// https://openrouter.ai/api/v1/images/models
+
+import type { ProviderId } from "./models";
+
+/** The providers that run image models. */
+export type ImageProviderId = "argolink" | "openrouter";
+const IMAGE_PROVIDERS: ImageProviderId[] = ["argolink", "openrouter"];
+const isImageProvider = (p: ProviderId | null): p is ImageProviderId => IMAGE_PROVIDERS.includes(p as ImageProviderId);
+
+/** Image jobs use the workspace's active provider if it makes images, otherwise any key that does. */
+export function imageProviderFor(active: ProviderId | null, keys: ProviderId[]): ImageProviderId | undefined {
+  if (isImageProvider(active) && keys.includes(active)) return active;
+  return IMAGE_PROVIDERS.find((p) => keys.includes(p));
+}
 
 export type ImageResolution = "1k" | "2k" | "4k";
 export type ImageQuality = "auto" | "low" | "medium" | "high";
@@ -16,8 +30,10 @@ export interface ImageModelSpec {
   qualities?: ImageQuality[];
   maxImages: number;
   maxReferences: number;
-  /** USD per returned image. */
-  price: Record<ImageResolution, number>;
+  /** OpenRouter's slug for it. */
+  openRouterId: string;
+  /** USD per returned image, per provider. OpenRouter bills tokens, so its figure is approximate. */
+  price: Record<ImageProviderId, Record<ImageResolution, number>>;
 }
 
 export const IMAGE_MODELS: ImageModelSpec[] = [
@@ -46,7 +62,12 @@ export const IMAGE_MODELS: ImageModelSpec[] = [
     resolutions: ["1k", "2k", "4k"],
     maxImages: 4,
     maxReferences: 14,
-    price: { "1k": 0.02, "2k": 0.02, "4k": 0.025 },
+    openRouterId: "google/gemini-nano-banana-2.1",
+    price: {
+      argolink: { "1k": 0.02, "2k": 0.02, "4k": 0.025 },
+      // ~1120 / 1680 / 2520 output tokens at $30/M.
+      openrouter: { "1k": 0.034, "2k": 0.05, "4k": 0.076 },
+    },
   },
   {
     id: "gpt-image-2.5-sunburst",
@@ -58,7 +79,12 @@ export const IMAGE_MODELS: ImageModelSpec[] = [
     qualities: ["auto", "low", "medium", "high"],
     maxImages: 4,
     maxReferences: 16,
-    price: { "1k": 0.015, "2k": 0.015, "4k": 0.02 },
+    openRouterId: "openai/gpt-image-2.5-sunburst",
+    price: {
+      argolink: { "1k": 0.015, "2k": 0.015, "4k": 0.02 },
+      // Varies with quality; roughly "medium" at $30/M output tokens.
+      openrouter: { "1k": 0.04, "2k": 0.08, "4k": 0.16 },
+    },
   },
 ];
 
@@ -84,8 +110,12 @@ const GPT_SIZES: Record<string, [string, string, string]> = {
 export const gptSize = (ratio: string, resolution: ImageResolution) =>
   GPT_SIZES[ratio]?.[["1k", "2k", "4k"].indexOf(resolution)];
 
-export const estimateImageCost = (model: ImageModelSpec, resolution: ImageResolution, n: number) =>
-  model.price[resolution] * n;
+export const estimateImageCost = (
+  model: ImageModelSpec,
+  resolution: ImageResolution,
+  n: number,
+  provider: ImageProviderId = "argolink",
+) => model.price[provider][resolution] * n;
 
 /** The supported ratio closest to an image's shape, for "auto" with a reference image. */
 export function nearestRatio(model: ImageModelSpec, width: number, height: number, resolution: ImageResolution) {

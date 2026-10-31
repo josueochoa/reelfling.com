@@ -1,6 +1,6 @@
 # ReelFling
 
-A Higgsfield-style studio for generating videos with ByteDance **Seedance** (through BytePlus ModelArk or the ArgoLink gateway) and images with **Nano Banana** and **GPT Image** (through ArgoLink). Live at https://reelfling.com. It runs entirely on Cloudflare: Workers (via [OpenNext](https://opennext.js.org/cloudflare)), D1, R2 and Access.
+A Higgsfield-style studio for generating videos with ByteDance **Seedance** (through BytePlus ModelArk, the ArgoLink gateway or OpenRouter) and images with **Nano Banana** and **GPT Image** (through ArgoLink or OpenRouter). Live at https://reelfling.com. It runs entirely on Cloudflare: Workers (via [OpenNext](https://opennext.js.org/cloudflare)), D1, R2 and Access.
 
 ## Local development
 
@@ -30,29 +30,45 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 ## Tabs
 
 - **Video**: Seedance (see below).
-- **Image**: Nano Banana 2.1 and GPT Image 2.5 Sunburst through ArgoLink's images API (needs an ArgoLink key). Pick a ratio (or Auto, which matches the first reference image), resolution (1K/2K/4K), quality (GPT only) and 1–4 images; reference images come from Uploads and are mentioned as `@Image 1`. Models and prices are in `src/lib/imageModels.ts`.
+- **Image**: Nano Banana 2.1 and GPT Image 2.5 Sunburst through ArgoLink's or OpenRouter's images API. Jobs use the workspace's active key if it's one of those two, otherwise whichever of them has a key; each job records which one it ran on. Pick a ratio (or Auto, which matches the first reference image), resolution (1K/2K/4K), quality (GPT only) and 1–4 images; reference images come from Uploads and are mentioned as `@Image 1`. Models and prices are in `src/lib/imageModels.ts`.
 
 - **Assets**: everything in the user's bucket in one place: generated videos and images, and uploads. Filter by type (sidebar, with counts and storage used), source (All / Generated / Uploaded), model and prompt/name; grouped by day, with bulk select, download and delete. Any asset can be sent to the Image or Video tab as a reference, generated ones included. Deleting a generated video deletes its generation; deleting a generated image removes it from its generation (which goes with its last image).
 
   Generated images and videos get thumbnails lazily: the first time a browser shows one without a thumbnail, it draws a small JPEG (canvas, via the bucket's CORS rule) and saves it next to the file (`/api/assets/thumb`).
 
-  ArgoLink's images API is synchronous and can take minutes, so each generation is a background job: `POST /api/images` records it and sends it to the `reelfling-image-jobs` queue; the Worker's queue consumer (`worker.ts`, 15-minute limit) calls ArgoLink, copies the images into the user's bucket (`images/<id>/…`) and updates the record; the page polls. Closing the tab doesn't lose anything. Jobs are claimed atomically, so a redelivered message can't bill twice, and the cron job fails any that died. Under `npm run dev` jobs run inline (there's no queue consumer).
+  The images APIs are synchronous and can take minutes, so each generation is a background job: `POST /api/images` records it and sends it to the `reelfling-image-jobs` queue; the Worker's queue consumer (`worker.ts`, 15-minute limit) calls the provider, copies the images into the user's bucket (`images/<id>/…`) and updates the record; the page polls. Closing the tab doesn't lose anything. Jobs are claimed atomically, so a redelivered message can't bill twice, and the cron job fails any that died. Under `npm run dev` jobs run inline (there's no queue consumer).
+
+## Teams
+
+Everything belongs to a **workspace**: every user has a Personal one, and can create or join **teams** (switcher next to the logo). A team shares its videos, images, uploads and **API keys** (generations bill the team's provider account); each item shows who made it.
+
+| | Owner | Admin | Member |
+|---|---|---|---|
+| Generate, upload, use shared assets; delete own items | ✓ | ✓ | ✓ |
+| Delete anyone's items; manage team API keys; invite, remove, change roles | ✓ | ✓ (not the owner) | |
+| Rename the team | ✓ | | |
+
+- **Invites**: by email (they see a banner when they sign in) or by link (`/invite/<token>`, 14 days; only a hash is stored). Leaving or being removed keeps your work in the team.
+- **Who gets in**: Cloudflare Access's policy. Anyone it lets sign in gets an account (with a Personal workspace), and invites add people to teams. Set `INVITE_ONLY=true` to also require a team invite for new accounts; others then see "You're not on a team yet".
+- **Storage**: `STORAGE_QUOTA_GB` per Personal workspace; a team gets that × its members. Each workspace has its own R2 bucket (a Personal one keeps the user's existing bucket).
+- **Scoping**: each request names its workspace (`x-workspace-id` header; `?ws=` on media URLs, which can't send headers) and `requireWorkspace()` checks membership and role. A tab remembers its workspace in localStorage, so two tabs can be in different workspaces.
 
 ## Accounts & keys (BYOK)
 
 - **Sign-in** (`AUTH_MODE`): `access` (default) puts Cloudflare Access in front of the app. Access decides who gets in, and the app verifies the JWT it adds to every request (signature, issuer, audience, expiry) before trusting the email in it. `google` switches to built-in Google sign-in with cookie sessions; set `GOOGLE_CLIENT_ID` (var) and `GOOGLE_CLIENT_SECRET` (secret), with redirect URI `https://<domain>/api/auth/google/callback`.
 - Accounts are keyed by email, so switching sign-in methods keeps everyone's keys and videos.
-- Each user adds their own ArgoLink and/or ModelArk key under **API keys** in the account menu. A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The server never uses keys of its own.
+- Each workspace has its own ArgoLink, OpenRouter and/or ModelArk keys under **API keys** in the account menu (in a team, managed by owners and admins). A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The server never uses keys of its own.
 - Generations and videos belong to the user who made them; every query is scoped by user.
 - D1 has point-in-time restore (Time Travel) for the last 30 days: `npx wrangler d1 time-travel`.
 
-| | ModelArk | ArgoLink |
-|---|---|---|
-| Models | Seedance 2.0, 1.0 Pro | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini |
-| Seed / watermark / fixed camera | yes | no (rejected upstream, so hidden) |
-| Continue from last frame | yes | no |
-| Progress % | no | yes |
-| Cost estimate in UI | no | yes (from ArgoLink's per-second prices) |
+| | ModelArk | ArgoLink | OpenRouter |
+|---|---|---|---|
+| Models | Seedance 2.0, 1.0 Pro | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini, 1.5 Pro |
+| Image models | no | yes | yes (Nano Banana: one image per request, so 1–4 run in parallel) |
+| Seed / watermark / fixed camera | yes | no (rejected upstream, so hidden) | seed only |
+| Continue from last frame | yes | no | no |
+| Progress % | no | yes | no (queued → running → done) |
+| Cost in UI | no | estimate (per-second prices) | estimate (per-token prices), then the billed cost |
 
 ## Storage
 
@@ -77,7 +93,7 @@ Cron    ──► /api/cron/sweep             every minute (worker.ts): finish u
 ```
 
 - `src/lib/models.ts`: model catalog (IDs, ratios, resolutions, durations, audio/frames/reference limits). **Edit this file to add or update models.** The UI and the server validation both read from it.
-- `src/lib/providers/`: one adapter per provider (`modelark.ts`, `argolink.ts`) behind a common `VideoProvider` interface. Statuses are normalized to `queued/running/succeeded/failed`. The ArgoLink adapter uploads local images through `/v1/media/uploads`, because ArgoLink only accepts HTTPS media.
+- `src/lib/providers/`: one adapter per provider (`modelark.ts`, `argolink.ts`, `openrouter.ts`) behind a common `VideoProvider` interface. Statuses are normalized to `queued/running/succeeded/failed`. The ArgoLink adapter uploads local images through `/v1/media/uploads`, because ArgoLink only accepts HTTPS media.
 - `src/lib/auth.ts`, `google.ts`, `keys.ts`, `crypto.ts`: Access JWT verification / Google sessions, encrypted keys.
 - `src/lib/db.ts`: the Worker env and D1 helpers. Schema: `migrations/`.
 - `src/lib/store.ts`: per-user generations. Copies finished videos into storage.

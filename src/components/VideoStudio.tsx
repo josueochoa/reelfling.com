@@ -41,7 +41,7 @@ export function VideoStudio({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
-  const provider = me?.user.activeProvider ?? null;
+  const provider = me?.workspace.activeProvider ?? null;
   const gensRef = useRef(generations);
   useEffect(() => {
     gensRef.current = generations;
@@ -163,14 +163,20 @@ export function VideoStudio({
             <div className="m-5 rounded-2xl border border-dashed border-white/15 p-6 text-center">
               <p className="font-medium">Connect a provider</p>
               <p className="mt-1 text-sm text-zinc-400">
-                Add your ArgoLink or ModelArk API key. Generations are billed to your own account.
+                {me.workspace.kind === "team"
+                  ? me.workspace.role === "member"
+                    ? "This team has no API key yet. Ask an owner or admin to add one."
+                    : "Add the team's ArgoLink, OpenRouter or ModelArk API key. Everyone in the team generates with it."
+                  : "Add your ArgoLink, OpenRouter or ModelArk API key. Generations are billed to your own account."}
               </p>
-              <button
-                onClick={onOpenKeys}
-                className="mt-4 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink"
-              >
-                Add API key
-              </button>
+              {!(me.workspace.kind === "team" && me.workspace.role === "member") && (
+                <button
+                  onClick={onOpenKeys}
+                  className="mt-4 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink"
+                >
+                  Add API key
+                </button>
+              )}
             </div>
           )
         )}
@@ -217,6 +223,7 @@ export function VideoStudio({
                     onOpen={() => setOpen(g)}
                     onReuse={() => reuse(g)}
                     onDelete={() => remove(g)}
+                    showCreator={me?.workspace.kind === "team"}
                   />
                 ))}
               </div>

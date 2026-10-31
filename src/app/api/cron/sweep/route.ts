@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   for (let i = 0; i < pending.length; i += CONCURRENCY) {
     await Promise.all(
       pending.slice(i, i + CONCURRENCY).map((g) =>
-        syncGeneration(g.user_id, g.id).catch((e) => {
+        syncGeneration(g.workspace_id, g.id).catch((e) => {
           failed++;
           console.error(`[sweep ${g.id}]`, e);
         }),

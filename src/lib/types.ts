@@ -1,4 +1,5 @@
 import type { ProviderId, Ratio, Resolution } from "./models";
+import type { Creator } from "./uploads";
 
 export type GenerationMode = "frames" | "references";
 
@@ -48,10 +49,16 @@ export interface Generation {
   remoteVideoUrl?: string;
   /** Set once the video has been copied into the user's storage (see storage.ts). */
   stored?: boolean;
+  /** User who started it (from its own column). */
+  createdBy?: string | null;
+  /** Their profile, on lists (team workspaces show who made what). */
+  creator?: Creator;
   lastFrameUrl?: string;
   error?: string;
   tokens?: number;
   billedSeconds?: number;
+  /** USD the provider billed, when it reports it (OpenRouter). */
+  cost?: number;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;

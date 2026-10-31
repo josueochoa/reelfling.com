@@ -8,10 +8,12 @@ import {
   IMAGE_MODELS,
   ratioAllowed,
   type ImageModelSpec,
+  type ImageProviderId,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/imageModels";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
+import { PROVIDER_INFO } from "@/lib/models";
 import { Dropdown } from "./Dropdown";
 import { thumbSrc, type LibraryItem } from "./library";
 import { UploadOverlay } from "./MediaBlocks";
@@ -48,7 +50,7 @@ export function ImageComposer({
   onGenerate,
   submitting,
   error,
-  needsKey,
+  provider,
   onOpenKeys,
 }: {
   state: ComposerState;
@@ -61,14 +63,15 @@ export function ImageComposer({
   onGenerate: () => void;
   submitting: boolean;
   error: string | null;
-  /** No ArgoLink key yet: image models run through ArgoLink. */
-  needsKey: boolean;
+  /** Whose key image jobs run on; undefined until the workspace has an ArgoLink or OpenRouter key. */
+  provider: ImageProviderId | undefined;
   onOpenKeys: () => void;
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
-  const cost = estimateImageCost(model, resolution, count);
+  const needsKey = !provider;
+  const cost = estimateImageCost(model, resolution, count, provider);
   const counts = { Image: references.length, Video: 0, Audio: 0 };
   const bad = invalidMentions(prompt, counts);
   const uploading = references.some((r) => r.status !== "ready");
@@ -90,7 +93,7 @@ export function ImageComposer({
       {needsKey && (
         <div className="mb-3 flex items-center gap-3 rounded-2xl bg-accent/10 px-4 py-2.5 text-sm">
           <span className="flex-1 text-zinc-200">
-            Image models run through ArgoLink. Add your ArgoLink API key to start.
+            Image models run through ArgoLink or OpenRouter. Add one of their API keys to start.
           </span>
           <button onClick={onOpenKeys} className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-ink">
             Add key
@@ -213,7 +216,7 @@ export function ImageComposer({
               options={model.resolutions.map((r) => ({
                 value: r,
                 label: r.toUpperCase(),
-                hint: `$${model.price[r]} per image`,
+                hint: `${provider === "openrouter" ? "~" : ""}$${model.price[provider ?? "argolink"][r]} per image`,
               }))}
               onChange={(r) => onChange({ resolution: r, ratio: ratioAllowed(model, ratio, r) ? ratio : "auto" })}
             />
@@ -256,7 +259,9 @@ export function ImageComposer({
           className="flex w-32 shrink-0 flex-col items-center justify-center rounded-2xl bg-accent text-ink shadow-lg shadow-accent/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <span className="text-sm font-bold tracking-wide uppercase">{submitting ? "Starting…" : "Generate"}</span>
-          <span className="text-xs opacity-70">~${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>
+          <span className="text-xs opacity-70" title={provider && `Billed by ${PROVIDER_INFO[provider].label}`}>
+            ~${cost.toFixed(cost < 0.1 ? 3 : 2)}
+          </span>
         </button>
       </div>
 

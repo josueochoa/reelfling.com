@@ -13,6 +13,8 @@ export interface TaskSnapshot {
   progress?: number;
   tokens?: number;
   billedSeconds?: number;
+  /** USD billed, once known. */
+  cost?: number;
 }
 
 /** A provider client bound to one user's credentials. */

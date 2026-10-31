@@ -1,15 +1,17 @@
 "use client";
 
-// The app shell: top bar with the Video / Image / Assets tabs, the account, API keys and
-// the assets library (shared by all tabs). Tabs stay mounted, so switching keeps prompts
-// and in-flight polling.
+// The app shell: top bar with the workspace switcher, the Video / Image / Assets tabs and
+// the account. Everything below it belongs to one workspace (Personal or a team) and is
+// remounted when the workspace changes. Tabs stay mounted, so switching tabs keeps
+// prompts and in-flight polling.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { apiJson, type Me } from "./api";
+import { apiJson, setWorkspace, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
 import { useLibrary, type LibraryItem } from "./library";
+import { InvitesBanner, TeamDialog, WorkspaceSwitcher } from "./Teams";
 import { UserMenu } from "./UserMenu";
 import { VideoStudio, type StudioTabHandle } from "./VideoStudio";
 
@@ -27,29 +29,37 @@ export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
-  const library = useLibrary();
-  const video = useRef<StudioTabHandle>(null);
-  const image = useRef<StudioTabHandle>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
 
-  const loadMe = useCallback(() => apiJson<Me>("/api/me").then(setMe), []);
+  // The server falls back to Personal if the remembered workspace is gone; follow it.
+  const loadMe = useCallback(
+    () =>
+      apiJson<Me>("/api/me").then((m) => {
+        setWorkspace(m.workspace.id);
+        setMe(m);
+      }),
+    [],
+  );
   useEffect(() => {
     loadMe();
   }, [loadMe]);
 
-  const openKeys = () => setKeysOpen(true);
-  /** From Assets: jump to a tab and attach the asset as a reference there. */
-  function sendTo(tab: "video" | "image", item: LibraryItem) {
-    window.location.hash = tab;
-    (tab === "video" ? video : image).current?.addReference(item);
+  function switchTo(id: string) {
+    setWorkspace(id);
+    setTeamOpen(false);
+    void loadMe();
   }
+
+  const openKeys = () => setKeysOpen(true);
 
   return (
     <div className="flex h-dvh flex-col bg-ink text-zinc-100">
-      <header className="flex h-14 shrink-0 items-center gap-6 border-b border-white/5 bg-panel px-5">
+      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-white/5 bg-panel px-5">
         <div className="flex items-center gap-2">
           <div className="grid size-7 place-items-center rounded-lg bg-accent font-black text-ink">R</div>
           <span className="font-semibold tracking-tight">ReelFling</span>
         </div>
+        {me && <WorkspaceSwitcher me={me} onSwitch={switchTo} onOpenTeam={() => setTeamOpen(true)} />}
         <nav className="flex gap-1 text-sm">
           {TABS.map((t) => (
             <a
@@ -66,11 +76,47 @@ export function Studio() {
         <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
       </header>
 
+      {me && me.invites.length > 0 && <InvitesBanner invites={me.invites} onJoined={switchTo} onChanged={loadMe} />}
+
+      {me && <WorkspaceView key={me.workspace.id} me={me} tab={tab} onOpenKeys={openKeys} onChanged={loadMe} />}
+
+      {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={loadMe} />}
+      {teamOpen && me && me.workspace.kind === "team" && (
+        <TeamDialog me={me} onClose={() => setTeamOpen(false)} onChanged={loadMe} onLeft={() => switchTo(me.user.id)} />
+      )}
+    </div>
+  );
+}
+
+/** One workspace's tabs and assets library. */
+function WorkspaceView({
+  me,
+  tab,
+  onOpenKeys,
+  onChanged,
+}: {
+  me: Me;
+  tab: Tab;
+  onOpenKeys: () => void;
+  onChanged: () => Promise<void>;
+}) {
+  const library = useLibrary();
+  const video = useRef<StudioTabHandle>(null);
+  const image = useRef<StudioTabHandle>(null);
+
+  /** From Assets: jump to a tab and attach the asset as a reference there. */
+  function sendTo(target: "video" | "image", item: LibraryItem) {
+    window.location.hash = target;
+    (target === "video" ? video : image).current?.addReference(item);
+  }
+
+  return (
+    <>
       <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
-        <VideoStudio ref={video} me={me} library={library} onOpenKeys={openKeys} />
+        <VideoStudio ref={video} me={me} library={library} onOpenKeys={onOpenKeys} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
-        <ImageStudio ref={image} me={me} library={library} onOpenKeys={openKeys} />
+        <ImageStudio ref={image} me={me} library={library} onOpenKeys={onOpenKeys} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio
@@ -82,12 +128,10 @@ export function Studio() {
           onDeleted={() => {
             video.current?.reload();
             image.current?.reload();
-            void loadMe();
+            void onChanged();
           }}
         />
       </div>
-
-      {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={loadMe} />}
-    </div>
+    </>
   );
 }

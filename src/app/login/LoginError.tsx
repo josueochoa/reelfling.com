@@ -9,6 +9,7 @@ const MESSAGES: Record<string, string> = {
   state_mismatch: "Sign-in couldn't be verified. Please try again.",
   unverified_email: "Your Google email address isn't verified.",
   google_error: "Google sign-in failed. Please try again.",
+  not_invited: "ReelFling is invite-only. Ask a team admin to invite your email address.",
 };
 
 export function LoginError() {

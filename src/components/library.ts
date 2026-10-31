@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assetFileUrl, UPLOAD_RULES, uploadKindOf, type AssetItem, type UploadKind } from "@/lib/uploads";
-import { apiJson } from "./api";
+import { apiJson, withWorkspace } from "./api";
 
 export interface LibraryItem extends Omit<AssetItem, "key"> {
   /** Stable for the item's life in this tab: the key, or a temporary id for new uploads. */
@@ -25,12 +25,13 @@ export interface LibraryItem extends Omit<AssetItem, "key"> {
 export function thumbSrc(item: LibraryItem) {
   if (item.localThumb) return item.localThumb;
   if (!item.key) return item.kind === "image" ? item.localFile : undefined;
-  if (item.hasThumb) return assetFileUrl(item.key, { thumb: true });
-  return item.kind === "image" ? assetFileUrl(item.key) : undefined;
+  if (item.hasThumb) return withWorkspace(assetFileUrl(item.key, { thumb: true }));
+  return item.kind === "image" ? withWorkspace(assetFileUrl(item.key)) : undefined;
 }
 
 /** The playable file, for audio and video. */
-export const fileSrc = (item: LibraryItem) => item.localFile ?? (item.key ? assetFileUrl(item.key) : undefined);
+export const fileSrc = (item: LibraryItem) =>
+  item.localFile ?? (item.key ? withWorkspace(assetFileUrl(item.key)) : undefined);
 
 // ---------------------------------------------------------------- preparing files
 
@@ -363,7 +364,8 @@ export function useLibrary(): Library {
         body: JSON.stringify({ key }),
       });
       if (r.done) return patch(item.id, { hasThumb: true });
-      const blob = r.uploadUrl && (await thumbFromUrl(assetFileUrl(key), item.kind as "image" | "video"));
+      const blob =
+        r.uploadUrl && (await thumbFromUrl(withWorkspace(assetFileUrl(key)), item.kind as "image" | "video"));
       if (!blob) return;
       const put = await fetch(r.uploadUrl!, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
       if (!put.ok) return;

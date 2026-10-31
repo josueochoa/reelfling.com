@@ -1,16 +1,17 @@
-import { errorResponse, requireUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { getModel, type ModelSpec } from "@/lib/models";
-import { providerForUser } from "@/lib/providers";
+import { providerForWorkspace } from "@/lib/providers";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
+import { requireWorkspace } from "@/lib/workspaces";
 import type { GenerateRequest, Generation } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const user = await requireUser();
-    return Response.json(await listGenerations(user.id));
+    const { workspace } = await requireWorkspace(request);
+    return Response.json(await listGenerations(workspace.id));
   } catch (e) {
     return errorResponse(e);
   }
@@ -52,13 +53,13 @@ function validate(req: GenerateRequest, model: ModelSpec): string | null {
  * Swaps `upload:<key>` references (uploads or generated assets) for links the provider can
  * download, checking each is a file of the right kind.
  */
-async function resolveUploads(userId: string, items: string[] | undefined, kind: UploadKind) {
+async function resolveUploads(workspaceId: string, items: string[] | undefined, kind: UploadKind) {
   if (!items) return undefined;
   return Promise.all(
     items.map(async (v) => {
       if (!isUploadRef(v)) return v;
       const key = uploadKeyOf(v);
-      const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
+      const asset = isAssetKey(key) ? await getAsset(workspaceId, key) : undefined;
       const assetKind =
         asset && (uploadKindOf(asset.contentType) ?? (asset.contentType.startsWith("image/") && "image"));
       if (!asset || assetKind !== kind)
@@ -72,10 +73,11 @@ async function resolveUploads(userId: string, items: string[] | undefined, kind:
 
 export async function POST(request: Request) {
   try {
-    const user = await requireUser();
-    const providerId = user.activeProvider;
-    if (!providerId) return Response.json({ error: "Add an API key in Settings to start generating" }, { status: 400 });
-    const provider = await providerForUser(user.id, providerId);
+    const { user, workspace } = await requireWorkspace(request);
+    const providerId = workspace.activeProvider;
+    if (!providerId)
+      return Response.json({ error: "Add an API key under API keys to start generating" }, { status: 400 });
+    const provider = await providerForWorkspace(workspace.id, providerId);
 
     const req = (await request.json()) as GenerateRequest;
     const model = getModel(req.model);
@@ -84,7 +86,7 @@ export async function POST(request: Request) {
     const invalid = validate(req, model);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
-    await assertStorageAvailable(user.id);
+    await assertStorageAvailable(workspace.id);
 
     // Drop params the provider would reject.
     if (!model.audio) delete req.generateAudio;
@@ -93,9 +95,9 @@ export async function POST(request: Request) {
     if (!model.features.cameraFixed) delete req.cameraFixed;
 
     const [referenceImages, referenceVideos, referenceAudios] = await Promise.all([
-      resolveUploads(user.id, req.referenceImages, "image"),
-      resolveUploads(user.id, req.referenceVideos, "video"),
-      resolveUploads(user.id, req.referenceAudios, "audio"),
+      resolveUploads(workspace.id, req.referenceImages, "image"),
+      resolveUploads(workspace.id, req.referenceVideos, "video"),
+      resolveUploads(workspace.id, req.referenceAudios, "audio"),
     ]);
 
     // Prompts are stored as written ("@Image 2"); the provider gets its own syntax.
@@ -131,7 +133,7 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     };
-    await insertGeneration(user.id, gen);
+    await insertGeneration(workspace.id, gen, user.id);
     return Response.json(gen, { status: 201 });
   } catch (e) {
     return errorResponse(e);

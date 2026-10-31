@@ -43,6 +43,10 @@
     "ACCESS_AUD": "eccac565bac5751109918539fd189d9cceeb3c34b67e80edc3b4b4dbc060770b",
     "R2_ACCOUNT_ID": "fca019314f738e7878872679ea3604c6",
     "R2_BUCKET_PREFIX": "reelfling",
-    "STORAGE_QUOTA_GB": "2"
+    // Per user; teams get this × their member count.
+    "STORAGE_QUOTA_GB": "2",
+    // "false": anyone the Cloudflare Access policy lets in gets an account (Access is the
+    // gate). "true": new accounts also need a team invite.
+    "INVITE_ONLY": "false"
   }
 }
