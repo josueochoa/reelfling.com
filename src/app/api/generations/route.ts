@@ -130,7 +130,7 @@ export async function POST(request: Request) {
         ]);
 
     // Prompts are stored as written ("@Image 2"); the provider gets its own syntax and model id.
-    // Adapters read the fields they know; referenceOrder is only stored on the record below.
+    // referenceOrder is only stored on the record below.
     const { taskId } = await provider.createTask({
       ...req,
       model: route.endpoint,
