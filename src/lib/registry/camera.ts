@@ -6,29 +6,9 @@ import type { GenerateRequest } from "../types";
 import type { VideoModel, VideoTask } from "./types";
 import presetsFile from "./camera-presets.json" with { type: "json" };
 
-/** Verified fal enum for `free_camera_preset` on minimax/h3-max/camera-controls (Nov 2026 OpenAPI). */
-export const FREE_CAMERA_PRESETS = [
-  "truck_right",
-  "truck_left",
-  "pedestal_up",
-  "pedestal_down",
-  "dolly_in",
-  "dolly_out",
-  "pan_right",
-  "pan_left",
-  "tilt_up",
-  "tilt_down",
-  "roll_right",
-  "roll_left",
-  "s_curve_forward",
-] as const;
-
-const NATIVE_PARAMS = ["camera_fixed", "free_camera_preset"] as const;
-type NativeParam = (typeof NATIVE_PARAMS)[number];
-
 interface NativeMapping {
-  param: NativeParam;
-  value: string | boolean;
+  param: "camera_fixed";
+  value: boolean;
 }
 
 export interface CameraPreset {
@@ -48,19 +28,14 @@ interface PresetFile {
 function checked(file: PresetFile): PresetFile {
   if (!Number.isInteger(file.max) || file.max < 1) throw new Error("Camera presets need a max");
   const ids = new Set<string>();
-  const free = new Set<string>(FREE_CAMERA_PRESETS);
   for (const preset of file.presets) {
     if (!preset.id || ids.has(preset.id)) throw new Error(`Bad camera preset id "${preset.id}"`);
     ids.add(preset.id);
     if (!preset.name || !preset.description || !preset.category) throw new Error(`${preset.id} is missing a label`);
     if (!preset.prompts?.default) throw new Error(`${preset.id} needs a default prompt`);
     for (const native of preset.native ?? []) {
-      if (!(NATIVE_PARAMS as readonly string[]).includes(native.param))
-        throw new Error(`${preset.id} maps unknown camera parameter "${native.param}"`);
-      if (native.param === "camera_fixed" && typeof native.value !== "boolean")
-        throw new Error(`${preset.id} camera_fixed value must be boolean`);
-      if (native.param === "free_camera_preset" && !free.has(String(native.value)))
-        throw new Error(`${preset.id} free_camera_preset value is not in the fal enum`);
+      if (native.param !== "camera_fixed" || typeof native.value !== "boolean")
+        throw new Error(`${preset.id} native mapping must be the camera_fixed boolean`);
     }
   }
   return file;
@@ -153,29 +128,15 @@ export interface CompiledCamera {
   prompt: string;
   /** Set when a chip maps onto BytePlus `camera_fixed`. */
   cameraFixed?: boolean;
-  /**
-   * Set when a chip maps onto fal `free_camera_preset`. No studio model accepts
-   * it until that endpoint is in the registry.
-   */
-  freeCameraPreset?: string;
   applied: string[];
 }
 
-/** Provider fields a compiled request should set. Text chips are already in `prompt`. */
-export function providerCameraFields(compiled: CompiledCamera): { camera_fixed?: true; free_camera_preset?: string } {
-  return {
-    ...(compiled.cameraFixed ? { camera_fixed: true as const } : {}),
-    ...(compiled.freeCameraPreset ? { free_camera_preset: compiled.freeCameraPreset } : {}),
-  };
-}
-
-/** Chips in order. A native mapping for a parameter this model accepts replaces that chip's text. */
+/** Chips in order. Only a wired `camera_fixed` mapping replaces that chip's text. */
 export function compileCamera(model: VideoModel, prompt: string, moves: readonly string[]): CompiledCamera {
   const allowed = new Set(cameraMovesFor(model));
-  const params = acceptedParams(model);
+  const fixed = acceptedParams(model).has("camera_fixed");
   let text = prompt;
   let cameraFixed: boolean | undefined;
-  let freeCameraPreset: string | undefined;
   const applied: string[] = [];
   for (const id of moves) {
     if (applied.length >= CAMERA_MOVE_MAX) break;
@@ -183,23 +144,14 @@ export function compileCamera(model: VideoModel, prompt: string, moves: readonly
     const preset = byId.get(id);
     if (!preset || applied.includes(id)) continue;
     applied.push(id);
-    const native = (preset.native ?? []).find((entry) => params.has(entry.param));
-    if (native?.param === "camera_fixed" && native.value === true) {
+    const lock = fixed && (preset.native ?? []).find((entry) => entry.param === "camera_fixed" && entry.value === true);
+    if (lock) {
       cameraFixed = true;
-      continue;
-    }
-    if (native?.param === "free_camera_preset" && typeof native.value === "string") {
-      freeCameraPreset = native.value;
       continue;
     }
     text = appendFragment(text, fragment(preset, model.family));
   }
-  return {
-    prompt: text.trim(),
-    ...(cameraFixed ? { cameraFixed } : {}),
-    ...(freeCameraPreset ? { freeCameraPreset } : {}),
-    applied,
-  };
+  return { prompt: text.trim(), ...(cameraFixed ? { cameraFixed } : {}), applied };
 }
 
 function requestedMoves(req: GenerateRequest): string[] {

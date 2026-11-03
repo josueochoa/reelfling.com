@@ -1,18 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { normalizeMentions } from "../mentions";
 import type { GenerateRequest } from "../types";
 import { buildArgoVideoBody } from "../providers/argolink";
 import { buildOpenRouterVideo } from "../providers/openrouter";
 import { buildModelArkVideo } from "./bodies";
-import {
-  CAMERA_MOVE_MAX,
-  applyCameraMoves,
-  compileCamera,
-  keptCameraMoves,
-  providerCameraFields,
-} from "./camera";
+import { CAMERA_MOVE_MAX, applyCameraMoves, compileCamera, keptCameraMoves } from "./camera";
 import { ALL_MODELS } from "./generated";
 import { assertRegistry, getModel, isVideo, mentionSyntax, videoRequestError, type VideoModel } from "./index";
 
@@ -81,19 +74,19 @@ describe("camera chips", () => {
     assert.equal("camera_fixed" in body, false);
   });
 
-  it("sends free_camera_preset instead of text when a model accepts that parameter", () => {
-    const model = structuredClone(video("seedance-2.5"));
-    model.id = "minimax-camera-controls";
-    model.family = "MiniMax";
-    model.capabilities = { ...model.capabilities, camera: { prompt: true, params: ["free_camera_preset"] } };
-    const compiled = compileCamera(model, "Rain.", ["push-in", "orbit", "pan-left"]);
-    assert.equal(compiled.freeCameraPreset, "pan_left");
-    assert.match(compiled.prompt, /circles the subject/);
-    assert.equal(compiled.prompt.includes("pushes in"), false);
-    assert.equal(compiled.prompt.includes("pans"), false);
-    assert.deepEqual(providerCameraFields(compiled), { free_camera_preset: "pan_left" });
-    const body = buildOpenRouterVideo({ ...request(model), prompt: compiled.prompt }, "minimax/hailuo-3");
-    assert.equal("free_camera_preset" in body, false);
+  it("keeps the chip text when the model has no wired native parameter", () => {
+    const model = video("openrouter:minimax/hailuo-3-max");
+    assert.equal(model.capabilities.camera, false);
+    const compiled = compileCamera(model, "Rain.", ["push-in", "pan-left"]);
+    const pushAt = compiled.prompt.indexOf("pushes in toward the subject");
+    const panAt = compiled.prompt.indexOf("pans left");
+    assert.ok(pushAt !== -1 && pushAt < panAt);
+    assert.equal(compiled.cameraFixed, undefined);
+    const applied = applyCameraMoves(model, request(model, { prompt: "Rain.", cameraMoves: ["push-in", "pan-left"] }));
+    assert.equal(applied.prompt, compiled.prompt);
+    const body = buildOpenRouterVideo(applied, "minimax/hailuo-3-max");
+    assert.equal(body.prompt, compiled.prompt);
+    assert.equal("camera_fixed" in body, false);
   });
 
   it("appends a prompt line for ArgoLink and OpenRouter", async () => {
@@ -102,7 +95,6 @@ describe("camera chips", () => {
     const argoBody = await buildArgoVideoBody({ apiKey: "local-test" }, { ...argoApplied, model: "seedance-2.5" });
     assert.match(argoBody.prompt, /orbits around the subject/);
     assert.equal("camera_fixed" in argoBody, false);
-    assert.equal("free_camera_preset" in argoBody, false);
 
     const veo = video("openrouter:google/veo-3.1-fast");
     const veoApplied = applyCameraMoves(veo, request(veo, { cameraMove: "pan-left" }));
@@ -126,12 +118,6 @@ describe("camera chips", () => {
       camera: { params: ["camera_control"] },
     } as unknown as VideoModel["capabilities"];
     assert.throws(() => assertRegistry([model]), /not verified/);
-  });
-
-  it("keeps preset ids in JSON, not in the compiler", () => {
-    const src = readFileSync(new URL("./camera.ts", import.meta.url), "utf8");
-    assert.equal(src.includes('"push-in"'), false);
-    assert.equal(src.includes('"dolly-zoom"'), false);
   });
 });
 

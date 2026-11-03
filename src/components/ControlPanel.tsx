@@ -390,27 +390,17 @@ export function ControlPanel({
   const refValues = (kind: UploadKind) =>
     refList.filter((r) => r.item.kind === kind).map((r) => `upload:${r.item.key}`);
 
-  function addCamera(id: string) {
+  function changeCamera(id: string, toggle: boolean) {
     if (!moves.includes(id)) return;
-    setCameraMoves((cur) => {
-      if (cur.includes(id)) return cur;
-      if (cur.length >= CAMERA_MOVE_MAX) {
-        setNotice(`Up to ${CAMERA_MOVE_MAX} camera moves.`);
-        return cur;
-      }
-      return [...cur, id];
-    });
-  }
-
-  function toggleCamera(id: string) {
-    setCameraMoves((cur) => {
-      if (cur.includes(id)) return cur.filter((move) => move !== id);
-      if (cur.length >= CAMERA_MOVE_MAX) {
-        setNotice(`Up to ${CAMERA_MOVE_MAX} camera moves.`);
-        return cur;
-      }
-      return [...cur, id];
-    });
+    if (cameraMoves.includes(id)) {
+      if (toggle) setCameraMoves(cameraMoves.filter((move) => move !== id));
+      return;
+    }
+    if (cameraMoves.length >= CAMERA_MOVE_MAX) {
+      setNotice(`Up to ${CAMERA_MOVE_MAX} camera moves.`);
+      return;
+    }
+    setCameraMoves([...cameraMoves, id]);
   }
 
   const compiled = moves.length ? compileCamera(model, prompt, cameraMoves) : undefined;
@@ -541,7 +531,7 @@ export function ControlPanel({
                     }))
                 : undefined
             }
-            onAddCamera={addCamera}
+            onAddCamera={(id) => changeCamera(id, false)}
           />
           {cameraMoves.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -581,7 +571,7 @@ export function ControlPanel({
 
         {moves.length > 0 && (
           <Section label="Camera" aside={cameraMoves.length ? `${cameraMoves.length}/${CAMERA_MOVE_MAX}` : "Type #"}>
-            <CameraMoves value={cameraMoves} onToggle={toggleCamera} />
+            <CameraMoves value={cameraMoves} onToggle={(id) => changeCamera(id, true)} />
           </Section>
         )}
 

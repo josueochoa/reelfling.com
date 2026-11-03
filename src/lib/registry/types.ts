@@ -118,7 +118,7 @@ export interface DurationCap {
 export type PromptExpansion = false | "native" | "optional";
 
 /** Provider fields a preset's native mapping may fill. Values live in camera-presets.json. */
-export const NATIVE_CAMERA_PARAMS = ["camera_fixed", "free_camera_preset"] as const;
+export const NATIVE_CAMERA_PARAMS = ["camera_fixed"] as const;
 export type NativeCameraParam = (typeof NATIVE_CAMERA_PARAMS)[number];
 
 export interface CameraCapabilities {

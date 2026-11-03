@@ -376,13 +376,10 @@ export function falModel(spec, raw, unit) {
   const resolutions = resolutionsFrom(props);
   const ratios = ratiosFrom(props);
   const promptExpansion = hasKey(props, /prompt_expansion|prompt_optimizer|enhance_prompt/) ? "optional" : false;
-  // Values for these fields live in camera-presets.json. A property whose name
-  // merely contains "camera" is left off until its schema is checked.
-  const params = [];
-  if (hasKey(props, /^camera_fixed$/)) params.push("camera_fixed");
-  if (hasKey(props, /^free_camera_preset$/)) params.push("free_camera_preset");
-  const camera = params.length
-    ? { ...(params.includes("camera_fixed") ? { fixed: true } : {}), prompt: true, params }
+  // Only `camera_fixed` is wired through to a provider body. Other camera-like
+  // fields stay off until a builder actually sends them.
+  const camera = hasKey(props, /^camera_fixed$/)
+    ? { fixed: true, prompt: true, params: ["camera_fixed"] }
     : false;
   const price = priceFromUnit(unit?.unit_price, unit?.unit);
   const display = (meta.display_name || spec.endpoint).trim();

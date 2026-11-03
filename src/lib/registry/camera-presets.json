@@ -30,8 +30,7 @@
         "Google": "The camera dollies forward toward the subject.",
         "MiniMax": "The camera pushes in toward the subject.",
         "Alibaba": "The camera moves closer to the subject."
-      },
-      "native": [{ "param": "free_camera_preset", "value": "dolly_in" }]
+      }
     },
     {
       "id": "pull-out",
@@ -46,8 +45,7 @@
         "Google": "The camera dollies backward, opening up the scene.",
         "MiniMax": "The camera pulls back from the subject.",
         "Alibaba": "The camera retreats, showing more of the scene."
-      },
-      "native": [{ "param": "free_camera_preset", "value": "dolly_out" }]
+      }
     },
     {
       "id": "pan-left",
@@ -62,8 +60,7 @@
         "Google": "The camera pans left across the scene.",
         "MiniMax": "The camera pans left.",
         "Alibaba": "The camera turns smoothly to the left."
-      },
-      "native": [{ "param": "free_camera_preset", "value": "pan_left" }]
+      }
     },
     {
       "id": "pan-right",
@@ -78,8 +75,7 @@
         "Google": "The camera pans right across the scene.",
         "MiniMax": "The camera pans right.",
         "Alibaba": "The camera turns smoothly to the right."
-      },
-      "native": [{ "param": "free_camera_preset", "value": "pan_right" }]
+      }
     },
     {
       "id": "tilt-up",
@@ -94,8 +90,7 @@
         "Google": "The camera tilts upward.",
         "MiniMax": "The camera tilts up.",
         "Alibaba": "The camera angles upward."
-      },
-      "native": [{ "param": "free_camera_preset", "value": "tilt_up" }]
+      }
     },
     {
       "id": "tilt-down",
@@ -110,8 +105,7 @@
         "Google": "The camera tilts downward.",
         "MiniMax": "The camera tilts down.",
         "Alibaba": "The camera angles downward."
-      },
-      "native": [{ "param": "free_camera_preset", "value": "tilt_down" }]
+      }
     },
     {
       "id": "orbit",
