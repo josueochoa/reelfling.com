@@ -1,0 +1,177 @@
+{
+  "max": 3,
+  "presets": [
+    {
+      "id": "static",
+      "name": "Static",
+      "description": "Hold the camera still.",
+      "category": "Lock",
+      "prompts": {
+        "default": "The camera is locked off and does not pan, tilt, zoom, or drift.",
+        "Seedance": "The camera stays locked off, with no pan, tilt, or zoom.",
+        "ByteDance": "The camera stays locked off, with no pan, tilt, or zoom.",
+        "Kling": "The camera is locked, with no movement.",
+        "Google": "The shot is static and the camera stays fixed.",
+        "MiniMax": "The camera holds still.",
+        "Alibaba": "A locked-off camera, completely still."
+      },
+      "native": [{ "param": "camera_fixed", "value": true }]
+    },
+    {
+      "id": "push-in",
+      "name": "Push in",
+      "description": "Move closer to the subject.",
+      "category": "Dolly",
+      "prompts": {
+        "default": "The camera slowly pushes in toward the subject.",
+        "Seedance": "The camera slowly pushes in toward the subject.",
+        "ByteDance": "The camera slowly pushes in toward the subject.",
+        "Kling": "Slow push in on the subject.",
+        "Google": "The camera dollies forward toward the subject.",
+        "MiniMax": "The camera pushes in toward the subject.",
+        "Alibaba": "The camera moves closer to the subject."
+      },
+      "native": [{ "param": "free_camera_preset", "value": "dolly_in" }]
+    },
+    {
+      "id": "pull-out",
+      "name": "Pull out",
+      "description": "Move back and reveal more of the scene.",
+      "category": "Dolly",
+      "prompts": {
+        "default": "The camera slowly pulls back, revealing more of the scene.",
+        "Seedance": "The camera slowly pulls back, revealing more of the scene.",
+        "ByteDance": "The camera slowly pulls back, revealing more of the scene.",
+        "Kling": "Slow pull back, revealing more of the scene.",
+        "Google": "The camera dollies backward, opening up the scene.",
+        "MiniMax": "The camera pulls back from the subject.",
+        "Alibaba": "The camera retreats, showing more of the scene."
+      },
+      "native": [{ "param": "free_camera_preset", "value": "dolly_out" }]
+    },
+    {
+      "id": "pan-left",
+      "name": "Pan left",
+      "description": "Turn the camera to the left.",
+      "category": "Pan",
+      "prompts": {
+        "default": "The camera pans smoothly to the left.",
+        "Seedance": "The camera pans smoothly to the left.",
+        "ByteDance": "The camera pans smoothly to the left.",
+        "Kling": "Smooth pan to the left.",
+        "Google": "The camera pans left across the scene.",
+        "MiniMax": "The camera pans left.",
+        "Alibaba": "The camera turns smoothly to the left."
+      },
+      "native": [{ "param": "free_camera_preset", "value": "pan_left" }]
+    },
+    {
+      "id": "pan-right",
+      "name": "Pan right",
+      "description": "Turn the camera to the right.",
+      "category": "Pan",
+      "prompts": {
+        "default": "The camera pans smoothly to the right.",
+        "Seedance": "The camera pans smoothly to the right.",
+        "ByteDance": "The camera pans smoothly to the right.",
+        "Kling": "Smooth pan to the right.",
+        "Google": "The camera pans right across the scene.",
+        "MiniMax": "The camera pans right.",
+        "Alibaba": "The camera turns smoothly to the right."
+      },
+      "native": [{ "param": "free_camera_preset", "value": "pan_right" }]
+    },
+    {
+      "id": "tilt-up",
+      "name": "Tilt up",
+      "description": "Tip the camera upward.",
+      "category": "Tilt",
+      "prompts": {
+        "default": "The camera tilts up.",
+        "Seedance": "The camera tilts up.",
+        "ByteDance": "The camera tilts up.",
+        "Kling": "Tilt up.",
+        "Google": "The camera tilts upward.",
+        "MiniMax": "The camera tilts up.",
+        "Alibaba": "The camera angles upward."
+      },
+      "native": [{ "param": "free_camera_preset", "value": "tilt_up" }]
+    },
+    {
+      "id": "tilt-down",
+      "name": "Tilt down",
+      "description": "Tip the camera downward.",
+      "category": "Tilt",
+      "prompts": {
+        "default": "The camera tilts down.",
+        "Seedance": "The camera tilts down.",
+        "ByteDance": "The camera tilts down.",
+        "Kling": "Tilt down.",
+        "Google": "The camera tilts downward.",
+        "MiniMax": "The camera tilts down.",
+        "Alibaba": "The camera angles downward."
+      },
+      "native": [{ "param": "free_camera_preset", "value": "tilt_down" }]
+    },
+    {
+      "id": "orbit",
+      "name": "Orbit",
+      "description": "Circle around the subject.",
+      "category": "Path",
+      "prompts": {
+        "default": "The camera orbits around the subject.",
+        "Seedance": "The camera orbits around the subject.",
+        "ByteDance": "The camera orbits around the subject.",
+        "Kling": "Orbit around the subject.",
+        "Google": "The camera arcs around the subject.",
+        "MiniMax": "The camera circles the subject.",
+        "Alibaba": "The camera travels in an arc around the subject."
+      }
+    },
+    {
+      "id": "crane-up",
+      "name": "Crane up",
+      "description": "Rise while keeping the subject in frame.",
+      "category": "Tilt",
+      "prompts": {
+        "default": "The camera cranes upward, rising while keeping the subject in frame.",
+        "Seedance": "The camera cranes upward, rising while keeping the subject in frame.",
+        "ByteDance": "The camera cranes upward, rising while keeping the subject in frame.",
+        "Kling": "Crane up, keeping the subject in frame.",
+        "Google": "The camera rises, keeping the subject in frame.",
+        "MiniMax": "The camera rises above the subject.",
+        "Alibaba": "The camera lifts upward over the subject."
+      }
+    },
+    {
+      "id": "handheld",
+      "name": "Handheld",
+      "description": "A light, natural sway.",
+      "category": "Path",
+      "prompts": {
+        "default": "The camera is handheld, with a light natural sway.",
+        "Seedance": "The camera is handheld, with a light natural sway.",
+        "ByteDance": "The camera is handheld, with a light natural sway.",
+        "Kling": "Handheld camera with a light sway.",
+        "Google": "A handheld camera with gentle natural movement.",
+        "MiniMax": "The camera has a light handheld sway.",
+        "Alibaba": "Handheld, with a small natural wobble."
+      }
+    },
+    {
+      "id": "dolly-zoom",
+      "name": "Dolly zoom",
+      "description": "Move in while zooming out, so the background stretches.",
+      "category": "Dolly",
+      "prompts": {
+        "default": "The camera dollies in while the lens zooms out, so the subject stays the same size and the background stretches.",
+        "Seedance": "The camera dollies in while the lens zooms out, so the subject stays the same size and the background stretches.",
+        "ByteDance": "The camera dollies in while the lens zooms out, so the subject stays the same size and the background stretches.",
+        "Kling": "Dolly zoom: move in and zoom out, stretching the background.",
+        "Google": "Dolly in and zoom out together, stretching the background.",
+        "MiniMax": "The camera moves in as the lens zooms out.",
+        "Alibaba": "A dolly zoom that stretches the background behind the subject."
+      }
+    }
+  ]
+}

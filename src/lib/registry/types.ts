@@ -117,30 +117,9 @@ export interface DurationCap {
 /** false = no expander, native = the model expands prompts itself, optional = the user can toggle it. */
 export type PromptExpansion = false | "native" | "optional";
 
-/** Composer camera moves. The id is what we store; the wording stays on the server. */
-export const CAMERA_MOVE_IDS = [
-  "static",
-  "push-in",
-  "pull-out",
-  "pan-left",
-  "pan-right",
-  "tilt-up",
-  "tilt-down",
-  "orbit",
-  "crane-up",
-  "handheld",
-  "dolly-zoom",
-] as const;
-export type CameraMove = (typeof CAMERA_MOVE_IDS)[number];
-
-/**
- * A provider field a preset maps onto. `camera_fixed` is the only one checked
- * against a provider's docs (BytePlus create-task API, Seedance 1.0 Pro).
- */
-export interface NativeCameraBinding {
-  param: "camera_fixed";
-  value: boolean;
-}
+/** Provider fields a preset's native mapping may fill. Values live in camera-presets.json. */
+export const NATIVE_CAMERA_PARAMS = ["camera_fixed", "free_camera_preset"] as const;
+export type NativeCameraParam = (typeof NATIVE_CAMERA_PARAMS)[number];
 
 export interface CameraCapabilities {
   /** The model accepts the locked-camera parameter. */
@@ -150,8 +129,8 @@ export interface CameraCapabilities {
    * `false` hides that path. Omit it and text, image, and reference tasks still get it.
    */
   prompt?: boolean;
-  /** Preset → provider field. Only bindings verified for this model. */
-  native?: Partial<Record<CameraMove, NativeCameraBinding>>;
+  /** Which verified parameters this model will take from a preset. */
+  params?: readonly NativeCameraParam[];
 }
 
 export interface VideoCapabilities {

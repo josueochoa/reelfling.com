@@ -195,11 +195,7 @@ export function openRouterModel(model) {
 export function openRouterCamera(pass) {
   const names = Array.isArray(pass) ? pass.map((name) => String(name)) : [];
   if (!names.includes("camera_fixed")) return false;
-  return {
-    fixed: true,
-    prompt: true,
-    native: { static: { param: "camera_fixed", value: true } },
-  };
+  return { fixed: true, prompt: true, params: ["camera_fixed"] };
 }
 
 function openRouterTasks(id, frames) {
@@ -380,10 +376,13 @@ export function falModel(spec, raw, unit) {
   const resolutions = resolutionsFrom(props);
   const ratios = ratiosFrom(props);
   const promptExpansion = hasKey(props, /prompt_expansion|prompt_optimizer|enhance_prompt/) ? "optional" : false;
-  // Only `camera_fixed` is a verified camera parameter. A property whose name
+  // Values for these fields live in camera-presets.json. A property whose name
   // merely contains "camera" is left off until its schema is checked.
-  const camera = hasKey(props, /^camera_fixed$/)
-    ? { fixed: true, prompt: true, native: { static: { param: "camera_fixed", value: true } } }
+  const params = [];
+  if (hasKey(props, /^camera_fixed$/)) params.push("camera_fixed");
+  if (hasKey(props, /^free_camera_preset$/)) params.push("free_camera_preset");
+  const camera = params.length
+    ? { ...(params.includes("camera_fixed") ? { fixed: true } : {}), prompt: true, params }
     : false;
   const price = priceFromUnit(unit?.unit_price, unit?.unit);
   const display = (meta.display_name || spec.endpoint).trim();
