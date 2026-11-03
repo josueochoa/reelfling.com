@@ -116,22 +116,11 @@ describe("upscale cost", () => {
     assert.equal(upscaleCost(image, { width: 5000, height: 2500, target: "2x" }), 0.05);
   });
 
-  it("prices a per-second video rate from duration and the named resolution", () => {
-    const quote = { type: "per_second" as const, byResolution: { "1080p": 0.02, "4K": 0.06 } };
-    assert.equal(upscaleCost(quote, { duration: 10, target: "1080p" }), 0.2);
-    assert.equal(upscaleCost(quote, { duration: 10, target: "4K", width: 1280, height: 720 }), 0.6);
-    assert.equal(upscaleCost(quote, { duration: 10, width: 1280, height: 720, target: "2x" }), undefined);
-    assert.equal(upscaleCost(quote, { target: "1080p" }), undefined);
-  });
-
   it("shows no video number when the published price is per frame", () => {
     assert.equal(formFor("fal:fal-ai/seedvr/upscale/video")?.quote, undefined);
     assert.equal(formFor("fal:fal-ai/flashvsr/upscale/video")?.quote, undefined);
     assert.equal(formFor("fal:topaz/upscale/video/precision")?.quote, undefined);
-    assert.equal(
-      upscaleCost(undefined, { width: 1280, height: 720, duration: 5, target: "2x" }),
-      undefined,
-    );
+    assert.equal(upscaleCost(undefined, { width: 1280, height: 720, target: "2x" }), undefined);
   });
 });
 

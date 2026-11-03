@@ -15,12 +15,7 @@ export type ToolFieldView =
 export type ToolQuote =
   | { type: "output_megapixels"; usd: number }
   | { type: "output_megapixel_block"; usd: number; block: number }
-  | { type: "per_image"; usd: number }
-  /**
-   * USD per second of output, chosen by resolution label (`1080p`, `4K`, or `*`).
-   * Video models billed per frame do not use this: that needs a frame rate we don't have.
-   */
-  | { type: "per_second"; byResolution: Readonly<Record<string, number>> };
+  | { type: "per_image"; usd: number };
 
 /** What the Tools menu is allowed to see. The endpoint id stays on the server. */
 export interface ToolView {

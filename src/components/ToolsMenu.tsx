@@ -63,7 +63,6 @@ function estimateFor(tool: ToolView, subjects: readonly ToolAsset[], target: str
     const part = upscaleCost(tool.quote, {
       width: subject.width,
       height: subject.height,
-      duration: subject.duration,
       target,
     });
     if (part === undefined) return undefined;

@@ -16,12 +16,6 @@ export function outputPixels(input: {
   return { width: input.width * factor, height: input.height * factor };
 }
 
-/** Named target the form already has. A scale factor is not turned into 1080p or 4K. */
-function namedResolution(target: string | undefined): string | undefined {
-  if (target === "1080p" || target === "4K") return target;
-  return undefined;
-}
-
 /**
  * USD from a published formula. Undefined when the formula or the file's size
  * isn't enough to compute one — callers show no number. Per-frame video prices
@@ -29,17 +23,10 @@ function namedResolution(target: string | undefined): string | undefined {
  */
 export function upscaleCost(
   quote: ToolQuote | undefined,
-  input: { width?: number; height?: number; duration?: number; target?: string },
+  input: { width?: number; height?: number; target?: string },
 ): number | undefined {
   if (!quote) return undefined;
   if (quote.type === "per_image") return quote.usd;
-  if (quote.type === "per_second") {
-    if (input.duration === undefined || !(input.duration > 0)) return undefined;
-    const label = namedResolution(input.target);
-    const rate = (label !== undefined ? quote.byResolution[label] : undefined) ?? quote.byResolution["*"];
-    if (rate === undefined) return undefined;
-    return rate * input.duration;
-  }
   const px = outputPixels(input);
   if (!px) return undefined;
   const megapixels = (px.width * px.height) / 1_000_000;
