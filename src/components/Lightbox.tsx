@@ -34,9 +34,10 @@ export function Lightbox({
   const model = lookupModel(gen.model);
   const camera = cameraMoveLabel(gen.cameraMove);
   const billed = gen.billedSeconds;
-  // billed_seconds already include reference video. Multiply them by the with-video
-  // rate instead of the output rate (53 × 0.0874 was the overcharge).
-  const hadReferenceVideo = (gen.inputs?.videos ?? 0) > 0 || (billed !== undefined && billed > gen.duration);
+  // billed_seconds already include reference video. Use the with-video rate only
+  // when this job had one. A longer bill on its own (a provider minimum) stays
+  // on the normal rate.
+  const hadReferenceVideo = gen.inputs.videos > 0;
   const cost =
     model &&
     estimateCost(model, {

@@ -130,6 +130,10 @@ describe("model registry", () => {
     });
     assert.equal(billed, 53 * 0.0523);
     assert.notEqual(billed?.toFixed(2), (53 * 0.0874).toFixed(2));
+    // No reference video. Billed seconds above the output (a provider minimum)
+    // stay on the normal rate, not the with-video rate.
+    const noReference = estimateCost(model, { resolution: "480p", duration: 50 });
+    assert.equal(noReference, 50 * 0.0874);
     // The other ArgoLink Seedance routes publish their own with-video rates.
     const others = [
       ["seedance-2.0", "4k", 0.397],
