@@ -18,7 +18,41 @@ export interface Preset {
   resolution?: string;
   duration?: number;
   generateAudio?: boolean;
+  mode?: GenerationMode;
+  /** Direct URL, for "continue from last frame". */
   firstFrame?: string;
+  /** Library key of a start frame to restore. */
+  firstFrameKey?: string;
+  /** Library key of an end frame to restore. */
+  lastFrameKey?: string;
+  /** Library keys of reference blocks, in order. */
+  referenceKeys?: string[];
+  /** Inline note, for a Reuse that couldn't find every file. */
+  notice?: string;
+}
+
+/** A frame is a library item, or a one-off URL that isn't in the library. */
+interface FrameRef {
+  id?: string;
+  url?: string;
+}
+
+const findItem = (items: LibraryItem[], key: string) => items.find((i) => i.key === key || i.id === key);
+
+function initialFrame(items: LibraryItem[], key?: string, url?: string): FrameRef | undefined {
+  if (key) {
+    const item = findItem(items, key);
+    if (item) return { id: item.id };
+  }
+  if (url) return { url };
+  return undefined;
+}
+
+function initialRefIds(items: LibraryItem[], keys?: string[]) {
+  return (keys ?? []).flatMap((key) => {
+    const item = findItem(items, key);
+    return item ? [item.id] : [];
+  });
 }
 
 /** Lets the Uploads panel add, remove and forget references. */
@@ -29,6 +63,12 @@ export interface ControlPanelHandle {
   add: (item: LibraryItem) => void;
   /** Drops a reference whose file is being deleted (call before removing it from the library). */
   forget: (id: string) => void;
+  /** Switches to Frames and uses this image as the start frame. */
+  setStartFrame: (item: LibraryItem) => void;
+  /** Switches to References and attaches this item. */
+  useAsReference: (item: LibraryItem) => void;
+  /** Inline note in the panel. No alert(). */
+  notify: (message: string) => void;
 }
 
 interface Props {
@@ -79,16 +119,25 @@ export function ControlPanel({
 }: Props) {
   const initialModel = models.find((m) => m.id === preset.model) ?? models[0];
   const [model, setModel] = useState<VideoModel>(initialModel);
-  const [mode, setMode] = useState<GenerationMode>("frames");
   const [prompt, setPrompt] = useState(preset.prompt ?? "");
-  const [ratio, setRatio] = useState(pickRatio(initialModel, preset.ratio, !!preset.firstFrame));
+  const [ratio, setRatio] = useState(
+    pickRatio(initialModel, preset.ratio, !!(preset.firstFrame || preset.firstFrameKey)),
+  );
   const [resolution, setResolution] = useState(pickResolution(initialModel, preset.resolution));
-  const [duration, setDuration] = useState(clampDuration(preset.duration ?? initialModel.capabilities.durations?.default ?? 5, initialModel));
+  const [duration, setDuration] = useState(
+    clampDuration(preset.duration ?? initialModel.capabilities.durations?.default ?? 5, initialModel),
+  );
   const [generateAudio, setGenerateAudio] = useState(preset.generateAudio ?? true);
-  const [firstFrame, setFirstFrameRaw] = useState<string | undefined>(preset.firstFrame);
-  const [lastFrame, setLastFrame] = useState<string>();
+  const [mode, setMode] = useState<GenerationMode>(
+    preset.mode === "references" && initialModel.capabilities.references.total > 0 ? "references" : "frames",
+  );
+  const [notice, setNotice] = useState(preset.notice ?? "");
+  const [firstFrame, setFirstFrameRaw] = useState<FrameRef | undefined>(() =>
+    initialFrame(library.items, preset.firstFrameKey, preset.firstFrame),
+  );
+  const [lastFrame, setLastFrame] = useState<FrameRef | undefined>(() => initialFrame(library.items, preset.lastFrameKey));
   // References: library item ids, in the order shown. Numbering is per kind.
-  const [refIds, setRefIds] = useState<string[]>([]);
+  const [refIds, setRefIds] = useState<string[]>(() => initialRefIds(library.items, preset.referenceKeys));
   // Latest list for handlers that run after an await.
   const refsNow = useRef(refIds);
   const [seed, setSeed] = useState("");
@@ -108,6 +157,26 @@ export function ControlPanel({
   const cost = estimateCost(model, { resolution, duration, audio: audioOn });
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
+  const frameItem = (frame?: FrameRef) =>
+    frame?.id ? (byId.get(frame.id) ?? library.items.find((i) => i.key === frame.id)) : undefined;
+  const frameSrc = (frame?: FrameRef) => {
+    if (!frame) return undefined;
+    if (frame.url) return frame.url;
+    const item = frameItem(frame);
+    return item ? (thumbSrc(item) ?? (item.kind === "image" ? fileSrc(item) : undefined)) : undefined;
+  };
+  const framePayload = (frame?: FrameRef) => {
+    if (!frame) return undefined;
+    if (frame.id) {
+      const item = frameItem(frame);
+      return item?.key && item.status === "ready" ? `upload:${item.key}` : undefined;
+    }
+    return frame.url;
+  };
+  const framePending = (frame?: FrameRef) => {
+    const item = frameItem(frame);
+    return !!item && item.status !== "ready";
+  };
   const tag = (ids: string[]) =>
     ids.flatMap((id) => {
       const item = byId.get(id);
@@ -218,6 +287,20 @@ export function ControlPanel({
     if (b) editor.current?.insert(b.label);
   }
 
+  function setFirstFrame(v: FrameRef | undefined) {
+    setFirstFrameRaw(v);
+    if (!v && ratio === "adaptive") setRatio("16:9");
+  }
+
+  async function pickFrame(which: "first" | "last", file: File) {
+    const { items, errors } = await library.add([file]);
+    if (errors.length) setNotice(errors.join(" "));
+    const item = items[0];
+    if (!item) return;
+    if (which === "first") setFirstFrame({ id: item.id });
+    else setLastFrame({ id: item.id });
+  }
+
   useImperativeHandle(ref, () => ({
     toggle(item) {
       if (!hasRefs) {
@@ -234,12 +317,30 @@ export function ControlPanel({
     forget(id) {
       if (refsNow.current.includes(id)) updateRefs(refsNow.current.filter((x) => x !== id));
     },
+    setStartFrame(item) {
+      if (item.kind !== "image") {
+        setNotice("Only an image can be a start frame.");
+        return;
+      }
+      if (!model.capabilities.frames.start) {
+        setNotice(`${model.name} doesn't support a start frame.`);
+        return;
+      }
+      setMode("frames");
+      setFirstFrame({ id: item.id });
+      setNotice("");
+    },
+    useAsReference(item) {
+      if (!hasRefs) {
+        setNotice(`${model.name} doesn't take references. Pick a model that does.`);
+        return;
+      }
+      addRefs([item]);
+    },
+    notify(message) {
+      setNotice(message);
+    },
   }));
-
-  function setFirstFrame(v: string | undefined) {
-    setFirstFrameRaw(v);
-    if (!v && ratio === "adaptive") setRatio("16:9");
-  }
 
   function changeMode(m: GenerationMode) {
     setMode(m);
@@ -256,13 +357,15 @@ export function ControlPanel({
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
   }
 
-  const uploading = refs && refList.some((r) => r.item.status !== "ready");
+  const uploading =
+    (refs && refList.some((r) => r.item.status !== "ready")) ||
+    (effectiveMode === "frames" && (framePending(firstFrame) || framePending(lastFrame)));
   const canSubmit =
     !submitting &&
     !uploading &&
     badMentions.length === 0 &&
     (prompt.trim().length > 0 ||
-      (!model.promptRequired && (effectiveMode === "frames" ? !!firstFrame : perKind.Image > 0)));
+      (!model.promptRequired && (effectiveMode === "frames" ? !!framePayload(firstFrame) : perKind.Image > 0)));
 
   const refValues = (kind: UploadKind) =>
     refList.filter((r) => r.item.kind === kind).map((r) => `upload:${r.item.key}`);
@@ -284,13 +387,14 @@ export function ControlPanel({
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
-            firstFrame: caps.frames.start ? firstFrame : undefined,
-            lastFrame: caps.frames.end && firstFrame ? lastFrame : undefined,
+            firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
+            lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
           }
         : {
             referenceImages: refValues("image"),
             referenceVideos: refValues("video"),
             referenceAudios: refValues("audio"),
+            referenceOrder: refList.flatMap((r) => (r.item.key ? [r.item.key] : [])),
           }),
     }).finally(() => setSubmitting(false));
     if (ok) setSeed("");
@@ -299,6 +403,7 @@ export function ControlPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5">
+        {notice && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{notice}</p>}
         <Section label="Model">
           <select
             value={model.id}
@@ -333,9 +438,22 @@ export function ControlPanel({
         {effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (
             <div className={`grid gap-3 ${caps.frames.start && caps.frames.end ? "grid-cols-2" : "grid-cols-1"}`}>
-              {caps.frames.start && <ImageSlot label="Start frame" value={firstFrame} onChange={setFirstFrame} />}
+              {caps.frames.start && (
+                <ImageSlot
+                  label="Start frame"
+                  value={frameSrc(firstFrame)}
+                  onChange={(v) => !v && setFirstFrame(undefined)}
+                  onFile={(file) => void pickFrame("first", file)}
+                />
+              )}
               {caps.frames.end && (
-                <ImageSlot label="End frame" value={lastFrame} onChange={setLastFrame} disabled={!firstFrame} />
+                <ImageSlot
+                  label="End frame"
+                  value={frameSrc(lastFrame)}
+                  onChange={(v) => !v && setLastFrame(undefined)}
+                  onFile={(file) => void pickFrame("last", file)}
+                  disabled={!firstFrame}
+                />
               )}
             </div>
           )
