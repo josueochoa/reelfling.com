@@ -1,4 +1,4 @@
-import type { Ratio, Resolution, StudioProviderId } from "./models";
+import type { StudioProviderId } from "./registry";
 
 export type GenerationMode = "frames" | "references";
 
@@ -7,8 +7,8 @@ export interface GenerateRequest {
   model: string;
   prompt: string;
   mode: GenerationMode;
-  ratio: Ratio;
-  resolution: Resolution;
+  ratio: string;
+  resolution: string;
   duration: number;
   generateAudio?: boolean;
   seed?: number;
@@ -66,8 +66,8 @@ export interface Generation {
   model: string;
   prompt: string;
   mode: GenerationMode;
-  ratio: Ratio;
-  resolution: Resolution;
+  ratio: string;
+  resolution: string;
   duration: number;
   generateAudio: boolean;
   seed?: number;

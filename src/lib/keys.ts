@@ -1,6 +1,6 @@
 // Per-user provider API keys (BYOK), encrypted at rest.
 
-import type { ProviderId } from "./models";
+import type { ProviderId } from "./registry";
 import { decrypt, encrypt } from "./crypto";
 import { all, first, run } from "./db";
 

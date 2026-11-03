@@ -10,7 +10,7 @@ import type { Library, LibraryItem } from "./library";
 import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
 import { restoreInputs } from "@/lib/inputs";
-import { modelsFor, PROVIDER_INFO } from "@/lib/models";
+import { modelsFor, PROVIDER_INFO } from "@/lib/registry";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 
 const POLL_MS = 5000;

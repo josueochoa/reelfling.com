@@ -2,7 +2,7 @@
 
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { invalidMentions, mentionToken, remapMentions, type RefCounts, type RefKind } from "@/lib/mentions";
-import { estimateCost, type ModelSpec, type Ratio, type Resolution } from "@/lib/models";
+import { estimateCost, type VideoModel } from "@/lib/registry";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import type { UploadKind } from "@/lib/uploads";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
@@ -14,8 +14,8 @@ export interface Preset {
   key: number;
   model?: string;
   prompt?: string;
-  ratio?: Ratio;
-  resolution?: Resolution;
+  ratio?: string;
+  resolution?: string;
   duration?: number;
   generateAudio?: boolean;
   mode?: GenerationMode;
@@ -73,7 +73,7 @@ export interface ControlPanelHandle {
 
 interface Props {
   ref?: React.Ref<ControlPanelHandle>;
-  models: ModelSpec[];
+  models: VideoModel[];
   preset: Preset;
   onGenerate: (req: GenerateRequest) => Promise<boolean>;
   error: string | null;
@@ -86,7 +86,26 @@ interface Props {
 const KIND: Record<UploadKind, RefKind> = { image: "Image", video: "Video", audio: "Audio" };
 const PLURAL: Record<UploadKind, string> = { image: "images", video: "videos", audio: "audio clips" };
 
-const clamp = (n: number, m: ModelSpec) => Math.min(m.durations.max, Math.max(m.durations.min, n));
+const clampDuration = (n: number, model: VideoModel) => {
+  const cap = model.capabilities.durations;
+  if (!cap) return n;
+  if (cap.options?.length)
+    return cap.options.reduce((best, step) => (Math.abs(step - n) < Math.abs(best - n) ? step : best), cap.options[0]);
+  return Math.min(cap.max, Math.max(cap.min, n));
+};
+
+const pickResolution = (model: VideoModel, prefer?: string) => {
+  const list = model.capabilities.resolutions;
+  if (prefer && list.includes(prefer)) return prefer;
+  if (list.includes("720p")) return "720p";
+  return list[0] ?? "720p";
+};
+
+const pickRatio = (model: VideoModel, prefer?: string, hasFrame?: boolean) => {
+  const list = model.capabilities.ratios;
+  if (prefer && list.includes(prefer) && (prefer !== "adaptive" || hasFrame)) return prefer;
+  return list.find((ratio) => ratio === "16:9") ?? list.find((ratio) => ratio !== "adaptive") ?? list[0] ?? "16:9";
+};
 
 export function ControlPanel({
   ref,
@@ -99,22 +118,18 @@ export function ControlPanel({
   onReferencesChange,
 }: Props) {
   const initialModel = models.find((m) => m.id === preset.model) ?? models[0];
-  const [model, setModel] = useState<ModelSpec>(initialModel);
+  const [model, setModel] = useState<VideoModel>(initialModel);
   const [prompt, setPrompt] = useState(preset.prompt ?? "");
-  const [ratio, setRatio] = useState<Ratio>(
-    preset.ratio &&
-      initialModel.ratios.includes(preset.ratio) &&
-      (preset.ratio !== "adaptive" || preset.firstFrame || preset.firstFrameKey)
-      ? preset.ratio
-      : "16:9",
+  const [ratio, setRatio] = useState(
+    pickRatio(initialModel, preset.ratio, !!(preset.firstFrame || preset.firstFrameKey)),
   );
-  const [resolution, setResolution] = useState<Resolution>(
-    preset.resolution && initialModel.resolutions.includes(preset.resolution) ? preset.resolution : "720p",
+  const [resolution, setResolution] = useState(pickResolution(initialModel, preset.resolution));
+  const [duration, setDuration] = useState(
+    clampDuration(preset.duration ?? initialModel.capabilities.durations?.default ?? 5, initialModel),
   );
-  const [duration, setDuration] = useState(clamp(preset.duration ?? initialModel.durations.default, initialModel));
   const [generateAudio, setGenerateAudio] = useState(preset.generateAudio ?? true);
   const [mode, setMode] = useState<GenerationMode>(
-    preset.mode === "references" && initialModel.references.total > 0 ? "references" : "frames",
+    preset.mode === "references" && initialModel.capabilities.references.total > 0 ? "references" : "frames",
   );
   const [notice, setNotice] = useState(preset.notice ?? "");
   const [firstFrame, setFirstFrameRaw] = useState<FrameRef | undefined>(() =>
@@ -132,11 +147,14 @@ export function ControlPanel({
   const [submitting, setSubmitting] = useState(false);
   const editor = useRef<PromptEditorHandle>(null);
 
-  const hasRefs = model.references.total > 0;
+  const caps = model.capabilities;
+  const durations = caps.durations;
+  const hasRefs = caps.references.total > 0;
   const effectiveMode: GenerationMode = hasRefs ? mode : "frames";
   // "adaptive" follows the start frame, so it only makes sense with one.
-  const canAdapt = effectiveMode === "frames" && !!firstFrame;
-  const cost = estimateCost(model, resolution, duration);
+  const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
+  const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
+  const cost = estimateCost(model, { resolution, duration, audio: audioOn });
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const frameItem = (frame?: FrameRef) =>
@@ -203,13 +221,13 @@ export function ControlPanel({
     const current = tag(refsNow.current);
     const used = { image: 0, video: 0, audio: 0 };
     for (const r of current) used[r.item.kind]++;
-    const limit = { image: model.references.images, video: model.references.videos, audio: model.references.audios };
+    const limit = { image: caps.references.image, video: caps.references.video, audio: caps.references.audio };
     let total = current.length;
     const added: string[] = [];
     const skipped = new Set<UploadKind>();
     for (const item of items) {
       if (refsNow.current.includes(item.id) || added.includes(item.id)) continue;
-      if (used[item.kind] >= limit[item.kind] || total >= model.references.total) {
+      if (used[item.kind] >= limit[item.kind] || total >= caps.references.total) {
         skipped.add(item.kind);
         continue;
       }
@@ -228,8 +246,8 @@ export function ControlPanel({
         [...skipped]
           .map((k) =>
             limit[k] === 0
-              ? `${model.label} doesn't take ${PLURAL[k]} as references.`
-              : `${model.label} takes up to ${limit[k]} ${PLURAL[k]} (${model.references.total} references in total).`,
+              ? `${model.name} doesn't take ${PLURAL[k]} as references.`
+              : `${model.name} takes up to ${limit[k]} ${PLURAL[k]} (${caps.references.total} references in total).`,
           )
           .join("\n") + "\nThe files are still in your Uploads.",
       );
@@ -286,14 +304,14 @@ export function ControlPanel({
   useImperativeHandle(ref, () => ({
     toggle(item) {
       if (!hasRefs) {
-        alert(`${model.label} doesn't take references. Pick a model that does.`);
+        alert(`${model.name} doesn't take references. Pick a model that does.`);
         return;
       }
       if (refsNow.current.includes(item.id)) updateRefs(refsNow.current.filter((x) => x !== item.id));
       else addRefs([item]);
     },
     add(item) {
-      if (!hasRefs) alert(`${model.label} doesn't take references. Pick a model that does.`);
+      if (!hasRefs) alert(`${model.name} doesn't take references. Pick a model that does.`);
       else addRefs([item]);
     },
     forget(id) {
@@ -304,8 +322,8 @@ export function ControlPanel({
         setNotice("Only an image can be a start frame.");
         return;
       }
-      if (!model.firstFrame) {
-        setNotice(`${model.label} doesn't support a start frame.`);
+      if (!model.capabilities.frames.start) {
+        setNotice(`${model.name} doesn't support a start frame.`);
         return;
       }
       setMode("frames");
@@ -314,7 +332,7 @@ export function ControlPanel({
     },
     useAsReference(item) {
       if (!hasRefs) {
-        setNotice(`${model.label} doesn't take references. Pick a model that does.`);
+        setNotice(`${model.name} doesn't take references. Pick a model that does.`);
         return;
       }
       addRefs([item]);
@@ -332,10 +350,11 @@ export function ControlPanel({
   function changeModel(id: string) {
     const m = models.find((x) => x.id === id)!;
     setModel(m);
-    if (!m.ratios.includes(ratio)) setRatio(m.ratios[0]);
-    if (!m.resolutions.includes(resolution)) setResolution(m.resolutions.at(-1)!);
-    setDuration((d) => clamp(d, m));
-    if (!m.lastFrame) setLastFrame(undefined);
+    if (!m.capabilities.ratios.includes(ratio)) setRatio(pickRatio(m));
+    setResolution(pickResolution(m, resolution));
+    setDuration((d) => clampDuration(d, m));
+    if (!m.capabilities.frames.end) setLastFrame(undefined);
+    if (!m.capabilities.frames.start) setFirstFrame(undefined);
   }
 
   const uploading =
@@ -362,14 +381,14 @@ export function ControlPanel({
       ratio,
       resolution,
       duration,
-      generateAudio: model.audio ? generateAudio : undefined,
-      seed: model.features.seed && seed.trim() !== "" ? Number(seed) : undefined,
-      cameraFixed: model.features.cameraFixed ? cameraFixed : undefined,
-      watermark: model.features.watermark ? watermark : undefined,
+      generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
+      seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
+      cameraFixed: caps.camera && caps.camera.fixed ? cameraFixed : undefined,
+      watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
-            firstFrame: framePayload(firstFrame),
-            lastFrame: framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
+            firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
+            lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
           }
         : {
             referenceImages: refValues("image"),
@@ -393,7 +412,7 @@ export function ControlPanel({
           >
             {models.map((m) => (
               <option key={m.id} value={m.id} className="bg-panel">
-                {m.label}
+                {m.name}
               </option>
             ))}
           </select>
@@ -417,27 +436,31 @@ export function ControlPanel({
         )}
 
         {effectiveMode === "frames" ? (
-          <div className={`grid gap-3 ${model.lastFrame ? "grid-cols-2" : "grid-cols-1"}`}>
-            <ImageSlot
-              label="Start frame"
-              value={frameSrc(firstFrame)}
-              onChange={(v) => !v && setFirstFrame(undefined)}
-              onFile={(file) => void pickFrame("first", file)}
-            />
-            {model.lastFrame && (
-              <ImageSlot
-                label="End frame"
-                value={frameSrc(lastFrame)}
-                onChange={(v) => !v && setLastFrame(undefined)}
-                onFile={(file) => void pickFrame("last", file)}
-                disabled={!firstFrame}
-              />
-            )}
-          </div>
+          (caps.frames.start || caps.frames.end) && (
+            <div className={`grid gap-3 ${caps.frames.start && caps.frames.end ? "grid-cols-2" : "grid-cols-1"}`}>
+              {caps.frames.start && (
+                <ImageSlot
+                  label="Start frame"
+                  value={frameSrc(firstFrame)}
+                  onChange={(v) => !v && setFirstFrame(undefined)}
+                  onFile={(file) => void pickFrame("first", file)}
+                />
+              )}
+              {caps.frames.end && (
+                <ImageSlot
+                  label="End frame"
+                  value={frameSrc(lastFrame)}
+                  onChange={(v) => !v && setLastFrame(undefined)}
+                  onFile={(file) => void pickFrame("last", file)}
+                  disabled={!firstFrame}
+                />
+              )}
+            </div>
+          )
         ) : (
           <ReferenceBox
             blocks={blocks}
-            max={model.references.total}
+            max={caps.references.total}
             onAddFiles={(files) => void addFiles(files)}
             onOpenLibrary={onOpenLibrary}
             onRemove={removeRef}
@@ -472,7 +495,7 @@ export function ControlPanel({
 
         <Section label="Aspect ratio">
           <div className="flex flex-wrap gap-1.5">
-            {model.ratios.map((r) => (
+            {caps.ratios.map((r) => (
               <Chip
                 key={r}
                 active={ratio === r}
@@ -488,7 +511,7 @@ export function ControlPanel({
 
         <Section label="Resolution">
           <div className="flex gap-1.5">
-            {model.resolutions.map((r) => (
+            {caps.resolutions.map((r) => (
               <Chip key={r} active={resolution === r} onClick={() => setResolution(r)}>
                 {r === "4k" ? "4K" : r}
               </Chip>
@@ -496,27 +519,42 @@ export function ControlPanel({
           </div>
         </Section>
 
-        <Section label="Duration" aside={`${duration}s`}>
-          <input
-            type="range"
-            min={model.durations.min}
-            max={model.durations.max}
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className="w-full accent-[var(--color-accent)]"
-          />
-        </Section>
+        {durations && (
+          <Section label="Duration" aside={`${duration}s`}>
+            {durations.options ? (
+              <div className="flex flex-wrap gap-1.5">
+                {durations.options.map((step) => (
+                  <Chip key={step} active={duration === step} onClick={() => setDuration(step)}>
+                    {step}s
+                  </Chip>
+                ))}
+              </div>
+            ) : (
+              <input
+                type="range"
+                min={durations.min}
+                max={durations.max}
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
+                className="w-full accent-[var(--color-accent)]"
+              />
+            )}
+          </Section>
+        )}
 
-        {model.audio && <Toggle label="Generate audio" checked={generateAudio} onChange={setGenerateAudio} />}
+        {caps.audio === "optional" && (
+          <Toggle label="Generate audio" checked={generateAudio} onChange={setGenerateAudio} />
+        )}
+        {caps.audio === "required" && <p className="text-xs text-zinc-500">Audio is included with this model.</p>}
 
-        {(model.features.seed || model.features.cameraFixed || model.features.watermark) && (
+        {(caps.seed || (caps.camera && caps.camera.fixed) || caps.watermark) && (
           <div>
             <button onClick={() => setShowAdvanced((s) => !s)} className="text-xs text-zinc-500 hover:text-zinc-300">
               {showAdvanced ? "− Hide" : "+ Show"} advanced
             </button>
             {showAdvanced && (
               <div className="mt-3 space-y-3">
-                {model.features.seed && (
+                {caps.seed && (
                   <Section label="Seed">
                     <div className="flex gap-2">
                       <input
@@ -535,10 +573,10 @@ export function ControlPanel({
                     </div>
                   </Section>
                 )}
-                {model.features.cameraFixed && (
+                {caps.camera && caps.camera.fixed && (
                   <Toggle label="Fixed camera" checked={cameraFixed} onChange={setCameraFixed} />
                 )}
-                {model.features.watermark && <Toggle label="Watermark" checked={watermark} onChange={setWatermark} />}
+                {caps.watermark && <Toggle label="Watermark" checked={watermark} onChange={setWatermark} />}
               </div>
             )}
           </div>
@@ -558,7 +596,9 @@ export function ControlPanel({
             "Generate"
           )}
           <span className="text-xs font-normal opacity-60">
-            {resolution} · {duration}s{cost !== undefined && ` · ~$${cost.toFixed(2)}`}
+            {resolution}
+            {durations ? ` · ${duration}s` : ""}
+            {cost !== undefined && ` · ~$${cost.toFixed(2)}`}
           </span>
         </button>
       </div>

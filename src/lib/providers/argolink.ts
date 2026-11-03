@@ -58,7 +58,7 @@ async function toMediaUrl(creds: ProviderCredentials, model: string, url: string
   return ticket.media_url;
 }
 
-async function buildBody(creds: ProviderCredentials, req: GenerateRequest) {
+export async function buildArgoVideoBody(creds: ProviderCredentials, req: GenerateRequest) {
   const media = (url: string) => toMediaUrl(creds, req.model, url).then((u) => ({ url: u }));
   const frames = req.mode === "frames";
 
@@ -90,7 +90,7 @@ export const argoLink: ProviderFactory = (creds) => ({
   async createTask(req) {
     const { request_id } = await argo<{ request_id: string }>(creds, "/v1/videos/generations", {
       method: "POST",
-      body: JSON.stringify(await buildBody(creds, req)),
+      body: JSON.stringify(await buildArgoVideoBody(creds, req)),
     });
     return { taskId: request_id };
   },

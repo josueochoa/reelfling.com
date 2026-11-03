@@ -1,7 +1,7 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
-import { getModel, type ModelSpec } from "@/lib/models";
 import { providerForUser } from "@/lib/providers";
+import { getModel, isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
@@ -20,28 +20,8 @@ const ni = (r: GenerateRequest) => r.referenceImages?.length ?? 0;
 const nv = (r: GenerateRequest) => r.referenceVideos?.length ?? 0;
 const na = (r: GenerateRequest) => r.referenceAudios?.length ?? 0;
 
-function validate(req: GenerateRequest, model: ModelSpec): string | null {
+function mentionError(req: GenerateRequest): string | null {
   const frames = req.mode === "frames";
-  if (model.promptRequired && !req.prompt?.trim()) return `${model.label} needs a prompt`;
-  if (!req.prompt?.trim() && !(frames && req.firstFrame) && !req.referenceImages?.length)
-    return "Add a prompt or an image";
-  if (!model.ratios.includes(req.ratio)) return `Ratio ${req.ratio} not supported by ${model.label}`;
-  if (req.ratio === "adaptive" && !(frames && req.firstFrame)) return "Auto ratio needs a start frame";
-  if (!model.resolutions.includes(req.resolution)) return `Resolution ${req.resolution} not supported`;
-  if (!Number.isInteger(req.duration) || req.duration < model.durations.min || req.duration > model.durations.max)
-    return `Duration must be ${model.durations.min}–${model.durations.max}s`;
-  if (frames) {
-    if (req.firstFrame && !model.firstFrame) return `${model.label} doesn't support image-to-video`;
-    if (req.lastFrame && !req.firstFrame) return "An end frame needs a start frame";
-    if (req.lastFrame && !model.lastFrame) return `${model.label} doesn't support end frames`;
-  } else {
-    const { images, videos, audios, total } = model.references;
-    if (ni(req) > images) return `Max ${images} reference images`;
-    if (nv(req) > videos) return `Max ${videos} reference videos`;
-    if (na(req) > audios) return `Max ${audios} reference audio clips`;
-    if (ni(req) + nv(req) + na(req) > total) return `Max ${total} references in total`;
-    if (na(req) > 0 && ni(req) + nv(req) === 0) return "Audio needs at least one image or video reference";
-  }
   const counts = frames ? { Image: 0, Video: 0, Audio: 0 } : { Image: ni(req), Video: nv(req), Audio: na(req) };
   const bad = invalidMentions(req.prompt ?? "", counts);
   if (bad.length) return `Prompt references ${bad.join(", ")}, which ${bad.length === 1 ? "isn't" : "aren't"} attached`;
@@ -118,18 +98,13 @@ export async function POST(request: Request) {
 
     const req = (await request.json()) as GenerateRequest;
     const model = getModel(req.model);
-    if (!model || model.provider !== providerId)
+    const route = model && routeFor(model, providerId);
+    if (!model || !isVideo(model) || !route)
       return Response.json({ error: `Model "${req.model}" isn't available on ${provider.label}` }, { status: 400 });
-    const invalid = validate(req, model);
+    const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
-
-    // Drop params the provider would reject.
-    if (!model.audio) delete req.generateAudio;
-    if (!model.features.seed) delete req.seed;
-    if (!model.features.watermark) delete req.watermark;
-    if (!model.features.cameraFixed) delete req.cameraFixed;
 
     const frames = req.mode === "frames";
     const [first, last, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
@@ -147,11 +122,12 @@ export async function POST(request: Request) {
           ["audio", referenceAudios],
         ]);
 
-    // Prompts are stored as written ("@Image 2"); the provider gets its own syntax.
+    // Prompts are stored as written ("@Image 2"); the provider gets its own syntax and model id.
     // Adapters read the fields they know; referenceOrder is only stored on the record below.
     const { taskId } = await provider.createTask({
       ...req,
-      prompt: normalizeMentions(req.prompt, model.refSyntax),
+      model: route.endpoint,
+      prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
       firstFrame: first?.url,
       lastFrame: last?.url,
       referenceImages: referenceImages?.map((m) => m.url),

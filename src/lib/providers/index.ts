@@ -1,5 +1,5 @@
 import { getCredentials, type ProviderCredentials } from "../keys";
-import { PROVIDER_INFO, type StudioProviderId } from "../models";
+import { PROVIDER_INFO, type StudioProviderId } from "../registry";
 import { argoLink } from "./argolink";
 import { modelArk } from "./modelark";
 import { ProviderError, type ProviderFactory, type VideoProvider } from "./types";

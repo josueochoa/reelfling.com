@@ -3,7 +3,7 @@
 // The Image tab: generated images in a grid, with the prompt bar floating over it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { getImageModel, IMAGE_MODELS, nearestRatio, ratioAllowed } from "@/lib/imageModels";
+import { getImageModel, imageModels, nearestRatio, ratioAllowed } from "@/lib/registry";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
@@ -55,7 +55,7 @@ export function ImageStudio({
   const [gens, setGens] = useState<ImageGeneration[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [state, setState] = useState<ComposerState>({
-    model: IMAGE_MODELS[0],
+    model: imageModels()[0],
     prompt: "",
     ratio: "auto",
     resolution: "2k",
@@ -124,8 +124,9 @@ export function ImageStudio({
     const images = items.filter((i) => i.kind === "image" && !refIds.includes(i.id));
     if (images.length < items.filter((i) => !refIds.includes(i.id)).length)
       alert("Image models take images as references, not video or audio.");
-    const room = state.model.maxReferences - refIds.length;
-    if (images.length > room) alert(`${state.model.label} takes up to ${state.model.maxReferences} reference images.`);
+    const room = state.model.capabilities.references.image - refIds.length;
+    if (images.length > room)
+      alert(`${state.model.name} takes up to ${state.model.capabilities.references.image} reference images.`);
     const added = room > 0 ? images.slice(0, room) : [];
     if (added.length) setRefs([...refIds, ...added.map((i) => i.id)]);
     return added;
@@ -165,7 +166,7 @@ export function ImageStudio({
             ratio,
             autoRatio,
             resolution,
-            quality: model.qualities ? state.quality : undefined,
+            quality: model.capabilities.qualities ? state.quality : undefined,
             count: state.count,
             references: references.map((r) => r.key),
           }),
@@ -411,7 +412,7 @@ function ImageLightbox({
 
   const model = getImageModel(gen.model);
   const details: [string, string][] = [
-    ["Model", model?.label ?? gen.model],
+    ["Model", model?.name ?? gen.model],
     ["Ratio", gen.aspect ?? "Auto"],
     ["Resolution", gen.resolution.toUpperCase()],
     ...(gen.quality ? [["Quality", gen.quality] as [string, string]] : []),

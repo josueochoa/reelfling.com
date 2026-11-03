@@ -3,8 +3,7 @@
 // The Assets tab: everything in the user's bucket, generated and uploaded, in one place.
 
 import { useEffect, useRef, useState } from "react";
-import { getImageModel } from "@/lib/imageModels";
-import { getModel } from "@/lib/models";
+import { modelName } from "@/lib/registry";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
 import type { Library, LibraryItem } from "./library";
@@ -24,7 +23,7 @@ const SOURCES: { value: AssetSource | "all"; label: string }[] = [
   { value: "upload", label: "Uploaded" },
 ];
 
-const modelLabel = (id: string) => getModel(id)?.label ?? getImageModel(id)?.label ?? id;
+const modelLabel = (id: string) => modelName(id);
 
 /** "Today", "Yesterday", a weekday this week, else a date. */
 function dayLabel(ts: number, now: number) {

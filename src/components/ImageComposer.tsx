@@ -4,13 +4,13 @@
 
 import { useRef } from "react";
 import {
-  estimateImageCost,
-  IMAGE_MODELS,
+  estimateCost,
+  imageModels,
   ratioAllowed,
-  type ImageModelSpec,
+  type ImageModel,
   type ImageQuality,
   type ImageResolution,
-} from "@/lib/imageModels";
+} from "@/lib/registry";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
 import { Dropdown } from "./Dropdown";
 import { thumbSrc, type LibraryItem } from "./library";
@@ -18,7 +18,7 @@ import { UploadOverlay } from "./MediaBlocks";
 import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
 
 export interface ComposerState {
-  model: ImageModelSpec;
+  model: ImageModel;
   prompt: string;
   ratio: string;
   resolution: ImageResolution;
@@ -27,13 +27,13 @@ export interface ComposerState {
 }
 
 const QUALITY_LABEL: Record<ImageQuality, string> = { auto: "Auto", low: "Low", medium: "Medium", high: "High" };
+const MODELS = imageModels();
 
-function BrandMark({ brand }: { brand: ImageModelSpec["brand"] }) {
-  return brand === "google" ? (
-    <span className="font-bold text-accent">G</span>
-  ) : (
-    <span className="text-accent" aria-hidden>
-      ✺
+function Mark({ mark }: { mark?: string }) {
+  if (!mark) return null;
+  return (
+    <span className="font-bold text-accent" aria-hidden>
+      {mark}
     </span>
   );
 }
@@ -66,22 +66,23 @@ export function ImageComposer({
   onOpenKeys: () => void;
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
+  const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
-  const cost = estimateImageCost(model, resolution, count);
+  const cost = estimateCost(model, { resolution, count }) ?? 0;
   const counts = { Image: references.length, Video: 0, Audio: 0 };
   const bad = invalidMentions(prompt, counts);
   const uploading = references.some((r) => r.status !== "ready");
   const canGenerate = !submitting && !uploading && !needsKey && prompt.trim().length > 0 && bad.length === 0;
 
   function changeModel(id: string) {
-    const m = IMAGE_MODELS.find((x) => x.id === id)!;
-    const res = m.resolutions.includes(resolution) ? resolution : m.resolutions[0];
+    const m = MODELS.find((x) => x.id === id)!;
+    const res = m.capabilities.resolutions.includes(resolution) ? resolution : (m.capabilities.resolutions[0] as ImageResolution);
     onChange({
       model: m,
       resolution: res,
       ratio: ratioAllowed(m, ratio, res) ? ratio : "auto",
-      count: Math.min(count, m.maxImages),
+      count: Math.min(count, m.capabilities.maxImages),
     });
   }
 
@@ -180,14 +181,14 @@ export function ImageComposer({
               value={model.id}
               display={
                 <>
-                  <BrandMark brand={model.brand} /> {model.label} <span className="text-zinc-500">›</span>
+                  <Mark mark={model.mark} /> {model.name} <span className="text-zinc-500">›</span>
                 </>
               }
-              options={IMAGE_MODELS.map((m) => ({
+              options={MODELS.map((m) => ({
                 value: m.id,
                 label: (
                   <>
-                    <BrandMark brand={m.brand} /> {m.label}
+                    <Mark mark={m.mark} /> {m.name}
                   </>
                 ),
                 hint: m.description,
@@ -198,7 +199,7 @@ export function ImageComposer({
               title="Aspect ratio"
               icon="⛶"
               value={ratio}
-              options={model.ratios.map((r) => ({
+              options={caps.ratios.map((r) => ({
                 value: r,
                 label: r === "auto" ? "Auto" : r,
                 hint: r === "auto" ? "Matches the first reference image" : undefined,
@@ -210,19 +211,24 @@ export function ImageComposer({
               title="Resolution"
               icon="◇"
               value={resolution}
-              options={model.resolutions.map((r) => ({
+              options={caps.resolutions.map((r) => ({
                 value: r,
                 label: r.toUpperCase(),
-                hint: `$${model.price[r]} per image`,
+                hint: `$${(estimateCost(model, { resolution: r, count: 1 }) ?? 0).toFixed(3)} per image`,
               }))}
-              onChange={(r) => onChange({ resolution: r, ratio: ratioAllowed(model, ratio, r) ? ratio : "auto" })}
+              onChange={(r) =>
+                onChange({
+                  resolution: r as ImageResolution,
+                  ratio: ratioAllowed(model, ratio, r) ? ratio : "auto",
+                })
+              }
             />
-            {model.qualities && (
+            {caps.qualities && (
               <Dropdown
                 title="Quality"
                 icon="✦"
                 value={quality}
-                options={model.qualities.map((q) => ({ value: q, label: QUALITY_LABEL[q] }))}
+                options={caps.qualities.map((q) => ({ value: q, label: QUALITY_LABEL[q] }))}
                 onChange={(q) => onChange({ quality: q })}
               />
             )}
@@ -236,11 +242,11 @@ export function ImageComposer({
                 −
               </button>
               <span className="tabular-nums">
-                {count}/{model.maxImages}
+                {count}/{caps.maxImages}
               </span>
               <button
-                onClick={() => onChange({ count: Math.min(model.maxImages, count + 1) })}
-                disabled={count >= model.maxImages}
+                onClick={() => onChange({ count: Math.min(caps.maxImages, count + 1) })}
+                disabled={count >= caps.maxImages}
                 aria-label="More images"
                 className="px-2.5 disabled:opacity-30"
               >

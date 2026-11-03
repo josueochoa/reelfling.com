@@ -1,5 +1,5 @@
 import type { ProviderCredentials } from "../keys";
-import type { StudioProviderId } from "../models";
+import type { StudioProviderId } from "../registry";
 import type { GenerateRequest, TaskStatus } from "../types";
 
 /** Provider task state, normalized to ModelArk's status vocabulary. */

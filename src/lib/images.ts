@@ -5,10 +5,11 @@
 
 import { all, env, first, run } from "./db";
 import { downloadGeneratedImage } from "./imageDownload";
-import { getImageModel, gptSize, type ImageQuality, type ImageResolution } from "./imageModels";
 import { getCredentials } from "./keys";
 import { normalizeMentions } from "./mentions";
 import { argo } from "./providers/argolink";
+import { MAPPERS } from "./registry/mappers";
+import { getImageModel, mentionSyntax, routeFor, type ImageQuality, type ImageResolution } from "./registry";
 import { deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
 
 export type ImageStatus = "queued" | "running" | "succeeded" | "failed";
@@ -118,6 +119,8 @@ export async function runImageJob(userId: string, id: string) {
   try {
     const model = getImageModel(gen.model);
     if (!model) throw new Error(`Unknown model ${gen.model}`);
+    const route = routeFor(model, "argolink");
+    if (!route) throw new Error(`${model.name} has no ArgoLink route`);
     const creds = await getCredentials(userId, "argolink");
     if (!creds) throw new Error("Add your ArgoLink API key under API keys.");
 
@@ -128,24 +131,26 @@ export async function runImageJob(userId: string, id: string) {
         return { image_url: await providerUrl(asset) };
       }),
     );
-    const body: Record<string, unknown> = {
-      model: model.id,
-      // "@Image 2" → "image 2": the references are sent in that order.
-      prompt: normalizeMentions(gen.prompt, (_, n) => `image ${n}`),
-      n: gen.count,
-      response_format: "url",
-      ...(references.length && { images: references }),
-    };
-    if (model.brand === "google")
-      Object.assign(body, { aspect_ratio: gen.aspect ?? "1:1", resolution: gen.resolution });
-    else {
-      const size = gen.aspect && gptSize(gen.aspect, gen.resolution);
-      Object.assign(body, size && { size }, gen.quality && { quality: gen.quality });
-    }
+    const map = MAPPERS[route.mapper];
+    if (!map) throw new Error(`${model.name} has no input mapper`);
+    const mapped = map(
+      {
+        kind: "image",
+        request: {
+          prompt: normalizeMentions(gen.prompt, mentionSyntax(model.refSyntax)),
+          aspect: gen.aspect,
+          resolution: gen.resolution,
+          quality: gen.quality,
+          count: gen.count,
+          ...(references.length && { images: references }),
+        },
+      },
+      { endpoint: route.endpoint },
+    ) as { path: string; body: Record<string, unknown> };
 
-    const result = await argo<ArgoImages>(creds, references.length ? "/v1/images/edits" : "/v1/images/generations", {
+    const result = await argo<ArgoImages>(creds, mapped.path, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify(mapped.body),
     });
     const items = result.data ?? [];
     if (!items.length) throw new Error("ArgoLink returned no images");

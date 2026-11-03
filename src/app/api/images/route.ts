@@ -1,15 +1,15 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import {
-  estimateImageCost,
-  getImageModel,
-  gptSize,
-  ratioAllowed,
-  type ImageQuality,
-  type ImageResolution,
-} from "@/lib/imageModels";
 import { enqueueImageJob, insertImageGeneration, listImageGenerations, type ImageGeneration } from "@/lib/images";
 import { getCredentials } from "@/lib/keys";
 import { invalidMentions } from "@/lib/mentions";
+import {
+  estimateCost,
+  getImageModel,
+  imageRequestError,
+  ratioAllowed,
+  type ImageQuality,
+  type ImageResolution,
+} from "@/lib/registry";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 
@@ -45,16 +45,9 @@ export async function POST(request: Request) {
     const model = getImageModel(req.model);
     if (!model) return bad(`Unknown model "${req.model}"`);
     const prompt = req.prompt?.trim();
-    if (!prompt) return bad("Write a prompt");
-    if (!model.resolutions.includes(req.resolution)) return bad(`Resolution ${req.resolution} isn't available`);
-    if (!ratioAllowed(model, req.ratio, req.resolution))
-      return bad(`Ratio ${req.ratio} isn't available at ${req.resolution.toUpperCase()}`);
-    if (req.quality && !model.qualities?.includes(req.quality)) return bad(`Quality ${req.quality} isn't available`);
-    if (!Number.isInteger(req.count) || req.count < 1 || req.count > model.maxImages)
-      return bad(`Generate 1–${model.maxImages} images at a time`);
     const refs = Array.isArray(req.references) ? req.references : [];
-    if (refs.length > model.maxReferences)
-      return bad(`${model.label} takes up to ${model.maxReferences} reference images`);
+    const invalid = imageRequestError(model, { prompt, ratio: req.ratio, resolution: req.resolution, quality: req.quality, count: req.count, references: refs });
+    if (invalid || !prompt) return bad(invalid ?? "Write a prompt");
     for (const key of refs) {
       // Uploads or generated images.
       const asset = isAssetKey(key) ? await getAsset(user.id, key) : undefined;
@@ -67,16 +60,13 @@ export async function POST(request: Request) {
       return bad("Image models run through ArgoLink. Add your ArgoLink API key under API keys.");
     await assertStorageAvailable(user.id);
 
-    // "auto": the reference's shape if there is one; otherwise the model's own default.
+    // "auto": the reference's shape if there is one; otherwise the model's own fallback.
     let aspect: string | undefined = req.ratio;
     if (req.ratio === "auto")
       aspect =
         refs.length && req.autoRatio && ratioAllowed(model, req.autoRatio, req.resolution) && req.autoRatio !== "auto"
           ? req.autoRatio
-          : model.brand === "google"
-            ? "1:1"
-            : undefined;
-    if (model.brand === "openai" && aspect && !gptSize(aspect, req.resolution)) aspect = undefined;
+          : model.capabilities.autoFallback;
 
     const now = Date.now();
     const gen: ImageGeneration = {
@@ -87,11 +77,11 @@ export async function POST(request: Request) {
       ratio: req.ratio,
       aspect,
       resolution: req.resolution,
-      quality: model.qualities ? (req.quality ?? "auto") : undefined,
+      quality: model.capabilities.qualities ? (req.quality ?? "auto") : undefined,
       count: req.count,
       references: refs,
       images: [],
-      cost: estimateImageCost(model, req.resolution, req.count),
+      cost: estimateCost(model, { resolution: req.resolution, count: req.count }) ?? 0,
       createdAt: now,
       updatedAt: now,
     };

@@ -8,7 +8,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
-import { isStudioProvider, type StudioProviderId } from "./models";
+import { isStudioProvider, type StudioProviderId } from "./registry";
 import { randomToken, sha256 } from "./crypto";
 import { env, first, run } from "./db";
 

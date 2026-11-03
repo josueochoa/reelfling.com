@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getModel } from "@/lib/models";
+import { getModel } from "@/lib/registry";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
 
 export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
@@ -92,7 +92,7 @@ export function GenerationCard({
         )}
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
-            <Meta>{model?.label ?? gen.model}</Meta>
+            <Meta>{model?.name ?? gen.model}</Meta>
             <Meta>{gen.resolution}</Meta>
             <Meta>{gen.duration}s</Meta>
             <Meta>{gen.ratio}</Meta>
