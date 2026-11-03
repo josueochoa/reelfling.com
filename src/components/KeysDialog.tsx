@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { apiJson, type Me } from "./api";
 
-const ORDER: ProviderId[] = ["argolink", "modelark", "fal"];
+const ORDER: ProviderId[] = ["argolink", "openrouter", "modelark", "fal"];
 
 export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
   useEffect(() => {

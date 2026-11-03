@@ -5,6 +5,8 @@
 // and in-flight polling.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { VideoModel } from "@/lib/registry";
+import { rememberModels } from "@/lib/registry/lookup";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
 import { FalStudio, type FalTabHandle } from "./FalStudio";
@@ -27,6 +29,7 @@ const readTab = (): Tab => TABS.find((t) => window.location.hash === `#${t}`) ??
 export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
+  const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
   const library = useLibrary();
   const video = useRef<StudioTabHandle>(null);
@@ -37,6 +40,15 @@ export function Studio() {
   useEffect(() => {
     loadMe();
   }, [loadMe]);
+  // Slim picker list. The generated catalog stays on the server.
+  useEffect(() => {
+    apiJson<{ models: VideoModel[] }>("/api/models")
+      .then((body) => {
+        rememberModels(body.models);
+        setOpenRouterModels(body.models);
+      })
+      .catch(() => setOpenRouterModels([]));
+  }, []);
 
   const openKeys = () => setKeysOpen(true);
   /** From Assets: jump to a tab and attach the asset as a reference there. */
@@ -69,7 +81,13 @@ export function Studio() {
       </header>
 
       <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
-        <VideoStudio ref={video} me={me} library={library} onOpenKeys={openKeys} />
+        <VideoStudio
+          ref={video}
+          me={me}
+          library={library}
+          onOpenKeys={openKeys}
+          openRouterModels={openRouterModels}
+        />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
         <ImageStudio ref={image} me={me} library={library} onOpenKeys={openKeys} />

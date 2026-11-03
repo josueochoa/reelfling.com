@@ -3,7 +3,7 @@
 // The Image tab: generated images in a grid, with the prompt bar floating over it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { getImageModel, imageModels, nearestRatio, ratioAllowed } from "@/lib/registry";
+import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
@@ -71,7 +71,8 @@ export function ImageStudio({
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const references = refIds.flatMap((id) => byId.get(id) ?? []);
-  const needsKey = !!me && !me.keys.some((k) => k.provider === "argolink");
+  const imageProvider = me ? imageProviderFor(me.user.activeProvider, me.keys.map((key) => key.provider)) : undefined;
+  const needsKey = !!me && !imageProvider;
   const now = useNow(gens.some(pending));
 
   const upsert = useCallback((gen: ImageGeneration) => {
@@ -216,9 +217,29 @@ export function ImageStudio({
       <div className="h-full overflow-y-auto px-4 pt-4 pb-72">
         {loaded && tiles.length === 0 ? (
           <div className="grid h-[60%] place-items-center text-center">
-            <div>
-              <p className="text-lg font-medium text-zinc-300">No images yet</p>
-              <p className="mt-1 text-sm text-zinc-500">Describe an image below, or add references to edit.</p>
+            <div className="max-w-sm">
+              {needsKey ? (
+                <>
+                  <p className="text-lg font-medium text-zinc-300">The Image tab needs a key</p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Connect OpenRouter or ArgoLink. Either key runs Nano Banana and GPT Image.
+                  </p>
+                  <button
+                    onClick={onOpenKeys}
+                    className="mt-4 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-ink"
+                  >
+                    Add API key
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-medium text-zinc-300">No images yet</p>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    {imageProvider ? `Images run on ${PROVIDER_INFO[imageProvider].label}. ` : ""}
+                    Describe an image below, or add references to edit.
+                  </p>
+                </>
+              )}
             </div>
           </div>
         ) : (

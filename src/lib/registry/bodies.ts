@@ -83,3 +83,36 @@ export function buildArgoGptImage(input: ImageMapInput, endpoint: string) {
   };
 }
 
+export interface OpenRouterImageCall {
+  path: "/images";
+  /** How many POSTs to make. Nano Banana rejects n > 1, so each image is its own request. */
+  times: number;
+  body: Record<string, unknown>;
+}
+
+/**
+ * OpenRouter image body.
+ * Nano Banana (`google/gemini-nano-banana-2.1`) accepts resolution and n = 1.
+ * GPT Image accepts quality, aspect_ratio (including auto), and n up to 10.
+ * Checked against GET https://openrouter.ai/api/v1/images/models (Nov 2026).
+ */
+export function buildOpenRouterImage(input: ImageMapInput, endpoint: string): OpenRouterImageCall {
+  const google = endpoint === "google/gemini-nano-banana-2.1";
+  const references = input.images?.map((image) => ({
+    type: "image_url",
+    image_url: { url: image.image_url },
+  }));
+  return {
+    path: "/images",
+    times: google ? input.count : 1,
+    body: {
+      model: endpoint,
+      prompt: input.prompt,
+      aspect_ratio: input.aspect ?? "auto",
+      ...(google ? { resolution: input.resolution.toUpperCase(), n: 1 } : { n: input.count }),
+      ...(!google && input.quality && { quality: input.quality }),
+      ...(references?.length && { input_references: references }),
+    },
+  };
+}
+

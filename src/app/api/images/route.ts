@@ -1,12 +1,15 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { enqueueImageJob, insertImageGeneration, listImageGenerations, type ImageGeneration } from "@/lib/images";
-import { getCredentials } from "@/lib/keys";
+import { listKeys } from "@/lib/keys";
 import { invalidMentions } from "@/lib/mentions";
 import {
   estimateCost,
   getImageModel,
+  imageProviderFor,
   imageRequestError,
+  PROVIDER_INFO,
   ratioAllowed,
+  routeFor,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
@@ -56,8 +59,14 @@ export async function POST(request: Request) {
     }
     const mentions = invalidMentions(prompt, { Image: refs.length, Video: 0, Audio: 0 });
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
-    if (!(await getCredentials(user.id, "argolink")))
-      return bad("Image models run through ArgoLink. Add your ArgoLink API key under API keys.");
+    const imageProvider = imageProviderFor(
+      user.activeProvider,
+      (await listKeys(user.id)).map((key) => key.provider),
+    );
+    if (!imageProvider)
+      return bad("The Image tab needs an OpenRouter or ArgoLink key. Add one under API keys.");
+    if (!routeFor(model, imageProvider))
+      return bad(`${model.name} isn't available on ${PROVIDER_INFO[imageProvider].label}.`);
     await assertStorageAvailable(user.id);
 
     // "auto": the reference's shape if there is one; otherwise the model's own fallback.
@@ -71,6 +80,7 @@ export async function POST(request: Request) {
     const now = Date.now();
     const gen: ImageGeneration = {
       id: crypto.randomUUID(),
+      provider: imageProvider,
       model: model.id,
       prompt,
       status: "queued",

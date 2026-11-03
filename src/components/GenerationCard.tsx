@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getModel } from "@/lib/registry";
+import { lookupModel } from "@/lib/registry/lookup";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
 
 export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
@@ -44,7 +44,7 @@ export function GenerationCard({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
-  const model = getModel(gen.model);
+  const model = lookupModel(gen.model);
   const ready = gen.status === "succeeded";
 
   return (

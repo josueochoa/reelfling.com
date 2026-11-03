@@ -1,18 +1,32 @@
 // One catalog for every model the app can offer. Hand-written ModelArk and ArgoLink
 // entries live in hand.ts; fal and OpenRouter entries are generated (see catalog/).
-// OpenRouter is a route provider only — there is no OpenRouter client in this app.
+// The generated JSON is loaded on the server (./generated). The client only sees this
+// module plus a slim picker payload from /api/models.
 
 export const ROUTE_PROVIDERS = ["modelark", "argolink", "fal", "openrouter"] as const;
 export type RouteProvider = (typeof ROUTE_PROVIDERS)[number];
 
-/** Providers a user can save a key for. OpenRouter is intentionally not one of them. */
-export type ProviderId = "modelark" | "argolink" | "fal";
+/** Providers a user can save a key for. */
+export type ProviderId = "modelark" | "argolink" | "fal" | "openrouter";
 
 /** Video studio providers. fal is a generic queue client, not a studio catalog. */
 export type StudioProviderId = Exclude<ProviderId, "fal">;
 
+/** Providers that can run the Image tab. */
+export const IMAGE_KEY_PROVIDERS = ["argolink", "openrouter"] as const;
+export type ImageKeyProvider = (typeof IMAGE_KEY_PROVIDERS)[number];
+
 export function isStudioProvider(id: string): id is StudioProviderId {
-  return id === "modelark" || id === "argolink";
+  return id === "modelark" || id === "argolink" || id === "openrouter";
+}
+
+/** Active provider when it can make images, otherwise the first saved image key. */
+export function imageProviderFor(
+  active: string | null | undefined,
+  keys: readonly string[],
+): ImageKeyProvider | undefined {
+  if ((active === "argolink" || active === "openrouter") && keys.includes(active)) return active;
+  return IMAGE_KEY_PROVIDERS.find((provider) => keys.includes(provider));
 }
 
 export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; blurb: string }> = {
@@ -30,6 +44,11 @@ export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; 
     label: "fal",
     keyUrl: "https://fal.ai/dashboard/keys",
     blurb: "Any fal endpoint. Paste an endpoint id and a JSON input.",
+  },
+  openrouter: {
+    label: "OpenRouter",
+    keyUrl: "https://openrouter.ai/settings/keys",
+    blurb: "Seedance 2.5, Kling 3.0 Pro, Veo 3.1 Fast, and the Image tab.",
   },
 };
 
@@ -66,6 +85,7 @@ export const MAPPER_IDS = [
   "argolink.image.openai",
   "fal.queue",
   "openrouter.video",
+  "openrouter.image",
 ] as const;
 export type MapperId = (typeof MAPPER_IDS)[number];
 

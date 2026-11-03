@@ -1,21 +1,33 @@
-// Image generations (the Image tab). ArgoLink's images API is synchronous and can take
-// minutes, so jobs run in the background: POST /api/images queues one, the Worker's queue
-// consumer runs it (worker.ts → /api/images/run), and the page polls. Results are copied
-// into the user's R2 bucket as assets of the generation.
+// Image generations (the Image tab). ArgoLink and OpenRouter's images APIs are synchronous
+// and can take minutes, so jobs run in the background: POST /api/images queues one, the
+// Worker's queue consumer runs it (worker.ts → /api/images/run), and the page polls.
+// Results are copied into the user's R2 bucket as assets of the generation.
 
 import { all, env, first, run } from "./db";
 import { downloadGeneratedImage } from "./imageDownload";
 import { getCredentials } from "./keys";
 import { normalizeMentions } from "./mentions";
 import { argo } from "./providers/argolink";
+import { generateOpenRouterImages, openRouterImageFile } from "./providers/openrouter";
 import { MAPPERS } from "./registry/mappers";
-import { getImageModel, mentionSyntax, routeFor, type ImageQuality, type ImageResolution } from "./registry";
+import type { OpenRouterImageCall } from "./registry/bodies";
+import {
+  getImageModel,
+  mentionSyntax,
+  PROVIDER_INFO,
+  routeFor,
+  type ImageKeyProvider,
+  type ImageQuality,
+  type ImageResolution,
+} from "./registry";
 import { deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
 
 export type ImageStatus = "queued" | "running" | "succeeded" | "failed";
 
 export interface ImageGeneration {
   id: string;
+  /** Which key ran it. Missing on jobs from before OpenRouter (= argolink). */
+  provider?: ImageKeyProvider;
   model: string;
   /** As written, with "@Image 1" mentions. */
   prompt: string;
@@ -110,19 +122,27 @@ interface ArgoImages {
   data?: { url?: string; b64_json?: string }[];
 }
 
-const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+const EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
 
 /** Runs a queued job to completion. Safe to call more than once. */
 export async function runImageJob(userId: string, id: string) {
   if (!(await claim(userId, id))) return;
   const gen = (await getImageGeneration(userId, id))!;
+  let apiKey = "";
   try {
     const model = getImageModel(gen.model);
     if (!model) throw new Error(`Unknown model ${gen.model}`);
-    const route = routeFor(model, "argolink");
-    if (!route) throw new Error(`${model.name} has no ArgoLink route`);
-    const creds = await getCredentials(userId, "argolink");
-    if (!creds) throw new Error("Add your ArgoLink API key under API keys.");
+    const provider = gen.provider ?? "argolink";
+    const route = routeFor(model, provider);
+    if (!route) throw new Error(`${model.name} has no ${PROVIDER_INFO[provider].label} route`);
+    const creds = await getCredentials(userId, provider);
+    if (!creds) throw new Error(`Add your ${PROVIDER_INFO[provider].label} API key under API keys.`);
+    apiKey = creds.apiKey;
 
     const references = await Promise.all(
       gen.references.map(async (key) => {
@@ -146,18 +166,23 @@ export async function runImageJob(userId: string, id: string) {
         },
       },
       { endpoint: route.endpoint },
-    ) as { path: string; body: Record<string, unknown> };
+    );
 
-    const result = await argo<ArgoImages>(creds, mapped.path, {
-      method: "POST",
-      body: JSON.stringify(mapped.body),
-    });
-    const items = result.data ?? [];
-    if (!items.length) throw new Error("ArgoLink returned no images");
+    const items =
+      provider === "openrouter"
+        ? await generateOpenRouterImages(creds.apiKey, mapped as OpenRouterImageCall)
+        : ((
+            await argo<ArgoImages>(creds, (mapped as { path: string }).path, {
+              method: "POST",
+              body: JSON.stringify((mapped as { body: unknown }).body),
+            })
+          ).data ?? []);
+    if (!items.length) throw new Error(`${PROVIDER_INFO[provider].label} returned no images`);
 
     const images: ImageGeneration["images"] = [];
     for (const [i, item] of items.entries()) {
-      const source = await downloadGeneratedImage(item);
+      const source =
+        provider === "openrouter" ? await openRouterImageFile(creds.apiKey, item) : await downloadGeneratedImage(item);
       const contentType = source.headers.get("content-type")?.split(";")[0] || "image/jpeg";
       const asset = await putAsset(userId, {
         key: `images/${id}/${i}.${EXT[contentType] ?? "jpg"}`,
@@ -169,10 +194,11 @@ export async function runImageJob(userId: string, id: string) {
     }
     await updateImageGeneration(userId, id, { status: "succeeded", images, completedAt: Date.now() });
   } catch (e) {
-    console.error(`[image ${id}]`, e);
+    const message = (apiKey ? (e as Error).message.split(apiKey).join("[redacted]") : (e as Error).message) || "Generation failed";
+    console.error(`[image ${id}]`, message);
     await updateImageGeneration(userId, id, {
       status: "failed",
-      error: (e as Error).message || "Generation failed",
+      error: message,
       completedAt: Date.now(),
     });
   }

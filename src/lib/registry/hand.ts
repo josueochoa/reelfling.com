@@ -191,7 +191,10 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     group: "image",
     task: "image",
     tasks: ["image", "image-edit"],
-    routes: [{ provider: "argolink", endpoint: "nano-banana-2.1", mapper: "argolink.image.google" }],
+    routes: [
+      { provider: "argolink", endpoint: "nano-banana-2.1", mapper: "argolink.image.google" },
+      { provider: "openrouter", endpoint: "google/gemini-nano-banana-2.1", mapper: "openrouter.image" },
+    ],
     promptRequired: true,
     refSyntax: "plain",
     capabilities: {
@@ -232,7 +235,10 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     group: "image",
     task: "image",
     tasks: ["image", "image-edit"],
-    routes: [{ provider: "argolink", endpoint: "gpt-image-2.5-sunburst", mapper: "argolink.image.openai" }],
+    routes: [
+      { provider: "argolink", endpoint: "gpt-image-2.5-sunburst", mapper: "argolink.image.openai" },
+      { provider: "openrouter", endpoint: "openai/gpt-image-2.5-sunburst", mapper: "openrouter.image" },
+    ],
     promptRequired: true,
     refSyntax: "plain",
     capabilities: {

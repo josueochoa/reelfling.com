@@ -1,6 +1,13 @@
 import { HAND_MODELS } from "./hand";
 import { assertRegistry } from "./parse";
-import { isImage, isVideo, type ImageModel, type ModelEntry, type StudioProviderId, type VideoModel } from "./types";
+import {
+  isImage,
+  isVideo,
+  type ImageModel,
+  type ModelEntry,
+  type StudioProviderId,
+  type VideoModel,
+} from "./types";
 
 /**
  * Models the studio offers. The generated fal and OpenRouter catalogs live in
@@ -28,9 +35,11 @@ export function modelsFor(provider: StudioProviderId): VideoModel[] {
   return MODELS.filter(isVideo).filter((model) => model.routes.some((route) => route.provider === provider));
 }
 
-/** Image models that run through ArgoLink. fal image routes stay in the registry only. */
+/** Image models the Image tab can run. fal image routes stay in the registry only. */
 export function imageModels(): ImageModel[] {
-  return MODELS.filter(isImage).filter((model) => model.routes.some((route) => route.provider === "argolink"));
+  return MODELS.filter(isImage).filter((model) =>
+    model.routes.some((route) => route.provider === "argolink" || route.provider === "openrouter"),
+  );
 }
 
 export function routeFor<T extends ModelEntry>(model: T, provider: string) {
@@ -42,6 +51,7 @@ export { mentionSyntax } from "./syntax";
 export { imageRequestError, videoRequestError } from "./validate";
 export { assertRegistry, parseModel } from "./parse";
 export {
+  imageProviderFor,
   isImage,
   isStudioProvider,
   isVideo,
@@ -54,6 +64,7 @@ export type {
   DurationCap,
   EstimateInput,
   ImageCapabilities,
+  ImageKeyProvider,
   ImageModel,
   ImagePrice,
   ImageQuality,

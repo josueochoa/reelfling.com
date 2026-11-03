@@ -1,7 +1,8 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
-import { getModel, isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
+import { catalogModel } from "@/lib/registry/generated";
+import { isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation } from "@/lib/types";
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     const provider = await providerForUser(user.id, providerId);
 
     const req = (await request.json()) as GenerateRequest;
-    const model = getModel(req.model);
+    const model = catalogModel(req.model);
     const route = model && routeFor(model, providerId);
     if (!model || !isVideo(model) || !route)
       return Response.json({ error: `Model "${req.model}" isn't available on ${provider.label}` }, { status: 400 });
