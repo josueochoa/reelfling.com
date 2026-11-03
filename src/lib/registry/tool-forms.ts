@@ -11,8 +11,6 @@ export interface ToolLimits {
   contentTypes?: readonly string[];
   /** Named in the error, for example "PNG". */
   contentTypeLabel?: string;
-  /** Inclusive cap on the fal `upscale_factor` this endpoint accepts. */
-  maxFactor?: number;
 }
 
 export interface ToolForm {
@@ -35,12 +33,6 @@ export interface ToolForm {
   quote?: ToolQuote;
 }
 
-/**
- * BiRefNet v2, checked against fal's live catalog (GET /v1/models?endpoint_id=fal-ai/birefnet/v2,
- * Nov 2026). `image_url` is the only required input. `sync_mode` is left off: a data URI
- * would not be a file the sweep can copy. `output_mask` and `mask_only` stay off so the
- * job saves the cut-out image.
- */
 const TOPAZ_VIDEO_MODELS = [
   "Proteus",
   "Proteus Natural",
@@ -96,9 +88,10 @@ const TARGET_FIELD = {
  * Upscale forms checked against fal's live catalog on Nov 3, 2026
  * (`GET /v1/models?endpoint_id=…&expand=openapi-3.0`, no key) and each model's
  * public llms.txt. `sync_mode` stays off so the result is a file the sweep can copy.
- * Rates are the published ones. Topaz video has none: its page calls the
- * per-10-second amounts rounded examples, and they don't match its own 1-minute
- * figures. `GET /v1/models/pricing` returns 401 without a key.
+ * SeedVR and FlashVSR video are priced per frame (width × height × frames). The
+ * file has no frame rate, so they have no quote. Topaz video's per-10-second
+ * amounts are labeled rounded examples and don't match its own 1-minute figures,
+ * so it has no quote either. `GET /v1/models/pricing` returns 401 without a key.
  */
 const UPSCALE_FORMS: readonly ToolForm[] = [
   {
@@ -106,8 +99,6 @@ const UPSCALE_FORMS: readonly ToolForm[] = [
     accepts: "video",
     inputKey: "video_url",
     menu: "Upscale",
-    quote: { type: "output_megapixels", usd: 0.001, frames: true },
-    limits: { maxFactor: 10 },
     targets: SEEDVR_TARGETS,
     fields: [{ ...TARGET_FIELD, options: ["2x", "4x", "1080p", "4K"] }],
   },
@@ -116,7 +107,7 @@ const UPSCALE_FORMS: readonly ToolForm[] = [
     accepts: "video",
     inputKey: "video_url",
     menu: "Upscale",
-    limits: { maxSeconds: 300, maxFactor: 4 },
+    limits: { maxSeconds: 300 },
     targets: SCALE_2_4,
     fields: [
       { name: "model", label: "Precision model", type: "enum", default: "Proteus", options: TOPAZ_VIDEO_MODELS },
@@ -128,8 +119,6 @@ const UPSCALE_FORMS: readonly ToolForm[] = [
     accepts: "video",
     inputKey: "video_url",
     menu: "Upscale",
-    quote: { type: "output_megapixels", usd: 0.0005, frames: true },
-    limits: { maxFactor: 4 },
     targets: SCALE_2_4,
     fields: [{ ...TARGET_FIELD, options: ["2x", "4x"] }],
   },
@@ -139,7 +128,6 @@ const UPSCALE_FORMS: readonly ToolForm[] = [
     inputKey: "image_url",
     menu: "Upscale",
     quote: { type: "output_megapixels", usd: 0.001 },
-    limits: { maxFactor: 10 },
     targets: SEEDVR_TARGETS,
     fields: [{ ...TARGET_FIELD, options: ["2x", "4x", "1080p", "4K"] }],
   },
@@ -149,7 +137,6 @@ const UPSCALE_FORMS: readonly ToolForm[] = [
     inputKey: "image_url",
     menu: "Upscale",
     quote: { type: "output_megapixel_block", usd: 0.08, block: 24 },
-    limits: { maxFactor: 4 },
     targets: SCALE_2_4,
     fields: [
       { name: "model", label: "Precision model", type: "enum", default: "Standard V2", options: TOPAZ_IMAGE_MODELS },
@@ -168,6 +155,10 @@ const UPSCALE_FORMS: readonly ToolForm[] = [
 ];
 
 export const TOOL_FORMS: readonly ToolForm[] = [
+  // BiRefNet v2, checked against fal's live catalog (GET /v1/models?endpoint_id=fal-ai/birefnet/v2,
+  // Nov 2026). `image_url` is the only required input. `sync_mode` is left off: a data URI
+  // would not be a file the sweep can copy. `output_mask` and `mask_only` stay off so the
+  // job saves the cut-out image.
   {
     id: "fal:fal-ai/birefnet/v2",
     accepts: "image",
@@ -271,9 +262,6 @@ function applyTargets(
 /** Fal JSON for one asset. The input URL is a `upload:<key>` ref until the job resolves it. */
 export function buildToolBody(form: ToolForm, params: unknown, assetRef: string): Record<string, unknown> {
   const parsed = applyTargets(form, parseToolParams(form, params));
-  const factor = parsed.upscale_factor;
-  if (typeof factor === "number" && form.limits?.maxFactor !== undefined && factor > form.limits.maxFactor)
-    throw new ProviderError(`Upscale factor ${factor} is above the ${form.limits.maxFactor}× limit`, 400);
   return { ...parsed, [form.inputKey]: assetRef };
 }
 

@@ -34,8 +34,6 @@ export interface AssetMeta {
   thumb?: string;
   width?: number;
   height?: number;
-  /** Frames per second, when the file reported one. */
-  fps?: number;
   /** Display label, for example "1920×1080" or "4K". */
   resolution?: string;
 }
@@ -413,7 +411,6 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
       hasThumb: !!a.meta?.thumb,
       width: a.meta?.width,
       height: a.meta?.height,
-      fps: a.meta?.fps,
       resolution: a.meta?.resolution,
       createdAt: a.createdAt,
     };

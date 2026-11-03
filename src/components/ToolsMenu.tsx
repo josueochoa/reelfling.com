@@ -64,7 +64,6 @@ function estimateFor(tool: ToolView, subjects: readonly ToolAsset[], target: str
       width: subject.width,
       height: subject.height,
       duration: subject.duration,
-      fps: subject.fps,
       target,
     });
     if (part === undefined) return undefined;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { catalogModel } from "./registry/generated";
-import { buildToolBody, formFor, TOOL_FORMS, toolLimitError, type ToolForm } from "./registry/tool-forms";
+import { buildToolBody, formFor, toolLimitError } from "./registry/tool-forms";
 import { publicTools } from "./toolCatalog";
 import { formatUpscaleCost, planBulkToolJobs, upscaleCost, upscaleResolution } from "./upscaleQuote";
 
@@ -69,25 +69,6 @@ describe("upscale request mapping", () => {
     assert.throws(() => body("fal:fal-ai/seedvr/upscale/video", { sync_mode: true }), /Unknown tool setting/);
   });
 
-  it("keeps every offered factor inside the endpoint maximum", () => {
-    for (const form of TOOL_FORMS) {
-      if (!form.targets || form.limits?.maxFactor === undefined) continue;
-      for (const [target, mapped] of Object.entries(form.targets)) {
-        if (typeof mapped.upscale_factor !== "number") continue;
-        assert.ok(mapped.upscale_factor <= form.limits.maxFactor, `${form.id} ${target}`);
-      }
-    }
-    const over: ToolForm = {
-      id: "fal:example/upscale",
-      accepts: "video",
-      inputKey: "video_url",
-      limits: { maxFactor: 4 },
-      targets: { "4x": { upscale_factor: 5 } },
-      fields: [{ name: "target", label: "Target", type: "enum", options: ["4x"], default: "4x" }],
-    };
-    assert.throws(() => buildToolBody(over, { target: "4x" }, REF), /4× limit/);
-  });
-
   it("owns the upscale catalog entries as tools", () => {
     for (const id of [
       "fal:fal-ai/seedvr/upscale/video",
@@ -123,32 +104,34 @@ describe("upscale limits", () => {
 });
 
 describe("upscale cost", () => {
-  it("uses fal's published megapixel, block, and per-image formulas", () => {
-    const video = formFor("fal:fal-ai/seedvr/upscale/video")!.quote;
-    const flash = formFor("fal:fal-ai/flashvsr/upscale/video")!.quote;
+  it("uses fal's published image formulas from width and height", () => {
     const image = formFor("fal:fal-ai/seedvr/upscale/image")!.quote;
     const topazImage = formFor("fal:topaz/upscale/image/precision")!.quote;
     const recraft = formFor("fal:fal-ai/recraft/upscale/crisp")!.quote;
-    // Published example: an upscaled 1920×1080 video of 121 frames at $0.001 / megapixel.
-    const example = (1920 * 1080 * 121 * 0.001) / 1_000_000;
-    assert.equal(upscaleCost(video, { width: 960, height: 540, target: "2x", duration: 121, fps: 1 }), example);
-    assert.equal(formatUpscaleCost(example), "$0.25");
-    assert.equal(formatUpscaleCost(0.004), "$0.004");
-    assert.equal(upscaleCost(flash, { width: 960, height: 540, target: "2x", duration: 121, fps: 1 }), example / 2);
     assert.equal(upscaleCost(image, { width: 1000, height: 1000, target: "2x" }), 0.004);
+    assert.equal(formatUpscaleCost(0.004), "$0.004");
     assert.equal(upscaleCost(topazImage, { width: 3000, height: 2000, target: "2x" }), 0.08);
     assert.equal(upscaleCost(topazImage, { width: 3001, height: 2000, target: "2x" }), 0.16);
     assert.equal(upscaleCost(recraft, {}), 0.004);
-    assert.equal(upscaleCost(recraft, { width: 10, height: 10 }), 0.004);
+    assert.equal(upscaleCost(image, { width: 5000, height: 2500, target: "2x" }), 0.05);
   });
 
-  it("returns no number when the formula or the file's size is missing", () => {
-    const video = formFor("fal:fal-ai/seedvr/upscale/video")!.quote;
+  it("prices a per-second video rate from duration and the named resolution", () => {
+    const quote = { type: "per_second" as const, byResolution: { "1080p": 0.02, "4K": 0.06 } };
+    assert.equal(upscaleCost(quote, { duration: 10, target: "1080p" }), 0.2);
+    assert.equal(upscaleCost(quote, { duration: 10, target: "4K", width: 1280, height: 720 }), 0.6);
+    assert.equal(upscaleCost(quote, { duration: 10, width: 1280, height: 720, target: "2x" }), undefined);
+    assert.equal(upscaleCost(quote, { target: "1080p" }), undefined);
+  });
+
+  it("shows no video number when the published price is per frame", () => {
+    assert.equal(formFor("fal:fal-ai/seedvr/upscale/video")?.quote, undefined);
+    assert.equal(formFor("fal:fal-ai/flashvsr/upscale/video")?.quote, undefined);
     assert.equal(formFor("fal:topaz/upscale/video/precision")?.quote, undefined);
-    assert.equal(upscaleCost(undefined, { width: 1280, height: 720, duration: 10, fps: 24, target: "2x" }), undefined);
-    assert.equal(upscaleCost(video, { duration: 10, fps: 24, target: "2x" }), undefined);
-    assert.equal(upscaleCost(video, { width: 960, height: 540, duration: 10, target: "2x" }), undefined);
-    assert.equal(upscaleCost(video, { width: 960, height: 540, duration: 10, fps: 24, target: "1080p" }), undefined);
+    assert.equal(
+      upscaleCost(undefined, { width: 1280, height: 720, duration: 5, target: "2x" }),
+      undefined,
+    );
   });
 });
 

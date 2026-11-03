@@ -210,7 +210,6 @@ export function AssetsStudio({
                     width: item.width,
                     height: item.height,
                     duration: item.duration,
-                    fps: item.fps,
                   }))}
                 tools={tools}
                 onStarted={() => {
@@ -364,7 +363,6 @@ export function AssetsStudio({
                   width: previewing.width,
                   height: previewing.height,
                   duration: previewing.duration,
-                  fps: previewing.fps,
                 }}
                 tools={tools}
                 onStarted={() => {

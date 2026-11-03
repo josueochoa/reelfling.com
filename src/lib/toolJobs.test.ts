@@ -167,7 +167,8 @@ describe("tool catalog", () => {
     assert.equal(tools[0].endpoint, ENDPOINT);
     assert.equal(publicTools().some((tool) => "endpoint" in tool), false);
     assert.equal(publicTools().find((tool) => tool.id === "fal:topaz/upscale/video/precision")?.quote, undefined);
-    assert.equal(publicTools().find((tool) => tool.id === "fal:fal-ai/seedvr/upscale/video")?.quote?.type, "output_megapixels");
+    assert.equal(publicTools().find((tool) => tool.id === "fal:fal-ai/seedvr/upscale/video")?.quote, undefined);
+    assert.equal(publicTools().find((tool) => tool.id === "fal:fal-ai/seedvr/upscale/image")?.quote?.type, "output_megapixels");
     assert.deepEqual(
       toolsForKind(tools, "image").map((tool) => tool.id),
       [

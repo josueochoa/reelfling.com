@@ -27,7 +27,6 @@ export async function POST(request: Request) {
       thumb?: boolean;
       width?: number;
       height?: number;
-      fps?: number;
     };
     const { key } = body;
     if (!KEY_RE.test(key ?? "")) return Response.json({ error: "Invalid upload key" }, { status: 400 });
@@ -38,7 +37,6 @@ export async function POST(request: Request) {
         duration: Number.isFinite(body.duration) ? Math.round(body.duration! * 100) / 100 : undefined,
         width: finiteDim(body.width, 20_000),
         height: finiteDim(body.height, 20_000),
-        fps: finiteDim(body.fps, 480),
         // Waveform bars for audio: up to 64 values, 0–100.
         peaks: Array.isArray(body.peaks)
           ? body.peaks.slice(0, 64).map((p) => Math.max(0, Math.min(100, Math.round(Number(p) || 0))))
