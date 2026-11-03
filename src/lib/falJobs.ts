@@ -31,7 +31,18 @@ import {
   providerUrl,
   putAsset,
 } from "./storage";
+import { outputLineage } from "./registry/tool-forms";
+import { prepareToolInput } from "./toolCatalog";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
+
+/** Stored on a fal job when it was started from the Tools menu. */
+export interface FalToolJob {
+  id: string;
+  name: string;
+  inputAssetIds: string[];
+  params: Record<string, string | number | boolean>;
+  route: { provider: "fal"; endpoint: string; mapper: string };
+}
 
 export interface FalJob {
   id: string;
@@ -45,6 +56,10 @@ export interface FalJob {
   request: unknown;
   /** Latest fal payload. */
   response?: unknown;
+  /** Set for a catalog tool. Absent on raw endpoint runs. */
+  tool?: FalToolJob;
+  /** Latest queue position, while fal still has the request. */
+  queuePosition?: number;
   outputs: { key: string; contentType: string }[];
   error?: string;
   fields?: FalFieldError[];
@@ -138,6 +153,10 @@ export function publicFalJob(job: FalJob): FalJobView {
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     completedAt: job.completedAt,
+    ...(job.tool && {
+      tool: { id: job.tool.id, name: job.tool.name, inputAssetIds: job.tool.inputAssetIds },
+    }),
+    ...(job.queuePosition !== undefined && { queuePosition: job.queuePosition }),
   };
 }
 
@@ -168,7 +187,13 @@ function assertNoSecret(value: unknown, secret: string) {
 }
 
 /** Submits to fal and records the job. A 422 is thrown and nothing is stored. */
-export async function createFalJob(userId: string, endpointId: string, input: unknown, apiKey: string) {
+export async function createFalJob(
+  userId: string,
+  endpointId: string,
+  input: unknown,
+  apiKey: string,
+  tool?: FalToolJob,
+) {
   const resolved = await resolveFalInput(userId, input);
   const request = redactSecrets(resolved, apiKey);
   assertNoSecret(request, apiKey);
@@ -185,12 +210,49 @@ export async function createFalJob(userId: string, endpointId: string, input: un
     cancelUrl: submitted.cancelUrl,
     request,
     response: submitted.raw,
+    ...(tool && { tool }),
     outputs: [],
     createdAt: now,
     updatedAt: now,
   };
   await insertFalJob(userId, job);
   return job;
+}
+
+function mediaKind(contentType: string): "image" | "video" | "audio" | undefined {
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType.startsWith("video/")) return "video";
+  if (contentType.startsWith("audio/")) return "audio";
+  return undefined;
+}
+
+/**
+ * Runs a catalog tool on one library asset. The endpoint comes from the catalog,
+ * not the client. The new file is written later, with parent_id and tool set.
+ */
+export async function createToolJob(
+  userId: string,
+  input: { toolId: string; assetIds: unknown; params: unknown },
+  apiKey: string,
+) {
+  const assetIds = Array.isArray(input.assetIds) ? input.assetIds.filter((id): id is string => typeof id === "string") : [];
+  if (assetIds.length !== 1 || !isAssetKey(assetIds[0]))
+    throw new ProviderError("Choose one asset from your library.", 400);
+  const prepared = prepareToolInput(input.toolId, assetIds[0], input.params);
+  if (!prepared) throw new ProviderError("Unknown tool", 400);
+  const asset = await getAsset(userId, assetIds[0]);
+  if (!asset) throw new ProviderError("That asset is no longer in your library.", 400);
+  if (mediaKind(asset.contentType) !== prepared.tool.accepts)
+    throw new ProviderError(prepared.tool.accepts === "image" ? "This tool needs an image." : "This tool needs a video.", 400);
+  const params = { ...prepared.body };
+  delete params[prepared.tool.inputKey];
+  return createFalJob(userId, prepared.tool.endpoint, prepared.body, apiKey, {
+    id: prepared.tool.id,
+    name: prepared.tool.name,
+    inputAssetIds: [asset.key],
+    params: params as Record<string, string | number | boolean>,
+    route: { provider: "fal", endpoint: prepared.tool.endpoint, mapper: prepared.tool.mapper },
+  });
 }
 
 const EXT: Record<string, string> = {
@@ -245,11 +307,15 @@ async function storeOutputs(userId: string, job: FalJob) {
     }
     const contentType = contentTypeOf(file, source.headers.get("content-type"));
     const ext = EXT[contentType] ?? typeFromUrl(file.url)?.split("/")[1] ?? "bin";
+    const lineage = outputLineage(job);
     const asset = await putAsset(userId, {
       key: `fal/${job.id}/${i}.${ext}`,
       source,
       contentType,
       generationId: job.id,
+      parentId: lineage.parentId,
+      tool: lineage.tool,
+      name: lineage.tool ? job.tool?.name : undefined,
     });
     outputs.push({ key: asset.key, contentType });
   }
@@ -272,7 +338,8 @@ export async function syncFalJob(userId: string, id: string): Promise<FalJob | u
       response: snap.response,
       error: snap.error,
       fields: snap.fields,
-      ...(done && { completedAt: Date.now() }),
+      queuePosition: snap.queuePosition,
+      ...(done && { completedAt: Date.now(), queuePosition: undefined }),
     });
     if (!job) return undefined;
   }

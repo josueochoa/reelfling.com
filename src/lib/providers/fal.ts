@@ -42,6 +42,8 @@ export interface FalSnapshot {
   error?: string;
   fields?: FalFieldError[];
   outputs: FalOutput[];
+  /** From the status payload, when fal sent one. */
+  queuePosition?: number;
 }
 
 export class FalValidationError extends ProviderError {
@@ -223,9 +225,12 @@ export async function pollFal(
 ): Promise<FalSnapshot> {
   const statusRes = await falCall(apiKey, urls.statusUrl);
   if (statusRes.status < 200 || statusRes.status >= 300) throw httpFailure(statusRes.status, statusRes.body, apiKey);
-  const queueStatus = str(asRecord(statusRes.body).status);
-  if (queueStatus === "IN_QUEUE") return { status: "queued", response: statusRes.body, outputs: [] };
-  if (queueStatus === "IN_PROGRESS") return { status: "running", response: statusRes.body, outputs: [] };
+  const statusBody = asRecord(statusRes.body);
+  const queueStatus = str(statusBody.status);
+  const position = statusBody.queue_position;
+  const queuePosition = typeof position === "number" && Number.isFinite(position) ? position : undefined;
+  if (queueStatus === "IN_QUEUE") return { status: "queued", response: statusRes.body, outputs: [], queuePosition };
+  if (queueStatus === "IN_PROGRESS") return { status: "running", response: statusRes.body, outputs: [], queuePosition };
   if (queueStatus !== "COMPLETED") {
     return {
       status: "failed",

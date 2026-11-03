@@ -158,6 +158,11 @@ export function assertRegistry(models: readonly ModelEntry[]) {
     } else {
       const expected = model.group === "speech" ? "tts" : "tool";
       if (model.task !== expected) throw new Error(`${model.id} task ${model.task} doesn't match ${model.group}`);
+      if (model.group === "tool") {
+        const accepts = model.capabilities.accepts;
+        if (accepts !== undefined && accepts !== "image" && accepts !== "video")
+          throw new Error(`${model.id} accepts "${String(accepts)}", not image or video`);
+      }
     }
   }
 }

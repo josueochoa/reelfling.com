@@ -193,6 +193,8 @@ export interface SpeechCapabilities {
 }
 
 export interface ToolCapabilities {
+  /** Asset kind this tool reads. Recorded from the provider input schema. */
+  accepts?: "image" | "video";
   resolutions?: readonly string[];
 }
 
