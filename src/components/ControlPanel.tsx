@@ -10,15 +10,7 @@ import {
   type CameraMove,
   type VideoModel,
 } from "@/lib/registry";
-import {
-  availabilityFor,
-  availabilityHint,
-  hasTask,
-  modeRoutes,
-  routeProviders,
-  sortByAvailability,
-  type CatalogTool,
-} from "@/lib/registry/availability";
+import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { CameraMoves } from "./CameraMoves";
 import { ModelMenu } from "./ModelMenu";
@@ -97,15 +89,12 @@ interface Props {
   models: VideoModel[];
   /** Providers this user has a key for. Names only. */
   keyed: ReadonlySet<string>;
-  tools: readonly CatalogTool[];
   preset: Preset;
   onGenerate: (req: GenerateRequest) => Promise<boolean>;
   error: string | null;
   library: Library;
   onOpenLibrary: () => void;
   onOpenKeys: () => void;
-  /** A fal-only tool has a key, but this composer can't run it. */
-  onUseFal?: () => void;
   /** Library item id → its mention ("@Image 2"), for showing selection in the Uploads panel. */
   onReferencesChange: (labels: Map<string, string>) => void;
 }
@@ -138,14 +127,12 @@ export function ControlPanel({
   ref,
   models,
   keyed,
-  tools,
   preset,
   onGenerate,
   error,
   library,
   onOpenLibrary,
   onOpenKeys,
-  onUseFal,
   onReferencesChange,
 }: Props) {
   const initialModel = models.find((m) => m.id === preset.model) ?? models[0];
@@ -180,7 +167,6 @@ export function ControlPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [modeHover, setModeHover] = useState<GenerationMode | null>(null);
-  const [toolHover, setToolHover] = useState<string | null>(null);
   const editor = useRef<PromptEditorHandle>(null);
 
   const caps = model.capabilities;
@@ -188,10 +174,8 @@ export function ControlPanel({
   const showFixed = moves.length === 0 && !!(caps.camera && caps.camera.fixed);
   const durations = caps.durations;
   const hasRefs = caps.references.total > 0;
-  const effectiveMode: GenerationMode =
-    mode === "references" && availabilityFor(routeProviders(modeRoutes(model, "references")), keyed).available
-      ? "references"
-      : "frames";
+  const routesOpen = availabilityFor(routeProviders(model.routes), keyed).available;
+  const effectiveMode: GenerationMode = hasRefs && mode === "references" && routesOpen ? "references" : "frames";
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
   const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
@@ -384,7 +368,7 @@ export function ControlPanel({
   }));
 
   function changeMode(m: GenerationMode) {
-    if (!availabilityFor(routeProviders(modeRoutes(model, m)), keyed).available) return;
+    if (!routesOpen) return;
     setMode(m);
     if (m === "references" && ratio === "adaptive") setRatio("16:9");
   }
@@ -404,7 +388,7 @@ export function ControlPanel({
   const uploading =
     (refs && refList.some((r) => r.item.status !== "ready")) ||
     (effectiveMode === "frames" && (framePending(firstFrame) || framePending(lastFrame)));
-  const gate = availabilityFor(routeProviders(modeRoutes(model, effectiveMode)), keyed);
+  const gate = availabilityFor(routeProviders(model.routes), keyed);
   const canSubmit =
     gate.available &&
     !submitting &&
@@ -456,99 +440,47 @@ export function ControlPanel({
           <p className="mt-1.5 text-xs text-zinc-500">{model.description}</p>
         </Section>
 
-        {tools.length > 0 && (
-          <Section label="Tools">
-            <div data-testid="tool-row" onMouseLeave={() => setToolHover(null)}>
-              <div className="flex flex-wrap gap-1.5">
-                {sortByAvailability(tools, (tool) => availabilityFor(tool.providers, keyed).available).map((tool) => {
-                  const locked = !availabilityFor(tool.providers, keyed).available;
-                  return (
-                    <button
-                      key={tool.task}
-                      type="button"
-                      data-testid={`tool-${tool.task}`}
-                      data-available={locked ? "false" : "true"}
-                      aria-disabled={locked}
-                      onMouseEnter={() => setToolHover(tool.task)}
-                      onClick={() => {
-                        if (locked) {
-                          setToolHover(tool.task);
-                          return;
-                        }
-                        const match = models.find(
-                          (item) => hasTask(item, tool.task) && availabilityFor(routeProviders(item.routes), keyed).available,
-                        );
-                        if (match) changeModel(match.id);
-                        else if (tool.providers.includes("fal") && keyed.has("fal")) onUseFal?.();
-                      }}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs ${
-                        locked
-                          ? "cursor-not-allowed border-white/5 text-zinc-600 opacity-50"
-                          : "border-white/15 text-zinc-100 hover:border-white/25 hover:text-white"
-                      }`}
-                    >
-                      {tool.label}
-                    </button>
-                  );
-                })}
+        {hasRefs && (
+          <div onMouseLeave={() => setModeHover(null)}>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
+              {(["frames", "references"] as const).map((m) => {
+                const active = effectiveMode === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    data-testid={`mode-${m}`}
+                    data-available={routesOpen ? "true" : "false"}
+                    aria-disabled={!routesOpen}
+                    aria-pressed={active && routesOpen}
+                    onMouseEnter={() => setModeHover(m)}
+                    onClick={() => {
+                      if (!routesOpen) {
+                        setModeHover(m);
+                        return;
+                      }
+                      changeMode(m);
+                    }}
+                    className={`rounded-lg py-1.5 capitalize transition ${
+                      !routesOpen
+                        ? "cursor-not-allowed text-zinc-600"
+                        : active
+                          ? "bg-white/10 text-white"
+                          : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
+            </div>
+            {modeHover && !routesOpen && (
+              <div className="mt-2">
+                <UnlockHint hint={availabilityHint(gate.needs)} onOpen={onOpenKeys} />
               </div>
-              {toolHover && (
-                <div className="mt-2">
-                  <UnlockHint
-                    hint={availabilityHint(availabilityFor(tools.find((tool) => tool.task === toolHover)?.providers ?? [], keyed).needs)}
-                    onOpen={onOpenKeys}
-                  />
-                </div>
-              )}
-            </div>
-          </Section>
-        )}
-
-        <div onMouseLeave={() => setModeHover(null)}>
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
-            {(["frames", "references"] as const).map((m) => {
-              const locked = !availabilityFor(routeProviders(modeRoutes(model, m)), keyed).available;
-              const active = effectiveMode === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  data-testid={`mode-${m}`}
-                  data-available={locked ? "false" : "true"}
-                  aria-disabled={locked}
-                  aria-pressed={active && !locked}
-                  onMouseEnter={() => setModeHover(m)}
-                  onClick={() => {
-                    if (locked) {
-                      setModeHover(m);
-                      return;
-                    }
-                    changeMode(m);
-                  }}
-                  className={`rounded-lg py-1.5 capitalize transition ${
-                    locked
-                      ? active
-                        ? "cursor-not-allowed bg-white/5 text-zinc-500"
-                        : "cursor-not-allowed text-zinc-600"
-                      : active
-                        ? "bg-white/10 text-white"
-                        : "text-zinc-400 hover:text-zinc-200"
-                  }`}
-                >
-                  {m}
-                </button>
-              );
-            })}
+            )}
           </div>
-          {modeHover && (
-            <div className="mt-2">
-              <UnlockHint
-                hint={availabilityHint(availabilityFor(routeProviders(modeRoutes(model, modeHover)), keyed).needs)}
-                onOpen={onOpenKeys}
-              />
-            </div>
-          )}
-        </div>
+        )}
 
         {effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (

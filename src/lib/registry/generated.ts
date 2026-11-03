@@ -3,7 +3,6 @@
 
 import falCatalog from "./catalog/fal.json" with { type: "json" };
 import openRouterCatalog from "./catalog/openrouter.json" with { type: "json" };
-import { hasTask, routeProviders, type CatalogTool } from "./availability";
 import { HAND_MODELS } from "./hand";
 import { assertRegistry, parseModel } from "./parse";
 import { isVideo, type ModelEntry, type VideoModel } from "./types";
@@ -51,25 +50,6 @@ export function openRouterPickerModels(): VideoModel[] {
     .slice()
     .sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
     .map(slimVideo);
-}
-
-const TOOL_TASKS = ["upscale", "extend", "lipsync", "avatar", "motion"] as const;
-
-const TOOL_LABEL: Record<(typeof TOOL_TASKS)[number], string> = {
-  upscale: "Upscale",
-  extend: "Extend",
-  lipsync: "Lipsync",
-  avatar: "Avatar",
-  motion: "Motion",
-};
-
-/** One chip per tool task. Providers come from real catalog routes; endpoints stay on the server. */
-export function toolMenu(): CatalogTool[] {
-  return TOOL_TASKS.flatMap((task) => {
-    const providers = routeProviders(ALL_MODELS.filter((model) => hasTask(model, task)).flatMap((model) => model.routes));
-    if (!providers.length) return [];
-    return [{ task, label: TOOL_LABEL[task], providers }];
-  });
 }
 
 function slimVideo(model: VideoModel): VideoModel {

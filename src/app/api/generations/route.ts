@@ -2,7 +2,7 @@ import { errorResponse, requireUser } from "@/lib/auth";
 import { listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
-import { availabilityError, availabilityFor, availableRoute, modeBlock, routeProviders } from "@/lib/registry/availability";
+import { availabilityError, availabilityFor, availableRoute, routeProviders } from "@/lib/registry/availability";
 import { applyCameraMove } from "@/lib/registry/camera-apply";
 import { catalogModel } from "@/lib/registry/generated";
 import { isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
@@ -103,8 +103,6 @@ export async function POST(request: Request) {
     const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
     const gate = availabilityFor(routeProviders(model.routes), keyed);
     if (!gate.available) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
-    const modeError = modeBlock(model, req.mode, keyed);
-    if (modeError) return Response.json({ error: modeError }, { status: 400 });
     const route = availableRoute(model, keyed, user.activeProvider);
     if (!route || !isStudioProvider(route.provider))
       return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });

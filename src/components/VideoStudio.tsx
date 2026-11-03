@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { restoreInputs } from "@/lib/inputs";
 import { isVideo, MODELS, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
-import { availabilityFor, routeProviders, sortByAvailability, type CatalogTool } from "@/lib/registry/availability";
+import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
@@ -32,7 +32,6 @@ export function VideoStudio({
   library,
   onOpenKeys,
   openRouterModels,
-  tools,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -40,7 +39,6 @@ export function VideoStudio({
   onOpenKeys: () => void;
   /** Null until /api/models returns. Empty when that request failed. */
   openRouterModels: VideoModel[] | null;
-  tools: readonly CatalogTool[];
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -201,20 +199,16 @@ export function VideoStudio({
         {models.length > 0 && (
           <ControlPanel
             ref={panel}
-            key={preset.key}
+            key={me ? preset.key : "pending"}
             library={library}
             onOpenLibrary={() => setLibraryOpen(true)}
             onReferencesChange={setRefLabels}
             models={models}
             keyed={keyed}
-            tools={tools}
             preset={preset}
             onGenerate={generate}
             error={error}
             onOpenKeys={onOpenKeys}
-            onUseFal={() => {
-              window.location.hash = "fal";
-            }}
           />
         )}
       </aside>

@@ -10,13 +10,6 @@ export interface Availability {
   needs: RouteProvider[];
 }
 
-export interface CatalogTool {
-  task: string;
-  label: string;
-  /** Providers that have a real catalog route for this task. */
-  providers: RouteProvider[];
-}
-
 /** Providers named on these routes, in catalog order, without duplicates. */
 export function routeProviders(routes: readonly { provider: string }[]): RouteProvider[] {
   const present = new Set(routes.map((route) => route.provider));
@@ -48,19 +41,6 @@ export function availableRoute<T extends { routes: readonly Route[] }>(
   return undefined;
 }
 
-/** References use the model's routes only when the model accepts them. Frames always do. */
-export function modeRoutes(
-  model: { routes: readonly Route[]; capabilities: { references: { total: number } } },
-  mode: "frames" | "references",
-): readonly Route[] {
-  if (mode === "references" && model.capabilities.references.total <= 0) return [];
-  return model.routes;
-}
-
-export function hasTask(model: { task: string; tasks: readonly string[] }, task: string) {
-  return model.task === task || model.tasks.includes(task);
-}
-
 function displayName(provider: string): string {
   return provider in PROVIDER_INFO ? PROVIDER_INFO[provider as ProviderId].label : provider;
 }
@@ -86,17 +66,6 @@ export function availabilityHint(needs: readonly string[]): string {
 export function availabilityError(needs: readonly string[]): string {
   if (!needs.length) return "This isn't available.";
   return `This needs ${article(displayName(needs[0]))} ${providerList(needs)} key.`;
-}
-
-/** Null when the mode can run, or when no key would unlock it (the model simply lacks it). */
-export function modeBlock(
-  model: { routes: readonly Route[]; capabilities: { references: { total: number } } },
-  mode: "frames" | "references",
-  keyed: ReadonlySet<string>,
-): string | null {
-  const result = availabilityFor(routeProviders(modeRoutes(model, mode)), keyed);
-  if (result.available || result.needs.length === 0) return null;
-  return availabilityError(result.needs);
 }
 
 export function sortByAvailability<T>(items: readonly T[], isOpen: (item: T) => boolean): T[] {
