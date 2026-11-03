@@ -2,7 +2,8 @@
 // copied into the user's R2 bucket (see storage.ts).
 
 import { all, first, run } from "./db";
-import { providerForUser } from "./providers";
+import { providerForUser, terminalPollUpdate } from "./providers";
+import { staleVideoFailure } from "./staleVideo";
 import { deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
 import { TERMINAL_STATUSES, type Generation } from "./types";
 
@@ -70,26 +71,41 @@ export async function ensureStoredVideo(userId: string, gen: Generation): Promis
   return asset;
 }
 
+/** Fail every queued or running video that has been open for 2 hours. Returns rows changed. */
+export async function failStaleGenerations(now = Date.now()) {
+  const { sql, params } = staleVideoFailure(now);
+  const res = await run(sql, ...params);
+  return res.meta.changes;
+}
+
 /** Pull the latest task state from the provider and persist it. */
 export async function syncGeneration(userId: string, id: string): Promise<Generation | undefined> {
   let gen = await getGeneration(userId, id);
   if (!gen) return undefined;
 
   if (!TERMINAL_STATUSES.includes(gen.status)) {
-    const task = await (await providerForUser(userId, gen.provider ?? "modelark")).getTask(gen.taskId);
-    const done = TERMINAL_STATUSES.includes(task.status);
-    gen = await updateGeneration(userId, id, {
-      status: task.status,
-      progress: task.progress,
-      remoteVideoUrl: task.videoUrl,
-      lastFrameUrl: task.lastFrameUrl,
-      error: task.error,
-      seed: task.seed ?? gen.seed,
-      tokens: task.tokens,
-      billedSeconds: task.billedSeconds,
-      ...(done && { completedAt: Date.now() }),
-    });
-    if (!gen) return undefined;
+    try {
+      const task = await (await providerForUser(userId, gen.provider ?? "modelark")).getTask(gen.taskId);
+      const done = TERMINAL_STATUSES.includes(task.status);
+      gen = await updateGeneration(userId, id, {
+        status: task.status,
+        progress: task.progress,
+        remoteVideoUrl: task.videoUrl,
+        lastFrameUrl: task.lastFrameUrl,
+        error: task.error,
+        seed: task.seed ?? gen.seed,
+        tokens: task.tokens,
+        billedSeconds: task.billedSeconds,
+        ...(done && { completedAt: Date.now() }),
+      });
+      if (!gen) return undefined;
+    } catch (e) {
+      // 404 (task not on this key) and a missing key end the job. 429, 5xx, and
+      // network errors are rethrown so the row stays in flight and the next poll retries.
+      const failed = terminalPollUpdate(e);
+      if (!failed) throw e;
+      return updateGeneration(userId, id, { ...failed, completedAt: Date.now() });
+    }
   }
 
   if (gen.status === "succeeded" && !gen.stored) {
