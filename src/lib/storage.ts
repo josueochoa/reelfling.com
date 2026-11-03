@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { AwsClient } from "aws4fetch";
 import { all, env, first, run } from "./db";
-import { referencedKeySet, withoutReferenced } from "./inputs";
+import { candidateUserIds, referencedKeySet, withoutReferenced } from "./inputs";
 import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
 
 export interface Asset {
@@ -405,19 +405,32 @@ export async function discardUpload(userId: string, key: string) {
 }
 
 /**
+ * Keys stored on this page of users' generations. Other users are irrelevant: an asset
+ * row is only protected by a generation with the same user_id.
+ */
+async function referencedByUsers(userIds: string[]) {
+  if (!userIds.length) return new Set<string>();
+  const marks = userIds.map(() => "?").join(", ");
+  const [videos, images] = await Promise.all([
+    all<{ user_id: string; data: string }>(
+      `SELECT user_id, data FROM generations WHERE user_id IN (${marks})`,
+      ...userIds,
+    ),
+    all<{ user_id: string; data: string }>(
+      `SELECT user_id, data FROM image_generations WHERE user_id IN (${marks})`,
+      ...userIds,
+    ),
+  ]);
+  return referencedKeySet([...videos, ...images].map((r) => ({ userId: r.user_id, data: r.data })));
+}
+
+/**
  * Pre-library reference uploads (`refs/`) that never made it into a generation. Library
  * uploads (`uploads/`) are kept until the user deletes them. A `refs/` object whose key
- * is stored on any generation (start/end frame, reference block, or image reference)
- * is still in use, so it is left alone.
+ * is stored on one of that user's generations (start/end frame, reference block, or
+ * image reference) is still in use, so it is left alone.
  */
 export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
-  const referenced = referencedKeySet(
-    (
-      await all<{ user_id: string; data: string }>(
-        "SELECT user_id, data FROM generations UNION ALL SELECT user_id, data FROM image_generations",
-      )
-    ).map((r) => ({ userId: r.user_id, data: r.data })),
-  );
   const cutoff = Date.now() - olderThanMs;
   const doomed: AssetRow[] = [];
   let offset = 0;
@@ -432,6 +445,8 @@ export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
     );
     if (!rows.length) break;
     offset += rows.length;
+    // Only the users on this page. A sweep must not read every generation in the database.
+    const referenced = await referencedByUsers(candidateUserIds(rows));
     for (const row of withoutReferenced(rows, referenced)) {
       doomed.push(row);
       if (doomed.length === 50) break;

@@ -143,23 +143,19 @@ export function VideoStudio({
     return match(library.items) ?? match(await library.reload());
   }
 
-  async function applyOutput(gen: Generation, as: "start" | "reference") {
+  async function referenceStoredVideo(gen: Generation) {
     setOpen(null);
     if (!panel.current) {
       alert("Add an API key first to generate videos.");
       return;
     }
-    if (gen.status !== "succeeded" || !gen.stored) {
-      panel.current.notify("This video isn't stored yet, so it can't be used as an input.");
-      return;
-    }
+    if (gen.status !== "succeeded" || !gen.stored) return;
     const item = await outputItem(gen);
     if (!item) {
       panel.current.notify("This video isn't in your library yet.");
       return;
     }
-    if (as === "start") panel.current.setStartFrame(item);
-    else panel.current.useAsReference(item);
+    panel.current.useAsReference(item);
   }
 
   async function deleteUpload(item: LibraryItem) {
@@ -258,8 +254,7 @@ export function VideoStudio({
                     gen={g}
                     onOpen={() => setOpen(g)}
                     onReuse={() => reuse(g)}
-                    onUseAsStartFrame={() => void applyOutput(g, "start")}
-                    onUseAsReference={() => void applyOutput(g, "reference")}
+                    onUseAsReference={() => void referenceStoredVideo(g)}
                     onDelete={() => remove(g)}
                   />
                 ))}
@@ -274,8 +269,7 @@ export function VideoStudio({
           gen={open}
           onClose={() => setOpen(null)}
           onReuse={() => reuse(open)}
-          onUseAsStartFrame={() => void applyOutput(open, "start")}
-          onUseAsReference={() => void applyOutput(open, "reference")}
+          onUseAsReference={() => void referenceStoredVideo(open)}
           onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
           onDelete={() => remove(open)}
         />

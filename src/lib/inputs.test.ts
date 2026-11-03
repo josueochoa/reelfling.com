@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { referencedKeySet, restoreInputs, withoutReferenced } from "./inputs";
+import { candidateUserIds, referencedKeySet, restoreInputs, withoutReferenced } from "./inputs";
 import type { Generation } from "./types";
 
 const counts = { firstFrame: false, lastFrame: false, images: 0, videos: 0, audios: 0 };
@@ -194,6 +194,24 @@ describe("orphan sweep exclusion", () => {
     assert.deepEqual(
       doomed.map((r) => `${r.user_id}:${r.key}`),
       ["u1:refs/orphan.jpg", "u2:refs/start.jpg"],
+    );
+  });
+
+  it("only needs the generations of users who have a candidate on this page", () => {
+    const candidates = [
+      { user_id: "u1", key: "refs/keep.jpg" },
+      { user_id: "u1", key: "refs/drop.jpg" },
+    ];
+    const users = new Set(candidateUserIds(candidates));
+    assert.deepEqual([...users], ["u1"]);
+    // u9 references the same key string, but that row is not loaded: it isn't this user's file.
+    const records = [
+      { userId: "u1", data: JSON.stringify({ inputs: { firstFrameKey: "refs/keep.jpg" } }) },
+      { userId: "u9", data: JSON.stringify({ inputs: { blocks: [{ key: "refs/drop.jpg", kind: "image" }] } }) },
+    ].filter((r) => users.has(r.userId));
+    assert.deepEqual(
+      withoutReferenced(candidates, referencedKeySet(records)).map((r) => r.key),
+      ["refs/drop.jpg"],
     );
   });
 

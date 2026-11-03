@@ -35,14 +35,12 @@ export function GenerationCard({
   gen,
   onOpen,
   onReuse,
-  onUseAsStartFrame,
   onUseAsReference,
   onDelete,
 }: {
   gen: Generation;
   onOpen: () => void;
   onReuse: () => void;
-  onUseAsStartFrame: () => void;
   onUseAsReference: () => void;
   onDelete: () => void;
 }) {
@@ -50,6 +48,9 @@ export function GenerationCard({
   const elapsed = useElapsed(gen);
   const model = getModel(gen.model);
   const ready = gen.status === "succeeded";
+  // The output is a video, so it can be a reference only once it's stored. Continue-from-last-frame
+  // covers using a clip as the next start; there is no image to offer as a start frame.
+  const canReference = ready && !!gen.stored;
 
   return (
     <article className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
@@ -84,10 +85,11 @@ export function GenerationCard({
         <p className="line-clamp-2 text-sm text-zinc-300" title={gen.prompt}>
           {gen.prompt || <span className="text-zinc-500 italic">No prompt</span>}
         </p>
-        <div className="flex flex-wrap gap-1.5">
-          <TextAction onClick={onUseAsStartFrame}>Use as start frame</TextAction>
-          <TextAction onClick={onUseAsReference}>Use as reference</TextAction>
-        </div>
+        {canReference && (
+          <div className="flex flex-wrap gap-1.5">
+            <TextAction onClick={onUseAsReference}>Use as reference</TextAction>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
             <Meta>{model?.label ?? gen.model}</Meta>

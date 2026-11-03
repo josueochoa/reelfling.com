@@ -9,7 +9,6 @@ export function Lightbox({
   gen,
   onClose,
   onReuse,
-  onUseAsStartFrame,
   onUseAsReference,
   onExtend,
   onDelete,
@@ -17,13 +16,13 @@ export function Lightbox({
   gen: Generation;
   onClose: () => void;
   onReuse: () => void;
-  onUseAsStartFrame: () => void;
   onUseAsReference: () => void;
   onExtend?: () => void;
   onDelete: () => void;
 }) {
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
+  const canReference = ready && !!gen.stored;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -97,18 +96,14 @@ export function Lightbox({
                 Continue from last frame
               </button>
             )}
-            <button
-              onClick={onUseAsStartFrame}
-              className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5"
-            >
-              Use as start frame
-            </button>
-            <button
-              onClick={onUseAsReference}
-              className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5"
-            >
-              Use as reference
-            </button>
+            {canReference && (
+              <button
+                onClick={onUseAsReference}
+                className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5"
+              >
+                Use as reference
+              </button>
+            )}
             <button onClick={onReuse} className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5">
               Reuse settings
             </button>

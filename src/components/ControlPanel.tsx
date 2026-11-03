@@ -301,11 +301,7 @@ export function ControlPanel({
     },
     setStartFrame(item) {
       if (item.kind !== "image") {
-        setNotice(
-          item.kind === "video"
-            ? "Only an image can be a start frame. Use “Use as reference” to attach this video."
-            : "Only an image can be a start frame.",
-        );
+        setNotice("Only an image can be a start frame.");
         return;
       }
       if (!model.firstFrame) {

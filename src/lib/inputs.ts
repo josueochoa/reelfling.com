@@ -125,6 +125,11 @@ export function keysInRecord(data: string): string[] {
   return keys;
 }
 
+/** Distinct user ids on a page of orphan candidates. The sweep only reads their generations. */
+export function candidateUserIds(rows: { user_id: string }[]): string[] {
+  return [...new Set(rows.map((r) => r.user_id))];
+}
+
 /** `${userId}\\0${key}` for every file a saved generation still points at. */
 export function referencedKeySet(records: StoredRecord[]): Set<string> {
   const set = new Set<string>();
