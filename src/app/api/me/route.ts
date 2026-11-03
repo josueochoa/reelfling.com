@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       personalKeys,
       storage,
       cap: workspace.kind === "team" ? { usd: cap, monthUsd } : null,
-      auth: { mode: authMode(), signOutUrl: signOutUrl(), dev: process.env.NODE_ENV === "development" },
+      auth: { mode: authMode(), signOutUrl: signOutUrl() },
     });
   } catch (e) {
     return errorResponse(e);

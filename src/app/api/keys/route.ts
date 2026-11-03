@@ -1,6 +1,5 @@
 import { errorResponse } from "@/lib/auth";
 import { deleteKey, listKeys, savedKeyBody, saveKey, scrubSecret } from "@/lib/keys";
-import { mockProviders } from "@/lib/providers/mock";
 import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { createProvider } from "@/lib/providers";
 import { verifyFalKey } from "@/lib/providers/fal";
@@ -20,8 +19,7 @@ export async function PUT(request: Request) {
 
     let detail: string | undefined;
     try {
-      if (mockProviders()) detail = "Mock provider";
-      else if (body.provider === "fal") await verifyFalKey(apiKey);
+      if (body.provider === "fal") await verifyFalKey(apiKey);
       else ({ detail } = await createProvider(body.provider, { apiKey, baseUrl }).verifyKey());
     } catch (e) {
       return Response.json(

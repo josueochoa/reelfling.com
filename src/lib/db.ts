@@ -25,8 +25,6 @@ export interface AppEnv {
   STORAGE_QUOTA_GB?: string;
   /** "true": new accounts need a team invite. Access stays the sign-in gate either way. */
   INVITE_ONLY?: string;
-  /** Development only. Skips live provider calls. Ignored when NODE_ENV is production. */
-  MOCK_PROVIDERS?: string;
 }
 
 /** The current request's Worker env. Only callable while handling a request. */

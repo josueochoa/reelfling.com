@@ -1,7 +1,6 @@
 import { getCredentials, type ProviderCredentials } from "../keys";
 import { PROVIDER_INFO, type StudioProviderId } from "../registry";
 import { argoLink } from "./argolink";
-import { mockProviders, mockVideoProvider } from "./mock";
 import { modelArk } from "./modelark";
 import { openRouterProvider } from "./openrouter";
 import { ProviderError, type ProviderFactory, type VideoProvider } from "./types";
@@ -16,7 +15,6 @@ export const PROVIDERS: Record<StudioProviderId, ProviderFactory> = {
 };
 
 export function createProvider(id: StudioProviderId, creds: ProviderCredentials): VideoProvider {
-  if (mockProviders()) return mockVideoProvider(id, creds);
   return PROVIDERS[id](creds);
 }
 

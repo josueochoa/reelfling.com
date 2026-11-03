@@ -119,11 +119,6 @@ function teamDomain() {
 // Access rotates its signing keys; jose caches and refreshes them per isolate.
 const jwksByDomain = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-async function devEmail(): Promise<string | undefined> {
-  if (process.env.NODE_ENV !== "development") return undefined;
-  return (await cookies()).get("dev_email")?.value || env().DEV_USER_EMAIL;
-}
-
 async function accessIdentity(): Promise<Identity | undefined> {
   const domain = teamDomain();
   const aud = env().ACCESS_AUD;
@@ -132,9 +127,9 @@ async function accessIdentity(): Promise<Identity | undefined> {
   const token = (await headers()).get("cf-access-jwt-assertion") ?? (await cookies()).get("CF_Authorization")?.value;
 
   if (!token) {
-    // `next dev` has no Access in front of it. A dev_email cookie switches the local user.
-    const email = await devEmail();
-    if (email) return { email, name: "Dev user" };
+    // `next dev` has no Access in front of it. One local email, from DEV_USER_EMAIL.
+    const devEmail = env().DEV_USER_EMAIL;
+    if (process.env.NODE_ENV === "development" && devEmail) return { email: devEmail, name: "Dev user" };
     return undefined;
   }
   if (!domain || !aud) throw new Error("Set ACCESS_TEAM_DOMAIN and ACCESS_AUD (see wrangler.jsonc).");

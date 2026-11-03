@@ -17,7 +17,7 @@ export interface Me {
   storage: Awaited<ReturnType<typeof storageUsage>>;
   /** Team only: this member's cap and month-to-date team-key spend. */
   cap: { usd: number | null; monthUsd: number } | null;
-  auth: { mode: AuthMode; signOutUrl: string; dev?: boolean };
+  auth: { mode: AuthMode; signOutUrl: string };
 }
 
 export type { KeySource };

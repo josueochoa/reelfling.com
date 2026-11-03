@@ -11,7 +11,6 @@ import {
   type FalJobView,
 } from "./falTypes";
 import { all, first, run } from "./db";
-import { mockProviders } from "./providers/mock";
 import { getCredentials, scrubSecret } from "./keys";
 import { reportedUsd } from "./reportedCost";
 import { byWorkspace, persistJson, wsArgs, type KeySource } from "./scope";
@@ -204,26 +203,6 @@ export async function createFalJob(
   const resolved = await resolveFalInput(workspaceId, input);
   const request = redactSecrets(resolved, apiKey);
   assertNoSecret(request, apiKey);
-  if (mockProviders()) {
-    const now = Date.now();
-    const id = crypto.randomUUID();
-    const job: FalJob = {
-      id,
-      endpointId: endpointId.trim().replace(/^\/+|\/+$/g, ""),
-      status: "queued",
-      requestId: `mock-${id}`,
-      statusUrl: "https://queue.fal.run/mock/status",
-      responseUrl: "https://queue.fal.run/mock/response",
-      cancelUrl: "https://queue.fal.run/mock/cancel",
-      request,
-      outputs: [],
-      createdAt: now,
-      updatedAt: now,
-      ...extra,
-    };
-    await insertFalJob(workspaceId, job, createdBy);
-    return job;
-  }
   const submitted = await submitFal(apiKey, endpointId, resolved);
   assertNoSecret(submitted.raw, apiKey);
   const now = Date.now();
@@ -315,7 +294,7 @@ export async function syncFalJob(workspaceId: string, id: string): Promise<FalJo
   let job = await getFalJob(workspaceId, id);
   if (!job) return undefined;
 
-  if ((job.status === "queued" || job.status === "running") && !job.requestId.startsWith("mock-")) {
+  if (job.status === "queued" || job.status === "running") {
     const creds = await getCredentials(job.keyWorkspaceId || workspaceId, "fal");
     if (!creds) throw new ProviderError("Add your fal API key under API keys.", 400);
     const snap = await pollFal(creds.apiKey, { statusUrl: job.statusUrl, responseUrl: job.responseUrl });
