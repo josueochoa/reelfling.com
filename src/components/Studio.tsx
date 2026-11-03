@@ -90,7 +90,16 @@ export function Studio() {
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
-        <ImageStudio ref={image} me={me} library={library} onOpenKeys={openKeys} />
+        <ImageStudio
+          ref={image}
+          me={me}
+          library={library}
+          onOpenKeys={openKeys}
+          onUseAsStartFrame={(item) => {
+            window.location.hash = "video";
+            video.current?.setStartFrame(item);
+          }}
+        />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
         <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />

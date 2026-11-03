@@ -210,8 +210,8 @@ function thumbFromUrl(url: string, kind: "image" | "video"): Promise<Blob | unde
 export interface Library {
   items: LibraryItem[];
   loaded: boolean;
-  /** Refetches the list (e.g. after generations finished elsewhere). */
-  reload: () => Promise<void>;
+  /** Refetches the list (e.g. after generations finished elsewhere). Resolves to the items now shown. */
+  reload: () => Promise<LibraryItem[]>;
   /** Makes and saves a thumbnail for a generated image or video that has none. */
   ensureThumb: (item: LibraryItem) => void;
   removeMany: (ids: string[]) => Promise<void>;
@@ -224,6 +224,16 @@ export interface Library {
 /** Local-only fields worth keeping when the list is refetched. */
 const pick = (i?: LibraryItem) => (i?.localThumb ? { localThumb: i.localThumb } : {});
 
+function mergeList(local: LibraryItem[], list: AssetItem[]): LibraryItem[] {
+  const byKey = new Map(local.filter((i) => i.key).map((i) => [i.key, i]));
+  const inFlight = local.filter((i) => i.status !== "ready");
+  const keys = new Set(inFlight.map((i) => i.key));
+  return [
+    ...inFlight,
+    ...list.filter((u) => !keys.has(u.key)).map((u) => ({ ...fromServer(u), ...pick(byKey.get(u.key)) })),
+  ];
+}
+
 export function useLibrary(): Library {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -235,24 +245,19 @@ export function useLibrary(): Library {
     [],
   );
 
-  const fetchList = useCallback(
-    () =>
-      apiJson<AssetItem[]>("/api/assets").then((list) => {
-        setItems((local) => {
-          // Uploads still in flight in this tab stay on top; finished ones keep their local previews.
-          const byKey = new Map(local.filter((i) => i.key).map((i) => [i.key, i]));
-          const inFlight = local.filter((i) => i.status !== "ready");
-          const keys = new Set(inFlight.map((i) => i.key));
-          return [
-            ...inFlight,
-            ...list.filter((u) => !keys.has(u.key)).map((u) => ({ ...fromServer(u), ...pick(byKey.get(u.key)) })),
-          ];
-        });
-        setLoaded(true);
-      }),
-    [],
-  );
-  const reload = useCallback(() => fetchList().catch(() => {}), [fetchList]);
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  });
+
+  const fetchList = useCallback(async () => {
+    const list = await apiJson<AssetItem[]>("/api/assets");
+    const merged = mergeList(itemsRef.current, list);
+    setItems(merged);
+    setLoaded(true);
+    return merged;
+  }, []);
+  const reload = useCallback(() => fetchList().catch(() => itemsRef.current), [fetchList]);
 
   useEffect(() => {
     fetchList().catch(() => setLoaded(true));

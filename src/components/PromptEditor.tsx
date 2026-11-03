@@ -213,7 +213,7 @@ export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, pla
               <mark
                 key={i}
                 data-kind={s.kind}
-                data-n={s.n}
+                data-n={s.n !== undefined && Number.isFinite(s.n) ? s.n : undefined}
                 className={`rounded-sm text-transparent ${s.mention === "ok" ? "bg-accent/25" : "bg-red-500/35"}`}
               >
                 {s.text}

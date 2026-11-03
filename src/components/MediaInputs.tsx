@@ -15,12 +15,17 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function useImagePicker(onFiles: (urls: string[]) => void) {
+function useImagePicker(onFiles: (urls: string[]) => void, onFile?: (file: File) => void) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
   async function handle(files: FileList | null) {
     if (!files?.length) return;
+    // Library uploads (so the file has an R2 key Reuse can restore). The caller validates it.
+    if (onFile) {
+      onFile(files[0]);
+      return;
+    }
     const results = await Promise.allSettled([...files].map(readAsDataUrl));
     const ok = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     const failed = results.find((r) => r.status === "rejected");
@@ -63,14 +68,17 @@ export function ImageSlot({
   label,
   value,
   onChange,
+  onFile,
   disabled,
 }: {
   label: string;
   value?: string;
   onChange: (v: string | undefined) => void;
+  /** When set, a picked file is handed over instead of being read as a data URL. */
+  onFile?: (file: File) => void;
   disabled?: boolean;
 }) {
-  const picker = useImagePicker((urls) => onChange(urls[0]));
+  const picker = useImagePicker((urls) => onChange(urls[0]), onFile);
 
   if (value) {
     return (
@@ -82,7 +90,7 @@ export function ImageSlot({
         </span>
         <button
           onClick={() => onChange(undefined)}
-          className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-xs opacity-0 transition group-hover:opacity-100"
+          className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-xs"
           aria-label={`Remove ${label}`}
         >
           ✕

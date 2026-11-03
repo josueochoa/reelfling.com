@@ -3,6 +3,7 @@
 // The Video tab: Seedance generations with the control panel on the left.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { restoreInputs } from "@/lib/inputs";
 import { modelsFor, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { api, apiJson, type Me } from "./api";
@@ -19,6 +20,8 @@ const needsPoll = (g: Generation) => !TERMINAL_STATUSES.includes(g.status) || (g
 /** For the Assets tab: "Use in Video", and refreshing after deletes. */
 export interface StudioTabHandle {
   addReference: (item: LibraryItem) => void;
+  /** Frames mode, with this image as the start frame. */
+  setStartFrame: (item: LibraryItem) => void;
   reload: () => void;
 }
 
@@ -66,6 +69,10 @@ export function VideoStudio({
       if (panel.current) panel.current.add(item);
       else alert("Add an API key first to generate videos.");
     },
+    setStartFrame(item) {
+      if (panel.current) panel.current.setStartFrame(item);
+      else alert("Add an API key first to generate videos.");
+    },
     reload() {
       apiJson<Generation[]>("/api/generations")
         .then(setGenerations)
@@ -111,16 +118,47 @@ export function VideoStudio({
 
   function reuse(gen: Generation, asFirstFrame?: string) {
     setOpen(null);
+    const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
+    // Don't claim files were deleted while the library is still loading.
+    const restored = asFirstFrame || !library.loaded ? undefined : restoreInputs(gen, available);
+    const waiting = !asFirstFrame && !library.loaded;
     setPreset((p) => ({
       key: p.key + 1,
       model: gen.model,
-      prompt: gen.prompt,
+      prompt: restored?.prompt ?? gen.prompt,
       ratio: gen.ratio,
       resolution: gen.resolution,
       duration: gen.duration,
       generateAudio: gen.generateAudio,
+      mode: asFirstFrame ? "frames" : (restored?.mode ?? gen.mode),
       firstFrame: asFirstFrame,
+      firstFrameKey: restored?.firstFrameKey,
+      lastFrameKey: restored?.lastFrameKey,
+      referenceKeys: restored?.referenceKeys,
+      notice: waiting
+        ? "Uploads are still loading, so frames and references weren't restored. Try Reuse again in a moment."
+        : restored?.notice,
     }));
+  }
+
+  async function outputItem(gen: Generation) {
+    const match = (items: LibraryItem[]) => items.find((i) => i.generation?.id === gen.id && i.kind === "video");
+    return match(library.items) ?? match(await library.reload());
+  }
+
+  async function referenceStoredVideo(gen: Generation) {
+    setOpen(null);
+    if (!panel.current) {
+      alert("Add an API key first to generate videos.");
+      return;
+    }
+    if (gen.status !== "succeeded" || !gen.stored) return;
+    const item = await outputItem(gen);
+    if (!item) {
+      panel.current.notify("This video isn't in your library yet.");
+      return;
+    }
+    panel.current.useAsReference(item);
   }
 
   async function deleteUpload(item: LibraryItem) {
@@ -224,6 +262,7 @@ export function VideoStudio({
                     gen={g}
                     onOpen={() => setOpen(g)}
                     onReuse={() => reuse(g)}
+                    onUseAsReference={() => void referenceStoredVideo(g)}
                     onDelete={() => remove(g)}
                   />
                 ))}
@@ -238,6 +277,7 @@ export function VideoStudio({
           gen={open}
           onClose={() => setOpen(null)}
           onReuse={() => reuse(open)}
+          onUseAsReference={() => void referenceStoredVideo(open)}
           onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
           onDelete={() => remove(open)}
         />
