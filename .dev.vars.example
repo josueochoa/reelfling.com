@@ -5,12 +5,21 @@
 # Changing it makes every saved key unreadable (users would re-enter them).
 AUTH_SECRET=
 
-# Cloudflare R2 S3 credentials: R2 → Manage API tokens → Create Account API token
-# with "Admin Read & Write" (it creates a bucket per user). Set R2_ACCOUNT_ID in wrangler.jsonc.
+# Cloudflare R2 S3 credentials: R2 → Manage API tokens → Create API token with
+# "Object Read & Write" on the bucket. Set R2_ACCOUNT_ID in wrangler.jsonc.
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
-# Keeps local test buckets apart from production ones (overrides wrangler.jsonc).
-R2_BUCKET_PREFIX=dev
+# Keeps local files apart from production (overrides wrangler.jsonc). Create it, with the
+# CORS rule: npx wrangler r2 bucket create reelfling-dev
+#            npx wrangler r2 bucket cors set reelfling-dev --file r2-cors.json
+R2_BUCKET=reelfling-dev
+
+# Stripe (test mode keys locally): Developers → API keys, and the webhook's signing secret
+# (`stripe listen --forward-to localhost:3000/api/stripe/webhook` prints one for local use).
+# STRIPE_SECRET_KEY=sk_test_…
+# STRIPE_WEBHOOK_SECRET=whsec_…
+# STRIPE_PRICE_PLUS=price_…
+# STRIPE_PRICE_PRO=price_…
 
 # Local dev only (ignored in production): who you're signed in as, since there's
 # no Cloudflare Access on localhost.

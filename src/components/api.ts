@@ -1,17 +1,22 @@
 import type { AuthMode, User } from "@/lib/auth";
+import type { Billing } from "@/lib/billing";
 import type { KeySummary } from "@/lib/keys";
-import type { storageUsage } from "@/lib/storage";
+import type { StorageUsage, teamStorage } from "@/lib/storage";
 import type { Invite, Workspace } from "@/lib/workspaces";
 
 export interface Me {
   user: User;
-  /** The workspace this tab is in, and its keys and storage. */
+  billing: Billing;
+  /** The workspace this tab is in, and its keys. */
   workspace: Workspace;
   workspaces: Workspace[];
   /** Email invites waiting for the user. */
   invites: Invite[];
   keys: KeySummary[];
-  storage: Awaited<ReturnType<typeof storageUsage>>;
+  /** The user's own storage, across all their workspaces. */
+  storage: StorageUsage;
+  /** In a team: its files, and the storage its members bring. */
+  teamStorage?: Awaited<ReturnType<typeof teamStorage>>;
   auth: { mode: AuthMode; signOutUrl: string };
 }
 

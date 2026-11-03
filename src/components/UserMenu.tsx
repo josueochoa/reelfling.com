@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PLANS } from "@/lib/plans";
 import type { Me } from "./api";
+import { StorageMeter } from "./Billing";
 
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
@@ -14,8 +16,18 @@ export function formatBytes(n: number) {
   return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
-export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => void; onOpenKeys: () => void }) {
-  const { user, storage, auth } = me;
+export function UserMenu({
+  me,
+  onOpen,
+  onOpenKeys,
+  onOpenBilling,
+}: {
+  me: Me;
+  onOpen: () => void;
+  onOpenKeys: () => void;
+  onOpenBilling: () => void;
+}) {
+  const { user, storage, auth, billing } = me;
   const full = storage.bytes >= storage.quotaBytes;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -67,25 +79,26 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
           </div>
           <div className="my-1 h-px bg-white/5" />
           <div className="px-2.5 py-2 text-xs">
-            <div className="flex justify-between text-zinc-400">
-              <span>Storage</span>
-              <span className={`tabular-nums ${full ? "text-red-300" : "text-zinc-200"}`}>
-                {formatBytes(storage.bytes)} of {formatBytes(storage.quotaBytes)}
-              </span>
-            </div>
-            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full ${full ? "bg-red-400" : "bg-accent"}`}
-                style={{ width: `${Math.min(100, (storage.bytes / storage.quotaBytes) * 100)}%` }}
-              />
-            </div>
+            <StorageMeter
+              label={`Storage · ${PLANS[billing.plan].label}`}
+              used={storage.bytes}
+              total={storage.quotaBytes}
+            />
             <p className="mt-1.5 text-zinc-600">
               {full
-                ? "Full. Delete videos to keep generating."
-                : `${storage.objects} ${storage.objects === 1 ? "video" : "videos"}`}
+                ? "Full. Delete files or upgrade to keep generating."
+                : `${storage.objects} ${storage.objects === 1 ? "file" : "files"}, in all your workspaces`}
             </p>
           </div>
           <div className="my-1 h-px bg-white/5" />
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onOpenBilling();
+            }}
+          >
+            {billing.plan === "free" ? "Upgrade plan" : "Plan & billing"}
+          </MenuItem>
           <MenuItem
             onClick={() => {
               setOpen(false);

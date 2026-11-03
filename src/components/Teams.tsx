@@ -4,6 +4,7 @@
 // (members, roles, invites).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PLANS, TEAM_PLANS_LABEL } from "@/lib/plans";
 import type { Invite, Member, Role, Workspace } from "@/lib/workspaces";
 import { apiJson, type Me } from "./api";
 
@@ -38,10 +39,12 @@ export function WorkspaceSwitcher({
   me,
   onSwitch,
   onOpenTeam,
+  onUpgrade,
 }: {
   me: Me;
   onSwitch: (id: string) => void;
   onOpenTeam: () => void;
+  onUpgrade: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -111,7 +114,9 @@ export function WorkspaceSwitcher({
                 <span className="block text-xs text-zinc-500">
                   {w.kind === "personal"
                     ? "Just you"
-                    : `${ROLE_LABEL[w.role]} · ${w.memberCount} ${w.memberCount === 1 ? "member" : "members"}`}
+                    : `${ROLE_LABEL[w.role]} · ${w.memberCount} ${w.memberCount === 1 ? "member" : "members"}${
+                        w.paused ? " · paused" : ""
+                      }`}
                 </span>
               </span>
               {w.id === ws.id && <span className="text-accent">✓</span>}
@@ -130,7 +135,20 @@ export function WorkspaceSwitcher({
               Team members & invites
             </button>
           )}
-          {creating ? (
+          {!PLANS[me.billing.plan].teams ? (
+            <div className="space-y-2 p-2.5 text-sm">
+              <p className="text-zinc-400">Creating teams is part of the {TEAM_PLANS_LABEL} plans.</p>
+              <button
+                onClick={() => {
+                  setOpen(false);
+                  onUpgrade();
+                }}
+                className="w-full rounded-lg bg-accent py-1.5 font-semibold text-ink"
+              >
+                Upgrade to create a team
+              </button>
+            </div>
+          ) : creating ? (
             <form
               className="space-y-2 p-2"
               onSubmit={(e) => {

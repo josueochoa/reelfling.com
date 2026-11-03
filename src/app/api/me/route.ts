@@ -1,32 +1,37 @@
 import { authMode, errorResponse, signOutUrl } from "@/lib/auth";
+import { getBilling } from "@/lib/billing";
 import { listKeys } from "@/lib/keys";
 import type { ProviderId } from "@/lib/models";
 import { PROVIDERS } from "@/lib/providers";
-import { storageUsage } from "@/lib/storage";
+import { storageUsage, teamStorage } from "@/lib/storage";
 import { invitesForEmail, listWorkspaces, requireAdmin, requireWorkspace, setActiveProvider } from "@/lib/workspaces";
 
 /**
- * The signed-in user; the workspace this request acts in (its keys, masked, the provider
- * it generates with, storage used); all their workspaces; invites waiting for them; and
- * how to sign out.
+ * The signed-in user, their plan and storage (across all workspaces); the workspace this
+ * request acts in (its keys, masked, the provider it generates with, and a team's
+ * storage); all their workspaces; invites waiting for them; and how to sign out.
  */
 export async function GET(request: Request) {
   try {
     // Falls back to Personal: the page follows whatever workspace this returns.
     const { user, workspace } = await requireWorkspace(request, { fallback: true });
-    const [keys, storage, workspaces, invites] = await Promise.all([
+    const [keys, billing, storage, team, workspaces, invites] = await Promise.all([
       listKeys(workspace.id),
-      storageUsage(workspace.id),
+      getBilling(user.id),
+      storageUsage(user.id),
+      workspace.kind === "team" ? teamStorage(workspace.id) : undefined,
       listWorkspaces(user.id),
       invitesForEmail(user.email, user.id),
     ]);
     return Response.json({
       user,
+      billing,
       workspace,
       workspaces,
       invites,
       keys,
       storage,
+      teamStorage: team,
       auth: { mode: authMode(), signOutUrl: signOutUrl() },
     });
   } catch (e) {

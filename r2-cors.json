@@ -1,0 +1,8 @@
+{
+  "rules": [
+    {
+      "allowed": { "origins": ["*"], "methods": ["PUT", "GET", "HEAD"], "headers": ["content-type"] },
+      "maxAgeSeconds": 3600
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { errorResponse } from "@/lib/auth";
-import { completeUpload, deleteAsset, discardUpload, storageUsage } from "@/lib/storage";
+import { completeUpload, deleteAsset, discardUpload, isOverQuota } from "@/lib/storage";
 import { LIBRARY_PREFIX, thumbKeyFor, UPLOAD_RULES, uploadKindOf } from "@/lib/uploads";
 import { requireWorkspace } from "@/lib/workspaces";
 
@@ -39,13 +39,12 @@ export async function POST(request: Request) {
 
     const kind = uploadKindOf(asset.contentType);
     const rules = kind && UPLOAD_RULES[kind];
-    const usage = await storageUsage(workspace.id);
     const problem = !rules
       ? "Unsupported file type"
       : asset.bytes > rules.maxBytes * 1.1 // allowance for the thumbnail
         ? `File too large. Use ${rules.label}.`
-        : usage.bytes > usage.quotaBytes
-          ? "Your storage is full. Delete some uploads or videos to make room."
+        : (await isOverQuota(user.id))
+          ? "Your storage is full. Delete some uploads or videos, or upgrade your plan."
           : undefined;
     if (problem) {
       await deleteAsset(asset).catch(() => discardUpload(workspace.id, key));

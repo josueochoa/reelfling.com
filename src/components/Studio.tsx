@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { apiJson, setWorkspace, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
+import { PlanDialog } from "./Billing";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
 import { useLibrary, type LibraryItem } from "./library";
@@ -30,6 +31,8 @@ export function Studio() {
   const [me, setMe] = useState<Me | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // The server falls back to Personal if the remembered workspace is gone; follow it.
   const loadMe = useCallback(
@@ -42,6 +45,21 @@ export function Studio() {
   );
   useEffect(() => {
     loadMe();
+  }, [loadMe]);
+
+  // Back from Stripe (?billing=success|cancelled|portal): pick up the new plan right away
+  // rather than waiting for the webhook, then tidy the URL.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const billing = url.searchParams.get("billing");
+    if (!billing) return;
+    url.searchParams.delete("billing");
+    window.history.replaceState(null, "", url);
+    if (billing === "cancelled") return;
+    void apiJson("/api/billing/sync", { method: "POST" })
+      .then(loadMe)
+      .then(() => billing === "success" && setNotice("Thanks! Your new plan is active."))
+      .catch(() => {});
   }, [loadMe]);
 
   function switchTo(id: string) {
@@ -59,7 +77,14 @@ export function Studio() {
           <div className="grid size-7 place-items-center rounded-lg bg-accent font-black text-ink">R</div>
           <span className="font-semibold tracking-tight">ReelFling</span>
         </div>
-        {me && <WorkspaceSwitcher me={me} onSwitch={switchTo} onOpenTeam={() => setTeamOpen(true)} />}
+        {me && (
+          <WorkspaceSwitcher
+            me={me}
+            onSwitch={switchTo}
+            onOpenTeam={() => setTeamOpen(true)}
+            onUpgrade={() => setPlanOpen(true)}
+          />
+        )}
         <nav className="flex gap-1 text-sm">
           {TABS.map((t) => (
             <a
@@ -73,16 +98,58 @@ export function Studio() {
             </a>
           ))}
         </nav>
-        <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
+        <div className="ml-auto">
+          {me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} onOpenBilling={() => setPlanOpen(true)} />}
+        </div>
       </header>
+
+      {notice && (
+        <Banner tone="good" onClose={() => setNotice(null)}>
+          {notice}
+        </Banner>
+      )}
+      {me?.workspace.paused && (
+        <Banner tone="warn">
+          This team is paused: its owner&apos;s plan no longer includes Teams. You can view and download its files, but
+          not generate or upload until the owner upgrades.
+        </Banner>
+      )}
 
       {me && me.invites.length > 0 && <InvitesBanner invites={me.invites} onJoined={switchTo} onChanged={loadMe} />}
 
       {me && <WorkspaceView key={me.workspace.id} me={me} tab={tab} onOpenKeys={openKeys} onChanged={loadMe} />}
 
       {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={loadMe} />}
+      {planOpen && me && <PlanDialog me={me} onClose={() => setPlanOpen(false)} />}
       {teamOpen && me && me.workspace.kind === "team" && (
         <TeamDialog me={me} onClose={() => setTeamOpen(false)} onChanged={loadMe} onLeft={() => switchTo(me.user.id)} />
+      )}
+    </div>
+  );
+}
+
+function Banner({
+  tone,
+  onClose,
+  children,
+}: {
+  tone: "good" | "warn";
+  onClose?: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`flex items-center gap-3 border-b px-5 py-2.5 text-sm ${
+        tone === "good"
+          ? "border-accent/20 bg-accent/10 text-zinc-100"
+          : "border-amber-400/20 bg-amber-400/10 text-amber-100"
+      }`}
+    >
+      <p className="flex-1">{children}</p>
+      {onClose && (
+        <button onClick={onClose} className="text-zinc-400 hover:text-white" aria-label="Dismiss">
+          ✕
+        </button>
       )}
     </div>
   );

@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       (await listKeys(workspace.id)).map((k) => k.provider),
     );
     if (!provider) return bad("Image models run through ArgoLink or OpenRouter. Add one of their API keys.");
-    await assertStorageAvailable(workspace.id);
+    await assertStorageAvailable(user.id, workspace);
 
     // "auto": the reference's shape if there is one; otherwise the model's own default.
     let aspect: string | undefined = req.ratio;

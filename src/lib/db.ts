@@ -21,8 +21,15 @@ export interface AppEnv {
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   R2_ENDPOINT?: string;
-  R2_BUCKET_PREFIX?: string;
-  STORAGE_QUOTA_GB?: string;
+  /** The one bucket every workspace's files go in, under "<workspace id>/". */
+  R2_BUCKET?: string;
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  /** Stripe price ids of the paid plans (see plans.ts). */
+  STRIPE_PRICE_PLUS?: string;
+  STRIPE_PRICE_PRO?: string;
+  /** Tests only: a stand-in for https://api.stripe.com/v1. */
+  STRIPE_API_BASE?: string;
   /** "true": new accounts need an invite. Otherwise Cloudflare Access decides who's in. */
   INVITE_ONLY?: string;
 }

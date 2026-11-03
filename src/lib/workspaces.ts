@@ -4,9 +4,11 @@
 // media URLs, which can't carry headers); membership is checked here, once.
 
 import { requireUser, type User } from "./auth";
+import { effectivePlanSql } from "./billing";
 import { randomToken, sha256 } from "./crypto";
 import { all, env, first, run } from "./db";
 import type { ProviderId } from "./models";
+import { planOf } from "./plans";
 
 export type Role = "owner" | "admin" | "member";
 export type WorkspaceKind = "personal" | "team";
@@ -20,6 +22,8 @@ export interface Workspace {
   /** The current user's role in it. */
   role: Role;
   memberCount: number;
+  /** A team whose owner's plan no longer includes Teams: view and download only. */
+  paused: boolean;
 }
 
 export class ForbiddenError extends Error {
@@ -39,6 +43,7 @@ interface WorkspaceRow {
   active_provider: ProviderId | null;
   role: Role;
   member_count: number;
+  owner_plan: string;
 }
 
 const toWorkspace = (r: WorkspaceRow): Workspace => ({
@@ -49,10 +54,12 @@ const toWorkspace = (r: WorkspaceRow): Workspace => ({
   activeProvider: r.active_provider,
   role: r.role,
   memberCount: r.member_count,
+  paused: r.kind === "team" && !planOf(r.owner_plan).teams,
 });
 
 const WORKSPACE_SELECT = `
-  SELECT w.*, m.role, (SELECT COUNT(*) FROM workspace_members c WHERE c.workspace_id = w.id) AS member_count
+  SELECT w.*, m.role, (SELECT COUNT(*) FROM workspace_members c WHERE c.workspace_id = w.id) AS member_count,
+         (SELECT ${effectivePlanSql("o")} FROM users o WHERE o.id = w.owner_id) AS owner_plan
   FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id AND m.user_id = ?`;
 
 /** The user's Personal workspace, created on first use (same id as the user). */

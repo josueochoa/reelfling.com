@@ -1,12 +1,15 @@
-// Assets in Cloudflare R2: every workspace (a user's Personal one, or a team) gets its own
-// bucket in the app's Cloudflare account, managed over R2's S3 API (bindings are fixed at deploy time,
-// so they can't address per-user buckets). The `assets` table indexes every stored
-// object; usage and the storage quota are summed from it.
+// Assets in Cloudflare R2, over its S3 API (presigned URLs need it). Every workspace's files
+// live in one bucket (R2_BUCKET) under "<workspace id>/". Files from before that are still
+// in their workspace's old bucket until scripts/migrate-r2-buckets.mjs moves them; each
+// asset row says which bucket it's in. The `assets` table indexes every stored object;
+// usage and quotas are summed from it.
 
-import { createHash } from "node:crypto";
 import { AwsClient } from "aws4fetch";
+import { effectivePlanSql, PlanRequiredError } from "./billing";
 import { all, env, first, run } from "./db";
+import { GB, planOf } from "./plans";
 import { thumbKeyFor, uploadKindOf, type AssetItem, type Creator } from "./uploads";
+import type { Workspace } from "./workspaces";
 
 export interface Asset {
   workspaceId: string;
@@ -70,27 +73,21 @@ export class StorageError extends Error {
 
 interface R2Config {
   endpoint: string;
-  prefix: string;
+  /** The shared bucket. */
+  bucket: string;
   client: AwsClient;
 }
 
 function r2(): R2Config {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_PREFIX } = env();
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY)
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET } = env();
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET)
     throw new StorageError(
-      "Storage isn't configured: set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
-      500,
-    );
-  const prefix = (R2_BUCKET_PREFIX || "seedance").toLowerCase();
-  // Bucket names: 3–63 chars of [a-z0-9-]. The prefix plus a 36-char user ID must fit.
-  if (!/^[a-z0-9][a-z0-9-]{0,20}$/.test(prefix))
-    throw new StorageError(
-      "R2_BUCKET_PREFIX must be 1–21 chars of a-z, 0-9 and '-', starting with a letter or digit",
+      "Storage isn't configured: set R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
       500,
     );
   return {
     endpoint: (R2_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`).replace(/\/+$/, ""),
-    prefix,
+    bucket: R2_BUCKET,
     client: new AwsClient({
       accessKeyId: R2_ACCESS_KEY_ID,
       secretAccessKey: R2_SECRET_ACCESS_KEY,
@@ -129,55 +126,27 @@ async function s3(
   });
 }
 
-// ---------------------------------------------------------------- buckets
+// ---------------------------------------------------------------- where objects live
 
-export async function getBucket(workspaceId: string): Promise<string | undefined> {
-  return (await first<{ name: string }>("SELECT name FROM buckets WHERE workspace_id = ?", workspaceId))?.name;
+interface Location {
+  bucket: string;
+  path: string;
 }
 
-/** Creates the user's bucket on first use. Idempotent, so concurrent or retried calls are safe. */
-export async function ensureBucket(workspaceId: string): Promise<string> {
-  const existing = await getBucket(workspaceId);
-  if (existing) return existing;
-  const cfg = r2();
-  const name = `${cfg.prefix}-${workspaceId.toLowerCase()}`;
-  try {
-    await s3(cfg, objectUrl(cfg, name), { method: "PUT" });
-  } catch (e) {
-    // Created by a concurrent request, or by an earlier attempt that didn't get recorded.
-    if ((e as { code?: string }).code !== "BucketAlreadyOwnedByYou") throw e;
-  }
-  await run(
-    "INSERT OR IGNORE INTO buckets (workspace_id, name, created_at) VALUES (?, ?, ?)",
-    workspaceId,
-    name,
-    Date.now(),
-  );
-  return name;
-}
+/** A new object: the shared bucket, under the workspace's folder. */
+const newLocation = (cfg: R2Config, workspaceId: string, key: string): Location => ({
+  bucket: cfg.bucket,
+  path: `${workspaceId}/${key}`,
+});
 
 /**
- * Lets browsers PUT uploads straight into the bucket. Any origin is fine: every request
- * still needs a URL signed by the server, which is the actual access control.
+ * Where an asset's file (or its thumbnail, `key`) is. Assets still in a workspace's old
+ * bucket (from before the shared one) are at their bare key there.
  */
-async function ensureCors(workspaceId: string, bucket: string) {
-  const row = await first<{ cors: number }>("SELECT cors FROM buckets WHERE workspace_id = ?", workspaceId);
-  if (row?.cors) return;
-  const cfg = r2();
-  const xml =
-    "<CORSConfiguration><CORSRule>" +
-    "<AllowedOrigin>*</AllowedOrigin>" +
-    "<AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod>" +
-    "<AllowedHeader>content-type</AllowedHeader>" +
-    "<MaxAgeSeconds>3600</MaxAgeSeconds>" +
-    "</CORSRule></CORSConfiguration>";
-  await s3(cfg, `${objectUrl(cfg, bucket)}?cors`, {
-    method: "PUT",
-    body: xml,
-    headers: { "Content-Type": "application/xml", "Content-MD5": createHash("md5").update(xml).digest("base64") },
-  });
-  await run("UPDATE buckets SET cors = 1 WHERE workspace_id = ?", workspaceId);
-}
+const locate = (cfg: R2Config, asset: Asset, key = asset.key): Location =>
+  asset.bucket === cfg.bucket ? newLocation(cfg, asset.workspaceId, key) : { bucket: asset.bucket, path: key };
+
+const urlOf = (cfg: R2Config, loc: Location) => objectUrl(cfg, loc.bucket, loc.path);
 
 // ---------------------------------------------------------------- assets
 
@@ -224,15 +193,23 @@ export async function putAsset(
   },
 ): Promise<Asset> {
   const cfg = r2();
-  const bucket = await ensureBucket(workspaceId);
   const { body, bytes } = await uploadBody(source);
-  await s3(cfg, objectUrl(cfg, bucket, key), {
+  await s3(cfg, urlOf(cfg, newLocation(cfg, workspaceId, key)), {
     method: "PUT",
     body,
     // Content-Length comes from the body: a byte array or a FixedLengthStream.
     headers: { "Content-Type": contentType },
   });
-  return recordAsset({ workspaceId, key, bucket, bytes, contentType, generationId, createdBy, createdAt: Date.now() });
+  return recordAsset({
+    workspaceId,
+    key,
+    bucket: cfg.bucket,
+    bytes,
+    contentType,
+    generationId,
+    createdBy,
+    createdAt: Date.now(),
+  });
 }
 
 async function recordAsset(asset: Asset): Promise<Asset> {
@@ -259,13 +236,13 @@ async function recordAsset(asset: Asset): Promise<Asset> {
 
 export async function deleteAsset(asset: Asset) {
   const cfg = r2();
-  if (asset.meta?.thumb) await deleteObject(cfg, asset.bucket, asset.meta.thumb);
-  await deleteObject(cfg, asset.bucket, asset.key);
+  if (asset.meta?.thumb) await deleteObject(cfg, locate(cfg, asset, asset.meta.thumb));
+  await deleteObject(cfg, locate(cfg, asset));
   await run("DELETE FROM assets WHERE workspace_id = ? AND key = ?", asset.workspaceId, asset.key);
 }
 
-async function deleteObject(cfg: R2Config, bucket: string, key: string) {
-  await s3(cfg, objectUrl(cfg, bucket, key), { method: "DELETE" }).catch((e) => {
+async function deleteObject(cfg: R2Config, loc: Location) {
+  await s3(cfg, urlOf(cfg, loc), { method: "DELETE" }).catch((e) => {
     if ((e as { upstreamStatus?: number }).upstreamStatus !== 404) throw e;
   });
 }
@@ -283,16 +260,17 @@ export async function deleteGenerationAssets(workspaceId: string, generationId: 
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 
-/** Signed URLs the browser PUTs files to, straight into the user's bucket. */
+/**
+ * Signed URLs the browser PUTs files to, straight into the bucket. The bucket's CORS rule
+ * (r2-cors.json, set once at setup) lets browsers do that.
+ */
 export async function createUpload(workspaceId: string, keys: string[]) {
   const cfg = r2();
-  const bucket = await ensureBucket(workspaceId);
-  await ensureCors(workspaceId, bucket);
-  return Promise.all(keys.map((key) => presign(cfg, "PUT", bucket, key, UPLOAD_URL_TTL_S)));
+  return Promise.all(keys.map((key) => presign(cfg, "PUT", newLocation(cfg, workspaceId, key), UPLOAD_URL_TTL_S)));
 }
 
-async function headObject(cfg: R2Config, bucket: string, key: string) {
-  const res = await s3(cfg, objectUrl(cfg, bucket, key), { method: "HEAD" }).catch((e) => {
+async function headObject(cfg: R2Config, loc: Location) {
+  const res = await s3(cfg, urlOf(cfg, loc), { method: "HEAD" }).catch((e) => {
     if ((e as { upstreamStatus?: number }).upstreamStatus === 404) return undefined;
     throw e;
   });
@@ -314,14 +292,13 @@ export async function completeUpload(
   { name, meta, createdBy }: { name: string; meta: AssetMeta; createdBy: string },
 ) {
   const cfg = r2();
-  const bucket = await ensureBucket(workspaceId);
-  const file = await headObject(cfg, bucket, key);
+  const file = await headObject(cfg, newLocation(cfg, workspaceId, key));
   if (!file) return undefined;
-  const thumb = meta.thumb ? await headObject(cfg, bucket, meta.thumb) : undefined;
+  const thumb = meta.thumb ? await headObject(cfg, newLocation(cfg, workspaceId, meta.thumb)) : undefined;
   return recordAsset({
     workspaceId,
     key,
-    bucket,
+    bucket: cfg.bucket,
     // The thumbnail counts toward the quota too.
     bytes: file.bytes + (thumb?.bytes ?? 0),
     contentType: file.contentType,
@@ -402,20 +379,19 @@ export async function listAssets(workspaceId: string): Promise<AssetItem[]> {
 }
 
 /** A signed URL for the browser to PUT a thumbnail it made for a generated image or video. */
-export async function createThumbUpload(workspaceId: string, asset: Asset) {
+export async function createThumbUpload(asset: Asset) {
   const cfg = r2();
-  await ensureCors(workspaceId, asset.bucket);
-  return presign(cfg, "PUT", asset.bucket, thumbKeyFor(asset.key), UPLOAD_URL_TTL_S);
+  return presign(cfg, "PUT", locate(cfg, asset, thumbKeyFor(asset.key)), UPLOAD_URL_TTL_S);
 }
 
 /** Records a thumbnail the browser uploaded, if it's there and small. */
 export async function attachThumb(asset: Asset) {
   const cfg = r2();
   const key = thumbKeyFor(asset.key);
-  const thumb = await headObject(cfg, asset.bucket, key);
+  const thumb = await headObject(cfg, locate(cfg, asset, key));
   if (!thumb) return false;
   if (thumb.bytes > 1024 * 1024 || thumb.contentType !== "image/jpeg") {
-    await deleteObject(cfg, asset.bucket, key);
+    await deleteObject(cfg, locate(cfg, asset, key));
     return false;
   }
   await recordAsset({ ...asset, bytes: asset.bytes + thumb.bytes, meta: { ...asset.meta, thumb: key } });
@@ -428,8 +404,8 @@ export async function renameAsset(workspaceId: string, key: string, name: string
 
 /** Removes an uploaded object that never got indexed (e.g. it failed validation). */
 export async function discardUpload(workspaceId: string, key: string) {
-  const bucket = await getBucket(workspaceId);
-  if (bucket) await deleteObject(r2(), bucket, key);
+  const cfg = r2();
+  await deleteObject(cfg, newLocation(cfg, workspaceId, key));
 }
 
 /**
@@ -448,30 +424,83 @@ export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
 
 // ---------------------------------------------------------------- usage & quota
 
-const GB = 1024 ** 3;
+/**
+ * Files that count against a person: the ones they made in workspaces they're still in,
+ * plus, in workspaces they own, files nobody there owns any more (made by someone who left).
+ * ?1 is the user id; `a` is assets.
+ */
+const COUNTS_AGAINST = `
+  (a.created_by = ?1 AND EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = a.workspace_id AND m.user_id = ?1))
+  OR (a.workspace_id IN (SELECT id FROM workspaces WHERE owner_id = ?1)
+      AND (a.created_by IS NULL OR NOT EXISTS (
+        SELECT 1 FROM workspace_members m WHERE m.workspace_id = a.workspace_id AND m.user_id = a.created_by)))`;
 
-export async function storageUsage(workspaceId: string) {
-  const row = await first<{ objects: number; bytes: number }>(
-    "SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE workspace_id = ?",
-    workspaceId,
-  );
-  // Teams pool the allowance: one per member.
-  const seats = await first<{ kind: string; members: number }>(
-    "SELECT kind, (SELECT COUNT(*) FROM workspace_members WHERE workspace_id = ?) AS members FROM workspaces WHERE id = ?",
-    workspaceId,
-    workspaceId,
-  );
-  const quotaGb = (Number(env().STORAGE_QUOTA_GB) || 2) * (seats?.kind === "team" ? Math.max(1, seats.members) : 1);
-  return { objects: row?.objects ?? 0, bytes: row?.bytes ?? 0, quotaBytes: Math.round(quotaGb * GB) };
+export interface StorageUsage {
+  objects: number;
+  bytes: number;
+  quotaBytes: number;
 }
 
-/** Thrown before a generation or upload that would go over the workspace's quota. */
-export async function assertStorageAvailable(workspaceId: string, extraBytes = 0) {
-  const { bytes, quotaBytes } = await storageUsage(workspaceId);
-  if (bytes + extraBytes > quotaBytes || bytes >= quotaBytes) {
-    const gb = +(quotaBytes / GB).toFixed(1);
-    throw new StorageError(`Your storage is full (${gb} GB). Delete some videos to keep generating.`, 403);
+/** A person's storage: everything that counts against them, across workspaces, and their plan's allowance. */
+export async function storageUsage(userId: string): Promise<StorageUsage> {
+  const [row, user] = await Promise.all([
+    first<{ objects: number; bytes: number }>(
+      `SELECT COUNT(*) AS objects, COALESCE(SUM(a.bytes), 0) AS bytes FROM assets a WHERE ${COUNTS_AGAINST}`,
+      userId,
+    ),
+    first<{ plan: string }>(`SELECT ${effectivePlanSql("u")} AS plan FROM users u WHERE u.id = ?`, userId),
+  ]);
+  return {
+    objects: row?.objects ?? 0,
+    bytes: row?.bytes ?? 0,
+    quotaBytes: planOf(user?.plan).storageGb * GB,
+  };
+}
+
+/** A team's files, and its room: every member brings their own plan's storage. */
+export async function teamStorage(workspaceId: string) {
+  const [row, members] = await Promise.all([
+    first<{ objects: number; bytes: number }>(
+      "SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE workspace_id = ?",
+      workspaceId,
+    ),
+    all<{ plan: string }>(
+      `SELECT ${effectivePlanSql("u")} AS plan FROM workspace_members m JOIN users u ON u.id = m.user_id
+       WHERE m.workspace_id = ?`,
+      workspaceId,
+    ),
+  ]);
+  return {
+    objects: row?.objects ?? 0,
+    bytes: row?.bytes ?? 0,
+    capacityBytes: members.reduce((sum, m) => sum + planOf(m.plan).storageGb * GB, 0),
+  };
+}
+
+const full = (u: StorageUsage, extraBytes: number) => u.bytes + extraBytes > u.quotaBytes || u.bytes >= u.quotaBytes;
+
+/**
+ * Before a generation or upload by `userId` in `workspace`: the team must be active (its
+ * owner on a plan with Teams), and the new file must fit in the person's own storage.
+ */
+export async function assertStorageAvailable(userId: string, workspace: Workspace, extraBytes = 0) {
+  if (workspace.paused)
+    throw new PlanRequiredError(
+      "This team is paused: its owner's plan doesn't include Teams. You can still view and download its files.",
+    );
+  const usage = await storageUsage(userId);
+  if (full(usage, extraBytes)) {
+    const gb = +(usage.quotaBytes / GB).toFixed(1);
+    throw new PlanRequiredError(
+      `Your storage is full (${gb} GB, across all your workspaces). Delete something or upgrade your plan.`,
+    );
   }
+}
+
+/** After an upload landed: is the person now over? (A signed URL can't limit the size.) */
+export async function isOverQuota(userId: string) {
+  const usage = await storageUsage(userId);
+  return usage.bytes > usage.quotaBytes;
 }
 
 // ---------------------------------------------------------------- serving
@@ -483,19 +512,21 @@ const PROVIDER_URL_TTL_S = 24 * 3600;
 async function presign(
   cfg: R2Config,
   method: "GET" | "PUT",
-  bucket: string,
-  key: string,
+  loc: Location,
   ttlSeconds: number,
   query: Record<string, string> = {},
 ) {
-  const url = new URL(objectUrl(cfg, bucket, key));
+  const url = new URL(urlOf(cfg, loc));
   url.searchParams.set("X-Amz-Expires", String(ttlSeconds));
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   return (await cfg.client.sign(new Request(url, { method }), { aws: { signQuery: true } })).url;
 }
 
 /** A link the video provider can download a reference from, without credentials. */
-export const providerUrl = (asset: Asset) => presign(r2(), "GET", asset.bucket, asset.key, PROVIDER_URL_TTL_S);
+export function providerUrl(asset: Asset) {
+  const cfg = r2();
+  return presign(cfg, "GET", locate(cfg, asset), PROVIDER_URL_TTL_S);
+}
 
 /**
  * Redirects to a short-lived signed URL, so the bytes (and the player's Range
@@ -507,7 +538,8 @@ export async function serveAsset(asset: Asset, opts: { downloadName?: string; th
     : {};
   // The thumbnail when asked for and there is one; otherwise the file itself.
   const key = opts.thumb && asset.meta?.thumb ? asset.meta.thumb : asset.key;
-  const location = await presign(r2(), "GET", asset.bucket, key, SIGNED_URL_TTL_S, query);
+  const cfg = r2();
+  const location = await presign(cfg, "GET", locate(cfg, asset, key), SIGNED_URL_TTL_S, query);
   return new Response(null, {
     status: 302,
     // Cache the redirect for well under the signature's lifetime.

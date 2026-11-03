@@ -10,7 +10,7 @@ import { requireCanModify, requireWorkspace } from "@/lib/workspaces";
  */
 export async function POST(request: Request) {
   try {
-    const { workspace } = await requireWorkspace(request);
+    const { user, workspace } = await requireWorkspace(request);
     const { kind, contentType, size, thumb } = (await request.json()) as {
       kind: UploadKind;
       contentType: string;
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     if (!ext) return Response.json({ error: `Unsupported file type. Use ${rules.label}.` }, { status: 400 });
     if (!(size > 0) || size > rules.maxBytes)
       return Response.json({ error: `File too large. Use ${rules.label}.` }, { status: 400 });
-    await assertStorageAvailable(workspace.id, size);
+    await assertStorageAvailable(user.id, workspace, size);
 
     const key = `${LIBRARY_PREFIX}${crypto.randomUUID()}.${ext}`;
     const thumbKey = thumb && kind !== "audio" ? thumbKeyFor(key) : undefined;

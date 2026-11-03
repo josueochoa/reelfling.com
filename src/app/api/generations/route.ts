@@ -86,7 +86,7 @@ export async function POST(request: Request) {
     const invalid = validate(req, model);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
-    await assertStorageAvailable(workspace.id);
+    await assertStorageAvailable(user.id, workspace);
 
     // Drop params the provider would reject.
     if (!model.audio) delete req.generateAudio;

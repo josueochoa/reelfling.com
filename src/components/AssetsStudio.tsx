@@ -7,6 +7,7 @@ import { getImageModel } from "@/lib/imageModels";
 import { getModel } from "@/lib/models";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import { withWorkspace, type Me } from "./api";
+import { StorageMeter } from "./Billing";
 import type { Library, LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { MediaPreview } from "./MediaPreview";
@@ -142,7 +143,6 @@ export function AssetsStudio({
 
   const previewIndex = shown.findIndex((i) => i.id === previewId);
   const previewing = previewIndex >= 0 ? shown[previewIndex] : undefined;
-  const usage = me?.storage;
 
   return (
     <div className="flex h-full flex-col lg:flex-row">
@@ -169,20 +169,12 @@ export function AssetsStudio({
             </div>
           );
         })}
-        {usage && (
-          <div className="mt-auto hidden px-3 pt-6 text-xs lg:block">
-            <div className="flex justify-between text-zinc-400">
-              <span>Storage</span>
-              <span className="tabular-nums">
-                {formatBytes(usage.bytes)} of {formatBytes(usage.quotaBytes)}
-              </span>
-            </div>
-            <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full ${usage.bytes >= usage.quotaBytes ? "bg-red-400" : "bg-accent"}`}
-                style={{ width: `${Math.min(100, (usage.bytes / usage.quotaBytes) * 100)}%` }}
-              />
-            </div>
+        {me && (
+          <div className="mt-auto hidden space-y-4 px-3 pt-6 lg:block">
+            {me.teamStorage && (
+              <StorageMeter label="This team" used={me.teamStorage.bytes} total={me.teamStorage.capacityBytes} />
+            )}
+            <StorageMeter label="Your storage" used={me.storage.bytes} total={me.storage.quotaBytes} />
           </div>
         )}
       </aside>
