@@ -9,12 +9,16 @@ export function Lightbox({
   gen,
   onClose,
   onReuse,
+  onUseAsStartFrame,
+  onUseAsReference,
   onExtend,
   onDelete,
 }: {
   gen: Generation;
   onClose: () => void;
   onReuse: () => void;
+  onUseAsStartFrame: () => void;
+  onUseAsReference: () => void;
   onExtend?: () => void;
   onDelete: () => void;
 }) {
@@ -93,6 +97,18 @@ export function Lightbox({
                 Continue from last frame
               </button>
             )}
+            <button
+              onClick={onUseAsStartFrame}
+              className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5"
+            >
+              Use as start frame
+            </button>
+            <button
+              onClick={onUseAsReference}
+              className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5"
+            >
+              Use as reference
+            </button>
             <button onClick={onReuse} className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5">
               Reuse settings
             </button>

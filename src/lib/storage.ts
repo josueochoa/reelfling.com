@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { AwsClient } from "aws4fetch";
 import { all, env, first, run } from "./db";
+import { referencedKeySet, withoutReferenced } from "./inputs";
 import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
 
 export interface Asset {
@@ -405,16 +406,40 @@ export async function discardUpload(userId: string, key: string) {
 
 /**
  * Pre-library reference uploads (`refs/`) that never made it into a generation. Library
- * uploads (`uploads/`) are kept until the user deletes them.
+ * uploads (`uploads/`) are kept until the user deletes them. A `refs/` object whose key
+ * is stored on any generation (start/end frame, reference block, or image reference)
+ * is still in use, so it is left alone.
  */
 export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
-  const rows = await all<AssetRow>(
-    "SELECT * FROM assets WHERE generation_id IS NULL AND key LIKE ? AND created_at < ? LIMIT 50",
-    `${prefix}%`,
-    Date.now() - olderThanMs,
+  const referenced = referencedKeySet(
+    (
+      await all<{ user_id: string; data: string }>(
+        "SELECT user_id, data FROM generations UNION ALL SELECT user_id, data FROM image_generations",
+      )
+    ).map((r) => ({ userId: r.user_id, data: r.data })),
   );
-  for (const row of rows) await deleteAsset(toAsset(row));
-  return rows.length;
+  const cutoff = Date.now() - olderThanMs;
+  const doomed: AssetRow[] = [];
+  let offset = 0;
+  // Page past referenced rows. A protected object must not pin the LIMIT window and hide real orphans.
+  while (doomed.length < 50 && offset < 500) {
+    const rows = await all<AssetRow>(
+      `SELECT * FROM assets WHERE generation_id IS NULL AND key LIKE ? AND created_at < ?
+       ORDER BY created_at ASC, key ASC LIMIT 50 OFFSET ?`,
+      `${prefix}%`,
+      cutoff,
+      offset,
+    );
+    if (!rows.length) break;
+    offset += rows.length;
+    for (const row of withoutReferenced(rows, referenced)) {
+      doomed.push(row);
+      if (doomed.length === 50) break;
+    }
+    if (rows.length < 50) break;
+  }
+  for (const row of doomed) await deleteAsset(toAsset(row));
+  return doomed.length;
 }
 
 // ---------------------------------------------------------------- usage & quota

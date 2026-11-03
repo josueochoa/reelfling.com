@@ -2,7 +2,7 @@ import type { ProviderId, Ratio, Resolution } from "./models";
 
 export type GenerationMode = "frames" | "references";
 
-/** Body of POST /api/generations. Media fields are https URLs or data: URIs. */
+/** Body of POST /api/generations. Media fields are https URLs, data: URIs, or `upload:<key>`. */
 export interface GenerateRequest {
   model: string;
   prompt: string;
@@ -19,6 +19,35 @@ export interface GenerateRequest {
   referenceImages?: string[];
   referenceVideos?: string[];
   referenceAudios?: string[];
+  /** Library keys of the reference blocks, in the order they were shown. */
+  referenceOrder?: string[];
+}
+
+/** One reference block, stored so Reuse can rebuild the box. */
+export interface MediaBlock {
+  kind: "image" | "video" | "audio";
+  /** R2 object key (`uploads/…`, `videos/…`, `images/…`, or a legacy `refs/…`). */
+  key: string;
+  /** Name captured at save time, so Reuse can name the file if it was deleted. */
+  name?: string;
+}
+
+/**
+ * What the generation was given. The booleans and counts are always there.
+ * Keys are present on generations saved after inputs started being persisted.
+ */
+export interface GenerationInputs {
+  firstFrame: boolean;
+  lastFrame: boolean;
+  images: number;
+  videos: number;
+  audios: number;
+  firstFrameKey?: string;
+  firstFrameName?: string;
+  lastFrameKey?: string;
+  lastFrameName?: string;
+  /** Reference blocks in display order. Absent on older, count-only records. */
+  blocks?: MediaBlock[];
 }
 
 /** Upstream ModelArk task status. */
@@ -42,8 +71,8 @@ export interface Generation {
   duration: number;
   generateAudio: boolean;
   seed?: number;
-  /** Counts only — input media isn't persisted. */
-  inputs: { firstFrame: boolean; lastFrame: boolean; images: number; videos: number; audios: number };
+  /** Counts, plus the R2 keys of frames and reference blocks when they were saved. */
+  inputs: GenerationInputs;
   /** Temporary signed URL from ModelArk (expires ~24h). */
   remoteVideoUrl?: string;
   /** Set once the video has been copied into the user's storage (see storage.ts). */
