@@ -11,13 +11,10 @@ export interface GenerateRequest {
   resolution: string;
   duration: number;
   generateAudio?: boolean;
-  /** Ask the model to expand the prompt, when that control is optional. */
-  expandPrompt?: boolean;
   seed?: number;
   watermark?: boolean;
   cameraFixed?: boolean;
   firstFrame?: string;
-  middleFrame?: string;
   lastFrame?: string;
   referenceImages?: string[];
   referenceVideos?: string[];

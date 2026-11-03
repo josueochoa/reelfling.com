@@ -85,9 +85,7 @@ export function ControlPanel({
   const [resolution, setResolution] = useState(pickResolution(initialModel, preset.resolution));
   const [duration, setDuration] = useState(clampDuration(preset.duration ?? initialModel.capabilities.durations?.default ?? 5, initialModel));
   const [generateAudio, setGenerateAudio] = useState(preset.generateAudio ?? true);
-  const [expandPrompt, setExpandPrompt] = useState(true);
   const [firstFrame, setFirstFrameRaw] = useState<string | undefined>(preset.firstFrame);
-  const [middleFrame, setMiddleFrame] = useState<string>();
   const [lastFrame, setLastFrame] = useState<string>();
   // References: library item ids, in the order shown. Numbering is per kind.
   const [refIds, setRefIds] = useState<string[]>([]);
@@ -255,7 +253,6 @@ export function ControlPanel({
     setResolution(pickResolution(m, resolution));
     setDuration((d) => clampDuration(d, m));
     if (!m.capabilities.frames.end) setLastFrame(undefined);
-    if (!m.capabilities.frames.middle) setMiddleFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
   }
 
@@ -282,14 +279,12 @@ export function ControlPanel({
       resolution,
       duration,
       generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
-      expandPrompt: caps.promptExpansion === "optional" ? expandPrompt : undefined,
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraFixed: caps.camera && caps.camera.fixed ? cameraFixed : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
             firstFrame: caps.frames.start ? firstFrame : undefined,
-            middleFrame: caps.frames.middle ? middleFrame : undefined,
             lastFrame: caps.frames.end && firstFrame ? lastFrame : undefined,
           }
         : {
@@ -336,18 +331,9 @@ export function ControlPanel({
         )}
 
         {effectiveMode === "frames" ? (
-          (caps.frames.start || caps.frames.middle || caps.frames.end) && (
-            <div
-              className={`grid gap-3 ${
-                [caps.frames.start, caps.frames.middle, caps.frames.end].filter(Boolean).length > 1
-                  ? "grid-cols-2"
-                  : "grid-cols-1"
-              }`}
-            >
+          (caps.frames.start || caps.frames.end) && (
+            <div className={`grid gap-3 ${caps.frames.start && caps.frames.end ? "grid-cols-2" : "grid-cols-1"}`}>
               {caps.frames.start && <ImageSlot label="Start frame" value={firstFrame} onChange={setFirstFrame} />}
-              {caps.frames.middle && (
-                <ImageSlot label="Middle frame" value={middleFrame} onChange={setMiddleFrame} disabled={!firstFrame} />
-              )}
               {caps.frames.end && (
                 <ImageSlot label="End frame" value={lastFrame} onChange={setLastFrame} disabled={!firstFrame} />
               )}
@@ -443,16 +429,13 @@ export function ControlPanel({
         )}
         {caps.audio === "required" && <p className="text-xs text-zinc-500">Audio is included with this model.</p>}
 
-        {(caps.seed || (caps.camera && caps.camera.fixed) || caps.watermark || caps.promptExpansion === "optional") && (
+        {(caps.seed || (caps.camera && caps.camera.fixed) || caps.watermark) && (
           <div>
             <button onClick={() => setShowAdvanced((s) => !s)} className="text-xs text-zinc-500 hover:text-zinc-300">
               {showAdvanced ? "− Hide" : "+ Show"} advanced
             </button>
             {showAdvanced && (
               <div className="mt-3 space-y-3">
-                {caps.promptExpansion === "optional" && (
-                  <Toggle label="Expand prompt" checked={expandPrompt} onChange={setExpandPrompt} />
-                )}
                 {caps.seed && (
                   <Section label="Seed">
                     <div className="flex gap-2">

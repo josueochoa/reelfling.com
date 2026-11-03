@@ -3,12 +3,11 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { openRouterPrice } from "../../../scripts/catalog-map.mjs";
 import type { GenerateRequest } from "../types";
+import { ALL_MODELS } from "./generated";
 import { MAPPERS } from "./mappers";
 import {
   MAPPER_IDS,
-  MODELS,
   ROUTE_PROVIDERS,
-  assertRegistry,
   estimateCost,
   getModel,
   imageModels,
@@ -33,29 +32,31 @@ function videoRequest(model: VideoModel, duration: number): GenerateRequest {
 
 describe("model registry", () => {
   it("accepts the checked-in catalog", () => {
-    assertRegistry(MODELS);
-    assert.ok(MODELS.length > 8);
+    assert.ok(ALL_MODELS.length > 8);
+    assert.ok(ALL_MODELS.some((model) => model.routes.some((route) => route.provider === "openrouter")));
+    assert.ok(ALL_MODELS.some((model) => model.routes.some((route) => route.mapper === "fal.queue")));
   });
 
   it("fails on an unknown provider", () => {
-    const raw = JSON.parse(JSON.stringify(MODELS[0])) as { routes: { provider: string }[] };
+    const raw = JSON.parse(JSON.stringify(ALL_MODELS[0])) as { routes: { provider: string }[] };
     raw.routes[0].provider = "stripe";
     assert.throws(() => parseModel(raw), /Unknown provider "stripe"/);
   });
 
   it("fails on an unknown mapper", () => {
-    const raw = JSON.parse(JSON.stringify(MODELS[0])) as { routes: { provider: string; mapper: string }[] };
+    const raw = JSON.parse(JSON.stringify(ALL_MODELS[0])) as { routes: { provider: string; mapper: string }[] };
     raw.routes[0].provider = "fal";
     raw.routes[0].mapper = "nope.mapper";
     assert.throws(() => parseModel(raw), /Unknown mapper "nope.mapper"/);
   });
 
-  it("has an implementation for every mapper id", () => {
-    for (const id of MAPPER_IDS) assert.equal(typeof MAPPERS[id], "function", id);
-    for (const model of MODELS)
+  it("keeps route mapper ids stable and only implements mappers a client calls", () => {
+    assert.deepEqual(Object.keys(MAPPERS).sort(), ["argolink.image.google", "argolink.image.openai"]);
+    for (const model of ALL_MODELS)
       for (const route of model.routes) {
         assert.ok(ROUTE_PROVIDERS.includes(route.provider), route.provider);
-        assert.ok(MAPPER_IDS.includes(route.mapper), route.mapper);
+        assert.ok(MAPPER_IDS.includes(route.mapper), `${model.id} names unknown mapper ${route.mapper}`);
+        if (route.mapper.startsWith("argolink.image.")) assert.equal(typeof MAPPERS[route.mapper], "function");
       }
   });
 

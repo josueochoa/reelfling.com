@@ -131,7 +131,9 @@ export async function runImageJob(userId: string, id: string) {
         return { image_url: await providerUrl(asset) };
       }),
     );
-    const mapped = (await MAPPERS[route.mapper](
+    const map = MAPPERS[route.mapper];
+    if (!map) throw new Error(`${model.name} has no input mapper`);
+    const mapped = map(
       {
         kind: "image",
         request: {
@@ -144,7 +146,7 @@ export async function runImageJob(userId: string, id: string) {
         },
       },
       { endpoint: route.endpoint },
-    )) as { path: string; body: Record<string, unknown> };
+    ) as { path: string; body: Record<string, unknown> };
 
     const result = await argo<ArgoImages>(creds, mapped.path, {
       method: "POST",

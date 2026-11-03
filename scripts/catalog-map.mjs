@@ -312,11 +312,7 @@ function durationsFrom(props) {
 
 function tasksFor(primary, props) {
   const tasks = [primary];
-  const extraStart = hasKey(props, /^(image_url|start_image_url|first_frame_url)$/);
-  if (primary === "t2v" && extraStart) tasks.push("i2v");
-  if ((primary === "i2v" || primary === "avatar") && !hasKey(props, /image_url|start_image|first_frame/)) {
-    // The category already says an image is required.
-  }
+  if (primary === "t2v" && hasKey(props, /^(image_url|start_image_url|first_frame_url)$/)) tasks.push("i2v");
   return tasks;
 }
 
@@ -384,13 +380,12 @@ export function falModel(spec, raw, unit) {
     group,
     task,
     tasks: group === "video" ? tasks.filter((item) => VIDEO_TASKS.includes(item)) : [task],
-    routes: [{ provider: "fal", endpoint: spec.endpoint, mapper: task === "image" || task === "image-edit" ? "fal.queue" : task === "tts" ? "fal.queue" : "fal.queue" }],
+    routes: [{ provider: "fal", endpoint: spec.endpoint, mapper: "fal.queue" }],
     promptRequired: required.includes("prompt") || task === "t2v" || task === "tts",
     refSyntax: "at",
     price,
   };
-  // fal.queue maps a video-shaped request. Image and speech routes still name it so the
-  // registry has one fal mapper; the fal tab itself submits raw JSON.
+  // Every fal route names fal.queue. The fal tab still submits raw JSON; nothing calls a mapper yet.
   if (group === "image") {
     const maxImages = props.num_images?.maximum ?? props.num_images?.default ?? 1;
     return compact({

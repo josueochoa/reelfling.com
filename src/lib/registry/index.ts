@@ -1,23 +1,12 @@
-import falCatalog from "./catalog/fal.json" with { type: "json" };
-import openRouterCatalog from "./catalog/openrouter.json" with { type: "json" };
 import { HAND_MODELS } from "./hand";
-import { assertRegistry, parseModel } from "./parse";
+import { assertRegistry } from "./parse";
 import { isImage, isVideo, type ImageModel, type ModelEntry, type StudioProviderId, type VideoModel } from "./types";
 
-interface CatalogFile {
-  models?: unknown[];
-}
-
-function fromCatalog(file: CatalogFile): ModelEntry[] {
-  return (file.models ?? []).map(parseModel);
-}
-
-/** Hand-written ModelArk and ArgoLink entries, then the generated fal and OpenRouter catalogs. */
-export const MODELS: readonly ModelEntry[] = [
-  ...HAND_MODELS,
-  ...fromCatalog(falCatalog),
-  ...fromCatalog(openRouterCatalog),
-];
+/**
+ * Models the studio offers. The generated fal and OpenRouter catalogs live in
+ * ./generated and are not imported here, so they stay out of the client bundle.
+ */
+export const MODELS: readonly ModelEntry[] = HAND_MODELS;
 
 assertRegistry(MODELS);
 

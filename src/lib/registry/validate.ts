@@ -28,7 +28,6 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
   if (durationError) return durationError;
   if (frames) {
     if (req.firstFrame && !caps.frames.start) return `${label} doesn't support a start frame`;
-    if (req.middleFrame && !caps.frames.middle) return `${label} doesn't support a middle frame`;
     if (req.lastFrame && !req.firstFrame) return "An end frame needs a start frame";
     if (req.lastFrame && !caps.frames.end) return `${label} doesn't support end frames`;
   } else {
@@ -46,7 +45,6 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
   if (req.seed !== undefined && !caps.seed) return `${label} doesn't take a seed`;
   if (req.cameraFixed && !(caps.camera && caps.camera.fixed)) return `${label} doesn't take camera settings`;
   if (req.watermark && !caps.watermark) return `${label} doesn't take a watermark`;
-  if (req.expandPrompt && caps.promptExpansion !== "optional") return `${label} doesn't take prompt expansion`;
   return null;
 }
 

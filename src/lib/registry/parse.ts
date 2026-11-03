@@ -12,7 +12,6 @@ import {
   type RouteProvider,
   type SpeechModel,
   type SpeechTask,
-  type TaskKind,
   type ToolModel,
   type ToolTask,
   type VideoModel,
@@ -147,11 +146,4 @@ export function assertRegistry(models: readonly ModelEntry[]) {
       if (model.task !== expected) throw new Error(`${model.id} task ${model.task} doesn't match ${model.group}`);
     }
   }
-}
-
-export function taskAllowed(group: ModelEntry["group"], task: TaskKind) {
-  if (group === "video") return VIDEO_TASKS.includes(task as VideoTask);
-  if (group === "image") return IMAGE_TASKS.includes(task as ImageTask);
-  if (group === "speech") return task === "tts";
-  return task === "tool";
 }
