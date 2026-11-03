@@ -2,14 +2,14 @@ import { errorResponse, requireUser } from "@/lib/auth";
 import { enqueueImageJob, insertImageGeneration, listImageGenerations, type ImageGeneration } from "@/lib/images";
 import { listKeys } from "@/lib/keys";
 import { invalidMentions } from "@/lib/mentions";
+import { availabilityError, availabilityFor, availableRoute, routeProviders } from "@/lib/registry/availability";
 import {
   estimateCost,
   getImageModel,
   imageProviderFor,
   imageRequestError,
-  PROVIDER_INFO,
   ratioAllowed,
-  routeFor,
+  type ImageKeyProvider,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
@@ -59,14 +59,13 @@ export async function POST(request: Request) {
     }
     const mentions = invalidMentions(prompt, { Image: refs.length, Video: 0, Audio: 0 });
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
-    const imageProvider = imageProviderFor(
-      user.activeProvider,
-      (await listKeys(user.id)).map((key) => key.provider),
-    );
-    if (!imageProvider)
-      return bad("The Image tab needs an OpenRouter or ArgoLink key. Add one under API keys.");
-    if (!routeFor(model, imageProvider))
-      return bad(`${model.name} isn't available on ${PROVIDER_INFO[imageProvider].label}.`);
+    const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
+    const gate = availabilityFor(routeProviders(model.routes), keyed);
+    if (!gate.available) return bad(availabilityError(gate.needs));
+    const route = availableRoute(model, keyed, imageProviderFor(user.activeProvider, [...keyed]));
+    if (!route || (route.provider !== "argolink" && route.provider !== "openrouter"))
+      return bad("This model isn't available on the image tab.");
+    const imageProvider: ImageKeyProvider = route.provider;
     await assertStorageAvailable(user.id);
 
     // "auto": the reference's shape if there is one; otherwise the model's own fallback.

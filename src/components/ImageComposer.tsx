@@ -11,8 +11,10 @@ import {
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
+import { availabilityFor, availabilityHint, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
 import { Dropdown } from "./Dropdown";
+import { UnlockHint } from "./UnlockHint";
 import { thumbSrc, type LibraryItem } from "./library";
 import { UploadOverlay } from "./MediaBlocks";
 import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
@@ -48,7 +50,7 @@ export function ImageComposer({
   onGenerate,
   submitting,
   error,
-  needsKey,
+  keyed,
   onOpenKeys,
 }: {
   state: ComposerState;
@@ -61,8 +63,8 @@ export function ImageComposer({
   onGenerate: () => void;
   submitting: boolean;
   error: string | null;
-  /** No OpenRouter or ArgoLink key yet. */
-  needsKey: boolean;
+  /** Providers this user has a key for. Names only. */
+  keyed: ReadonlySet<string>;
   onOpenKeys: () => void;
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
@@ -73,10 +75,13 @@ export function ImageComposer({
   const counts = { Image: references.length, Video: 0, Audio: 0 };
   const bad = invalidMentions(prompt, counts);
   const uploading = references.some((r) => r.status !== "ready");
-  const canGenerate = !submitting && !uploading && !needsKey && prompt.trim().length > 0 && bad.length === 0;
+  const modelAvail = availabilityFor(routeProviders(model.routes), keyed);
+  const canGenerate = !submitting && !uploading && modelAvail.available && prompt.trim().length > 0 && bad.length === 0;
+  const models = sortByAvailability(MODELS, (item) => availabilityFor(routeProviders(item.routes), keyed).available);
 
   function changeModel(id: string) {
-    const m = MODELS.find((x) => x.id === id)!;
+    const m = MODELS.find((x) => x.id === id);
+    if (!m || !availabilityFor(routeProviders(m.routes), keyed).available) return;
     const res = m.capabilities.resolutions.includes(resolution) ? resolution : (m.capabilities.resolutions[0] as ImageResolution);
     onChange({
       model: m,
@@ -88,14 +93,9 @@ export function ImageComposer({
 
   return (
     <div className="rounded-3xl border border-white/10 bg-panel/95 p-3 shadow-2xl shadow-black/60 backdrop-blur">
-      {needsKey && (
-        <div className="mb-3 flex items-center gap-3 rounded-2xl bg-accent/10 px-4 py-2.5 text-sm">
-          <span className="flex-1 text-zinc-200">
-            The Image tab needs an OpenRouter or ArgoLink key.
-          </span>
-          <button onClick={onOpenKeys} className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-ink">
-            Add key
-          </button>
+      {!modelAvail.available && (
+        <div className="mb-3 px-1">
+          <UnlockHint hint={availabilityHint(modelAvail.needs)} onOpen={onOpenKeys} />
         </div>
       )}
 
@@ -184,16 +184,22 @@ export function ImageComposer({
                   <Mark mark={model.mark} /> {model.name} <span className="text-zinc-500">›</span>
                 </>
               }
-              options={MODELS.map((m) => ({
-                value: m.id,
-                label: (
-                  <>
-                    <Mark mark={m.mark} /> {m.name}
-                  </>
-                ),
-                hint: m.description,
-              }))}
+              options={models.map((m) => {
+                const open = availabilityFor(routeProviders(m.routes), keyed);
+                return {
+                  value: m.id,
+                  label: (
+                    <>
+                      <Mark mark={m.mark} /> {m.name}
+                    </>
+                  ),
+                  hint: open.available ? m.description : undefined,
+                  disabled: !open.available,
+                  unlock: open.available ? undefined : availabilityHint(open.needs),
+                };
+              })}
               onChange={changeModel}
+              onOpenKeys={onOpenKeys}
             />
             <Dropdown
               title="Aspect ratio"
@@ -257,9 +263,15 @@ export function ImageComposer({
         </div>
 
         <button
+          type="button"
+          data-testid="generate"
           onClick={onGenerate}
           disabled={!canGenerate}
-          className="flex w-32 shrink-0 flex-col items-center justify-center rounded-2xl bg-accent text-ink shadow-lg shadow-accent/20 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`flex w-32 shrink-0 flex-col items-center justify-center rounded-2xl transition disabled:cursor-not-allowed ${
+            modelAvail.available
+              ? "bg-accent text-ink shadow-lg shadow-accent/20 hover:brightness-105 disabled:opacity-40"
+              : "cursor-not-allowed bg-white/10 text-zinc-500"
+          }`}
         >
           <span className="text-sm font-bold tracking-wide uppercase">{submitting ? "Starting…" : "Generate"}</span>
           <span className="text-xs opacity-70">~${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { VideoModel } from "@/lib/registry";
+import type { CatalogTool } from "@/lib/registry/availability";
 import { rememberModels } from "@/lib/registry/lookup";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
@@ -30,6 +31,7 @@ export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
   const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
+  const [tools, setTools] = useState<CatalogTool[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const library = useLibrary();
   const video = useRef<StudioTabHandle>(null);
@@ -42,10 +44,11 @@ export function Studio() {
   }, [loadMe]);
   // Slim picker list. The generated catalog stays on the server.
   useEffect(() => {
-    apiJson<{ models: VideoModel[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; tools?: CatalogTool[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
         setOpenRouterModels(body.models);
+        setTools(body.tools ?? []);
       })
       .catch(() => setOpenRouterModels([]));
   }, []);
@@ -80,6 +83,9 @@ export function Studio() {
         <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
       </header>
 
+      {!me ? (
+        <div className="grid flex-1 place-items-center text-sm text-zinc-500">Loading…</div>
+      ) : (
       <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
         <VideoStudio
           ref={video}
@@ -87,8 +93,10 @@ export function Studio() {
           library={library}
           onOpenKeys={openKeys}
           openRouterModels={openRouterModels}
+          tools={tools}
         />
       </div>
+      )}
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
         <ImageStudio
           ref={image}

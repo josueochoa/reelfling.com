@@ -4,7 +4,8 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { restoreInputs } from "@/lib/inputs";
-import { modelsFor, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
+import { isVideo, MODELS, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
+import { availabilityFor, routeProviders, sortByAvailability, type CatalogTool } from "@/lib/registry/availability";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
@@ -31,6 +32,7 @@ export function VideoStudio({
   library,
   onOpenKeys,
   openRouterModels,
+  tools,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -38,6 +40,7 @@ export function VideoStudio({
   onOpenKeys: () => void;
   /** Null until /api/models returns. Empty when that request failed. */
   openRouterModels: VideoModel[] | null;
+  tools: readonly CatalogTool[];
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -168,20 +171,26 @@ export function VideoStudio({
     await library.remove(item.id).catch((e) => setError((e as Error).message));
   }
 
-  const models = provider === "openrouter" ? (openRouterModels ?? []) : provider ? modelsFor(provider) : [];
+  const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
+  const byId = new Map<string, VideoModel>();
+  for (const model of MODELS.filter(isVideo)) byId.set(model.id, model);
+  for (const model of openRouterModels ?? []) byId.set(model.id, model);
+  const models = sortByAvailability([...byId.values()], (model) =>
+    availabilityFor(routeProviders(model.routes), keyed).available,
+  );
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
     <div className="flex h-full flex-col lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
-          {provider ? (
-            <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
-              {provider === "openrouter" ? "OpenRouter" : `Seedance via ${PROVIDER_INFO[provider].label}`}
-            </button>
-          ) : (
-            <span />
-          )}
+          <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
+            {provider
+              ? provider === "openrouter"
+                ? "OpenRouter"
+                : `Seedance via ${PROVIDER_INFO[provider].label}`
+              : "API keys"}
+          </button>
           {active > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-zinc-400">
               <span className="size-1.5 animate-pulse rounded-full bg-accent" />
@@ -189,37 +198,24 @@ export function VideoStudio({
             </span>
           )}
         </header>
-        {provider && models.length > 0 ? (
+        {models.length > 0 && (
           <ControlPanel
             ref={panel}
-            key={`${provider}-${preset.key}`}
+            key={preset.key}
             library={library}
             onOpenLibrary={() => setLibraryOpen(true)}
             onReferencesChange={setRefLabels}
             models={models}
+            keyed={keyed}
+            tools={tools}
             preset={preset}
             onGenerate={generate}
             error={error}
+            onOpenKeys={onOpenKeys}
+            onUseFal={() => {
+              window.location.hash = "fal";
+            }}
           />
-        ) : provider ? (
-          <p className="m-5 text-sm text-zinc-500">
-            {openRouterModels ? "No OpenRouter video models are available." : "Loading OpenRouter models…"}
-          </p>
-        ) : (
-          me && (
-            <div className="m-5 rounded-2xl border border-dashed border-white/15 p-6 text-center">
-              <p className="font-medium">Connect a provider</p>
-              <p className="mt-1 text-sm text-zinc-400">
-                Add your ArgoLink, OpenRouter, or ModelArk API key. Generations run on your own provider account.
-              </p>
-              <button
-                onClick={onOpenKeys}
-                className="mt-4 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink"
-              >
-                Add API key
-              </button>
-            </div>
-          )
         )}
       </aside>
 
