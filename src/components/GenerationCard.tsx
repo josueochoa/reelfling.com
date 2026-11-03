@@ -35,17 +35,22 @@ export function GenerationCard({
   gen,
   onOpen,
   onReuse,
+  onUseAsReference,
   onDelete,
 }: {
   gen: Generation;
   onOpen: () => void;
   onReuse: () => void;
+  onUseAsReference: () => void;
   onDelete: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
   const model = getModel(gen.model);
   const ready = gen.status === "succeeded";
+  // The output is a video, so it can be a reference only once it's stored. Continue-from-last-frame
+  // covers using a clip as the next start; there is no image to offer as a start frame.
+  const canReference = ready && !!gen.stored;
 
   return (
     <article className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
@@ -80,6 +85,11 @@ export function GenerationCard({
         <p className="line-clamp-2 text-sm text-zinc-300" title={gen.prompt}>
           {gen.prompt || <span className="text-zinc-500 italic">No prompt</span>}
         </p>
+        {canReference && (
+          <div className="flex flex-wrap gap-1.5">
+            <TextAction onClick={onUseAsReference}>Use as reference</TextAction>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
             <Meta>{model?.label ?? gen.model}</Meta>
@@ -88,7 +98,7 @@ export function GenerationCard({
             <Meta>{gen.ratio}</Meta>
             {ready && <Meta>{formatSecs(elapsed)}</Meta>}
           </div>
-          <div className="flex shrink-0 gap-1 opacity-0 transition group-hover:opacity-100">
+          <div className="flex shrink-0 gap-1">
             <IconButton title="Reuse settings" onClick={onReuse}>
               ↺
             </IconButton>
@@ -145,6 +155,18 @@ export function StatusOverlay({ gen, elapsed }: { gen: Generation; elapsed: numb
 
 function Meta({ children }: { children: React.ReactNode }) {
   return <span className="rounded-md bg-white/5 px-1.5 py-0.5">{children}</span>;
+}
+
+function TextAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+    >
+      {children}
+    </button>
+  );
 }
 
 function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {

@@ -4,7 +4,7 @@ import { getModel, type ModelSpec } from "@/lib/models";
 import { providerForUser } from "@/lib/providers";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
-import type { GenerateRequest, Generation } from "@/lib/types";
+import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
 export async function GET() {
@@ -48,26 +48,65 @@ function validate(req: GenerateRequest, model: ModelSpec): string | null {
   return null;
 }
 
+interface ResolvedMedia {
+  /** URL the provider fetches. */
+  url: string;
+  /** R2 key when the value was `upload:<key>`. */
+  key?: string;
+  name?: string;
+}
+
 /**
- * Swaps `upload:<key>` references (uploads or generated assets) for links the provider can
- * download, checking each is a file of the right kind.
+ * Swaps an `upload:<key>` (an upload or a generated asset) for a link the provider can
+ * download, checking it's a file of the right kind. https and data: URLs pass through.
  */
-async function resolveUploads(userId: string, items: string[] | undefined, kind: UploadKind) {
+async function resolveOne(userId: string, value: string, kind: UploadKind): Promise<ResolvedMedia> {
+  if (!isUploadRef(value)) return { url: value };
+  const key = uploadKeyOf(value);
+  const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
+  const assetKind = asset && (uploadKindOf(asset.contentType) ?? (asset.contentType.startsWith("image/") && "image"));
+  if (!asset || assetKind !== kind)
+    throw Object.assign(new Error("A reference is no longer in your uploads. Remove it and add it again."), {
+      status: 400,
+    });
+  const name = asset.name?.trim().slice(0, 120) || key.split("/").pop();
+  return { url: await providerUrl(asset), key, name };
+}
+
+async function resolveList(userId: string, items: string[] | undefined, kind: UploadKind) {
   if (!items) return undefined;
-  return Promise.all(
-    items.map(async (v) => {
-      if (!isUploadRef(v)) return v;
-      const key = uploadKeyOf(v);
-      const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
-      const assetKind =
-        asset && (uploadKindOf(asset.contentType) ?? (asset.contentType.startsWith("image/") && "image"));
-      if (!asset || assetKind !== kind)
-        throw Object.assign(new Error("A reference is no longer in your uploads. Remove it and add it again."), {
-          status: 400,
-        });
-      return providerUrl(asset);
-    }),
-  );
+  return Promise.all(items.map((v) => resolveOne(userId, v, kind)));
+}
+
+/** Reference blocks in the order the client showed them. Kind and name come from the files we resolved. */
+function orderedBlocks(order: string[] | undefined, groups: [UploadKind, ResolvedMedia[] | undefined][]): MediaBlock[] {
+  const byKey = new Map<string, MediaBlock>();
+  const fallback: MediaBlock[] = [];
+  for (const [kind, list] of groups) {
+    for (const media of list ?? []) {
+      if (!media.key || byKey.has(media.key)) continue;
+      const block: MediaBlock = { kind, key: media.key, ...(media.name && { name: media.name }) };
+      byKey.set(media.key, block);
+      fallback.push(block);
+    }
+  }
+  if (!order?.length) return fallback;
+  const ordered: MediaBlock[] = [];
+  const seen = new Set<string>();
+  for (const key of order) {
+    const block = byKey.get(key);
+    if (!block || seen.has(key)) continue;
+    ordered.push(block);
+    seen.add(key);
+  }
+  for (const block of fallback) if (!seen.has(block.key)) ordered.push(block);
+  return ordered;
+}
+
+function frameFields(media: ResolvedMedia | undefined, keyName: "firstFrameKey" | "lastFrameKey") {
+  if (!media?.key) return {};
+  const nameKey = keyName === "firstFrameKey" ? "firstFrameName" : "lastFrameName";
+  return { [keyName]: media.key, ...(media.name && { [nameKey]: media.name }) };
 }
 
 export async function POST(request: Request) {
@@ -92,22 +131,44 @@ export async function POST(request: Request) {
     if (!model.features.watermark) delete req.watermark;
     if (!model.features.cameraFixed) delete req.cameraFixed;
 
-    const [referenceImages, referenceVideos, referenceAudios] = await Promise.all([
-      resolveUploads(user.id, req.referenceImages, "image"),
-      resolveUploads(user.id, req.referenceVideos, "video"),
-      resolveUploads(user.id, req.referenceAudios, "audio"),
+    const frames = req.mode === "frames";
+    const [first, last, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
+      frames && req.firstFrame ? resolveOne(user.id, req.firstFrame, "image") : undefined,
+      frames && req.firstFrame && req.lastFrame ? resolveOne(user.id, req.lastFrame, "image") : undefined,
+      resolveList(user.id, frames ? undefined : req.referenceImages, "image"),
+      resolveList(user.id, frames ? undefined : req.referenceVideos, "video"),
+      resolveList(user.id, frames ? undefined : req.referenceAudios, "audio"),
     ]);
+    const blocks = frames
+      ? undefined
+      : orderedBlocks(req.referenceOrder, [
+          ["image", referenceImages],
+          ["video", referenceVideos],
+          ["audio", referenceAudios],
+        ]);
 
     // Prompts are stored as written ("@Image 2"); the provider gets its own syntax.
+    // Adapters read the fields they know; referenceOrder is only stored on the record below.
     const { taskId } = await provider.createTask({
       ...req,
       prompt: normalizeMentions(req.prompt, model.refSyntax),
-      referenceImages,
-      referenceVideos,
-      referenceAudios,
+      firstFrame: first?.url,
+      lastFrame: last?.url,
+      referenceImages: referenceImages?.map((m) => m.url),
+      referenceVideos: referenceVideos?.map((m) => m.url),
+      referenceAudios: referenceAudios?.map((m) => m.url),
     });
     const now = Date.now();
-    const frames = req.mode === "frames";
+    const inputs: GenerationInputs = {
+      firstFrame: frames && !!first,
+      lastFrame: frames && !!first && !!last,
+      images: frames ? 0 : ni(req),
+      videos: frames ? 0 : nv(req),
+      audios: frames ? 0 : na(req),
+      ...frameFields(first, "firstFrameKey"),
+      ...frameFields(last, "lastFrameKey"),
+      ...(blocks && blocks.length > 0 && { blocks }),
+    };
     const gen: Generation = {
       id: crypto.randomUUID(),
       provider: providerId,
@@ -121,13 +182,7 @@ export async function POST(request: Request) {
       duration: req.duration,
       generateAudio: !!req.generateAudio,
       seed: req.seed,
-      inputs: {
-        firstFrame: frames && !!req.firstFrame,
-        lastFrame: frames && !!req.firstFrame && !!req.lastFrame,
-        images: frames ? 0 : ni(req),
-        videos: frames ? 0 : nv(req),
-        audios: frames ? 0 : na(req),
-      },
+      inputs,
       createdAt: now,
       updatedAt: now,
     };

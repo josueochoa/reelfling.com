@@ -43,11 +43,14 @@ export function ImageStudio({
   me,
   library,
   onOpenKeys,
+  onUseAsStartFrame,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
   library: Library;
   onOpenKeys: () => void;
+  /** Send a generated image to the Video tab as its start frame. */
+  onUseAsStartFrame: (item: LibraryItem) => void;
 }) {
   const [gens, setGens] = useState<ImageGeneration[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -100,6 +103,9 @@ export function ImageStudio({
 
   useImperativeHandle(ref, () => ({
     addReference: (item) => addRefs([item]),
+    setStartFrame(item) {
+      onUseAsStartFrame(item);
+    },
     reload() {
       apiJson<ImageGeneration[]>("/api/images")
         .then(setGens)
@@ -184,6 +190,24 @@ export function ImageStudio({
     await api(`/api/images/${gen.id}`, { method: "DELETE" });
   }
 
+  async function imageItem(gen: ImageGeneration, index: number) {
+    const key = gen.images[index]?.key;
+    if (!key) return;
+    const match = (items: LibraryItem[]) => items.find((i) => i.key === key);
+    return match(library.items) ?? match(await library.reload());
+  }
+
+  async function applyGenerated(gen: ImageGeneration, index: number, as: "start" | "reference") {
+    const item = await imageItem(gen, index);
+    if (!item) {
+      setError("This image isn't in your library yet.");
+      return;
+    }
+    setOpen(null);
+    if (as === "start") onUseAsStartFrame(item);
+    else addRefs([item]);
+  }
+
   /** Back into the composer: prompt, settings and the reference images still in Uploads. */
   function reuse(gen: ImageGeneration) {
     const model = getImageModel(gen.model) ?? state.model;
@@ -247,8 +271,26 @@ export function ImageStudio({
                     </span>
                   </div>
                 )}
+                {gen.status === "succeeded" && i >= 0 && (
+                  <div className="relative z-10 flex flex-wrap gap-1 border-t border-white/5 bg-ink/40 p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void applyGenerated(gen, i, "start")}
+                      className="rounded-md bg-white/5 px-1.5 py-1 text-[10px] text-zinc-300 hover:bg-white/10 hover:text-white"
+                    >
+                      Use as start frame
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void applyGenerated(gen, i, "reference")}
+                      className="rounded-md bg-white/5 px-1.5 py-1 text-[10px] text-zinc-300 hover:bg-white/10 hover:text-white"
+                    >
+                      Use as reference
+                    </button>
+                  </div>
+                )}
                 {gen.status !== "running" && gen.status !== "queued" && (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 pt-8 opacity-0 transition group-hover:opacity-100">
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 pt-8 opacity-0 transition group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
                     <p className="line-clamp-2 min-w-0 flex-1 text-xs text-zinc-200">{gen.prompt}</p>
                     <div className="pointer-events-auto flex gap-1">
                       {i >= 0 && (
@@ -329,6 +371,8 @@ export function ImageStudio({
           }}
           onClose={() => setOpen(null)}
           onReuse={() => reuse(openTile)}
+          onUseAsStartFrame={() => void applyGenerated(openTile, open.i, "start")}
+          onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
           onDelete={() => remove(openTile)}
         />
       )}
@@ -342,6 +386,8 @@ function ImageLightbox({
   onNavigate,
   onClose,
   onReuse,
+  onUseAsStartFrame,
+  onUseAsReference,
   onDelete,
 }: {
   gen: ImageGeneration;
@@ -349,6 +395,8 @@ function ImageLightbox({
   onNavigate: (delta: number) => void;
   onClose: () => void;
   onReuse: () => void;
+  onUseAsStartFrame: () => void;
+  onUseAsReference: () => void;
   onDelete: () => void;
 }) {
   useEffect(() => {
@@ -411,16 +459,24 @@ function ImageLightbox({
               </div>
             ))}
           </dl>
-          <div className="mt-auto grid grid-cols-3 gap-2 text-sm">
+          <div className="mt-auto grid gap-2 text-sm">
             <a href={imageUrl(gen, index, true)} className="rounded-xl bg-accent py-2 text-center font-medium text-ink">
               Download
             </a>
-            <button onClick={onReuse} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
-              Reuse
+            <button onClick={onUseAsStartFrame} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
+              Use as start frame
             </button>
-            <button onClick={onDelete} className="rounded-xl border border-white/10 py-2 text-red-300 hover:bg-white/5">
-              Delete
+            <button onClick={onUseAsReference} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
+              Use as reference
             </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={onReuse} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
+                Reuse
+              </button>
+              <button onClick={onDelete} className="rounded-xl border border-white/10 py-2 text-red-300 hover:bg-white/5">
+                Delete
+              </button>
+            </div>
           </div>
         </aside>
       </div>
