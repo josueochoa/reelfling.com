@@ -321,9 +321,9 @@ export async function completeUpload(userId: string, key: string, { name, meta }
  * generated images, with the prompt and model of the generation that made them.
  */
 export async function listAssets(userId: string): Promise<AssetItem[]> {
-  const [rows, videoGens, imageGens] = await Promise.all([
+  const [rows, videoGens, imageGens, falJobs] = await Promise.all([
     all<AssetRow>(
-      `SELECT * FROM assets WHERE user_id = ? AND (key LIKE 'uploads/%' OR key LIKE 'videos/%' OR key LIKE 'images/%')
+      `SELECT * FROM assets WHERE user_id = ? AND (key LIKE 'uploads/%' OR key LIKE 'videos/%' OR key LIKE 'images/%' OR key LIKE 'fal/%')
        ORDER BY created_at DESC LIMIT 2000`,
       userId,
     ),
@@ -337,13 +337,27 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
        FROM image_generations WHERE user_id = ?`,
       userId,
     ),
+    all<{ id: string; model: string; prompt: string | null }>(
+      `SELECT id, json_extract(data, '$.endpointId') AS model, json_extract(data, '$.request.prompt') AS prompt
+       FROM fal_jobs WHERE user_id = ?`,
+      userId,
+    ),
   ]);
   const videos = new Map(videoGens.map((g) => [g.id, g]));
   const images = new Map(imageGens.map((g) => [g.id, g]));
+  const fal = new Map(falJobs.map((g) => [g.id, { ...g, prompt: g.prompt || g.model }]));
 
   return rows.flatMap((row): AssetItem[] => {
     const a = toAsset(row);
-    const kind = uploadKindOf(a.contentType) ?? (a.contentType.startsWith("image/") ? "image" : undefined);
+    const kind =
+      uploadKindOf(a.contentType) ??
+      (a.contentType.startsWith("image/")
+        ? "image"
+        : a.contentType.startsWith("video/")
+          ? "video"
+          : a.contentType.startsWith("audio/")
+            ? "audio"
+            : undefined);
     if (!kind) return [];
     const base = {
       key: a.key,
@@ -356,6 +370,18 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
       createdAt: a.createdAt,
     };
     if (a.key.startsWith("uploads/")) return [{ ...base, source: "upload", name: a.name ?? a.key.split("/").pop()! }];
+    if (a.key.startsWith("fal/")) {
+      const job = a.generationId ? fal.get(a.generationId) : undefined;
+      if (!job) return [];
+      return [
+        {
+          ...base,
+          source: "generated",
+          name: job.prompt.slice(0, 120) || "Untitled",
+          generation: { id: job.id, tab: "fal", model: job.model, prompt: job.prompt },
+        },
+      ];
+    }
     const tab = a.key.startsWith("videos/") ? "video" : "image";
     const gen = a.generationId ? (tab === "video" ? videos : images).get(a.generationId) : undefined;
     // A file whose generation is gone shouldn't linger in the list.

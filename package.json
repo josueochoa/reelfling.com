@@ -7,6 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "eslint",
+    "test": "node --experimental-transform-types --import ./scripts/test-register.mjs --test src/lib/providers/fal.test.ts src/lib/keys.test.ts",
     "preview": "npm run db:migrate:local && opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && npm run db:migrate:remote && opennextjs-cloudflare deploy",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",

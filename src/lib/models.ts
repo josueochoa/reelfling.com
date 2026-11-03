@@ -2,7 +2,14 @@
 // (to validate requests). Each entry belongs to one provider; only the active
 // provider's models are offered. Add or edit entries as new versions ship.
 
-export type ProviderId = "modelark" | "argolink";
+export type ProviderId = "modelark" | "argolink" | "fal";
+
+/** The video studio switches between these. fal jobs are a separate route, not catalog entries. */
+export type StudioProviderId = Exclude<ProviderId, "fal">;
+
+export function isStudioProvider(id: string): id is StudioProviderId {
+  return id === "modelark" || id === "argolink";
+}
 
 /** Client-safe provider metadata. */
 export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; blurb: string }> = {
@@ -16,6 +23,11 @@ export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; 
     keyUrl: "https://console.byteplus.com/ark",
     blurb: "ByteDance's official API. Seed, watermark and last-frame chaining.",
   },
+  fal: {
+    label: "fal",
+    keyUrl: "https://fal.ai/dashboard/keys",
+    blurb: "Any fal endpoint. Paste an endpoint id and a JSON input.",
+  },
 };
 
 export const MODELARK_REGIONS = {
@@ -27,7 +39,7 @@ export type Resolution = "480p" | "720p" | "1080p" | "4k";
 
 export interface ModelSpec {
   id: string;
-  provider: ProviderId;
+  provider: StudioProviderId;
   label: string;
   description: string;
   ratios: Ratio[];
@@ -144,7 +156,7 @@ export function getModel(id: string): ModelSpec | undefined {
   return MODELS.find((m) => m.id === id);
 }
 
-export function modelsFor(provider: ProviderId) {
+export function modelsFor(provider: StudioProviderId) {
   return MODELS.filter((m) => m.provider === provider);
 }
 

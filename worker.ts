@@ -47,7 +47,7 @@ async function internal(
 export default {
   fetch: app.fetch,
 
-  /** Every minute: finish generations whose tab was closed (see src/app/api/cron/sweep). */
+  /** Every minute: finish generations and fal jobs whose tab was closed (see src/app/api/cron/sweep). */
   async scheduled(_controller, env, ctx) {
     console.log(
       "sweep",

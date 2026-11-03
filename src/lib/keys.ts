@@ -42,6 +42,13 @@ export async function listKeys(userId: string): Promise<KeySummary[]> {
   return rows.map((r) => ({ provider: r.provider, last4: r.last4, baseUrl: r.base_url, createdAt: r.created_at }));
 }
 
+/** What a successful key save returns. The key itself never leaves the server; only last4 does. */
+export function savedKeyBody(apiKey: string, detail?: string) {
+  const body: { ok: true; last4: string; detail?: string } = { ok: true, last4: apiKey.slice(-4) };
+  if (detail) body.detail = detail;
+  return body;
+}
+
 export async function getCredentials(userId: string, provider: ProviderId): Promise<ProviderCredentials | undefined> {
   const row = await first<{ secret: string; base_url: string | null }>(
     "SELECT secret, base_url FROM api_keys WHERE user_id = ? AND provider = ?",
