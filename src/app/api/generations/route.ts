@@ -1,6 +1,7 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
+import { applyCameraMove } from "@/lib/registry/camera-apply";
 import { catalogModel } from "@/lib/registry/generated";
 import { isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
@@ -129,18 +130,20 @@ export async function POST(request: Request) {
           ["audio", referenceAudios],
         ]);
 
-    // Prompts are stored as written ("@Image 2"); the provider gets its own syntax and model id.
-    // referenceOrder is only stored on the record below.
-    const { taskId } = await provider.createTask({
-      ...req,
-      model: route.endpoint,
-      prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
-      firstFrame: first?.url,
-      lastFrame: last?.url,
-      referenceImages: referenceImages?.map((media) => media.url),
-      referenceVideos: referenceVideos?.map((media) => media.url),
-      referenceAudios: referenceAudios?.map((media) => media.url),
-    });
+    // The record keeps the prompt as written. applyCameraMove may append a camera
+    // sentence, or set camera_fixed, only on the copy the provider receives.
+    const { taskId } = await provider.createTask(
+      applyCameraMove(model, {
+        ...req,
+        model: route.endpoint,
+        prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
+        firstFrame: first?.url,
+        lastFrame: last?.url,
+        referenceImages: referenceImages?.map((media) => media.url),
+        referenceVideos: referenceVideos?.map((media) => media.url),
+        referenceAudios: referenceAudios?.map((media) => media.url),
+      }),
+    );
     const now = Date.now();
     const inputs: GenerationInputs = {
       firstFrame: frames && !!first,
@@ -165,6 +168,7 @@ export async function POST(request: Request) {
       duration: req.duration,
       generateAudio: !!req.generateAudio,
       seed: req.seed,
+      ...(req.cameraMove ? { cameraMove: req.cameraMove } : {}),
       inputs,
       createdAt: now,
       updatedAt: now,

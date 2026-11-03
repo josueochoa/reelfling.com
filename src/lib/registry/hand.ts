@@ -1,4 +1,4 @@
-import type { ImageModel, ImageResolution, VideoModel } from "./types";
+import type { CameraCapabilities, ImageModel, ImageResolution, VideoModel } from "./types";
 
 const RATIOS = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"] as const;
 
@@ -17,15 +17,27 @@ const SEEDANCE_2_PIXELS = {
 const modelarkCaps = {
   seed: true,
   promptExpansion: false,
-  camera: { fixed: true },
   watermark: true,
   lastFrameOutput: true,
 } as const;
 
+// `camera_fixed` is a boolean lock. BytePlus's create-task page lists it for
+// Seedance 1.0 Pro, 1.0 Pro Fast, and 1.5 Pro — not the 2.0 series.
+// https://ai.byteplus.com/ark/region:ap-southeast-1/docs/create-video-generation-task-api
+const seedance10Camera: CameraCapabilities = {
+  fixed: true,
+  prompt: true,
+  native: { static: { param: "camera_fixed", value: true } },
+};
+
+// No camera parameter: ArgoLink doesn't expose one, and BytePlus doesn't list
+// camera_fixed for the Seedance 2.0 series. The preset is a prompt line.
+const promptCamera: CameraCapabilities = { prompt: true };
+
 const argolinkCaps = {
   seed: false,
   promptExpansion: false,
-  camera: false,
+  camera: { prompt: true },
   watermark: false,
   lastFrameOutput: false,
   ratios: RATIOS,
@@ -58,6 +70,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     refSyntax: "brackets",
     capabilities: {
       ...modelarkCaps,
+      camera: promptCamera,
       ratios: RATIOS,
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 4, max: 15, default: 5 },
@@ -87,6 +100,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     refSyntax: "brackets",
     capabilities: {
       ...modelarkCaps,
+      camera: seedance10Camera,
       ratios: RATIOS,
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 2, max: 12, default: 5 },

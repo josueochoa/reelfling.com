@@ -3,12 +3,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { openRouterPrice } from "../../../scripts/catalog-map.mjs";
+import { openRouterCamera, openRouterPrice } from "../../../scripts/catalog-map.mjs";
 import type { GenerateRequest } from "../types";
 import { ALL_MODELS, openRouterPickerModels } from "./generated";
 import { MAPPERS } from "./mappers";
 import {
   MAPPER_IDS,
+  MODELS,
   ROUTE_PROVIDERS,
   estimateCost,
   getModel,
@@ -144,10 +145,15 @@ describe("model registry", () => {
     }
   });
 
-  it("does not import generated catalogs from client code", () => {
-    const banned = /from ["'][^"']*(?:registry\/generated|catalog\/(?:fal|openrouter)\.json)/;
+  it("does not import generated catalogs or camera sentences from client code", () => {
+    const banned = /from ["'][^"']*(?:registry\/generated|registry\/camera-apply|catalog\/(?:fal|openrouter)\.json)/;
     const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    const instruction = "does not pan, tilt, zoom, or drift";
+    assert.equal(readFileSync(new URL("./camera-apply.ts", import.meta.url), "utf8").includes(instruction), true);
     assert.equal(banned.test(index), false, "index.ts");
+    assert.equal(index.includes(instruction), false, "index.ts instruction");
+    assert.equal(JSON.stringify(MODELS).includes(instruction), false);
+    assert.equal(JSON.stringify(openRouterPickerModels()).includes(instruction), false);
     const components = fileURLToPath(new URL("../../components", import.meta.url));
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -155,7 +161,11 @@ describe("model registry", () => {
         if (entry.isDirectory()) return walk(path);
         return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
       });
-    for (const file of walk(components)) assert.equal(banned.test(readFileSync(file, "utf8")), false, file);
+    for (const file of walk(components)) {
+      const text = readFileSync(file, "utf8");
+      assert.equal(banned.test(text), false, file);
+      assert.equal(text.includes(instruction), false, file);
+    }
   });
 
   it("does not write API keys into the generated catalogs", () => {
@@ -165,6 +175,20 @@ describe("model registry", () => {
       assert.equal(text.includes("FAL_KEY"), false, name);
       assert.equal(text.includes("OPENROUTER_API_KEY"), false, name);
     }
+  });
+});
+
+describe("openrouter camera passthrough", () => {
+  it("maps only the documented camera_fixed boolean", () => {
+    assert.equal(openRouterCamera([]), false);
+    assert.equal(openRouterCamera(["negative_prompt", "cfg_scale"]), false);
+    assert.equal(openRouterCamera(["shot_type"]), false);
+    assert.equal(openRouterCamera(["motion_prompt"]), false);
+    assert.deepEqual(openRouterCamera(["camera_fixed"]), {
+      fixed: true,
+      prompt: true,
+      native: { static: { param: "camera_fixed", value: true } },
+    });
   });
 });
 
