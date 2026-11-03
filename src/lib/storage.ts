@@ -32,6 +32,12 @@ export interface AssetMeta {
   peaks?: number[];
   /** Key of a small JPEG preview, for images and videos. */
   thumb?: string;
+  width?: number;
+  height?: number;
+  /** Frames per second, when the file reported one. */
+  fps?: number;
+  /** Display label, for example "1920×1080" or "4K". */
+  resolution?: string;
 }
 
 interface AssetRow {
@@ -217,6 +223,7 @@ export async function putAsset(
     parentId = null,
     tool = null,
     name = null,
+    meta = null,
   }: {
     key: string;
     source: Response;
@@ -225,6 +232,7 @@ export async function putAsset(
     parentId?: string | null;
     tool?: string | null;
     name?: string | null;
+    meta?: AssetMeta | null;
   },
 ): Promise<Asset> {
   const cfg = r2();
@@ -247,6 +255,7 @@ export async function putAsset(
     parentId,
     tool,
     name,
+    meta,
   });
 }
 
@@ -402,6 +411,10 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
       duration: a.meta?.duration,
       peaks: a.meta?.peaks,
       hasThumb: !!a.meta?.thumb,
+      width: a.meta?.width,
+      height: a.meta?.height,
+      fps: a.meta?.fps,
+      resolution: a.meta?.resolution,
       createdAt: a.createdAt,
     };
     const lineage = {

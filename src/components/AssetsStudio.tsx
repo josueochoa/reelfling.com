@@ -8,7 +8,7 @@ import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
 import type { Library, LibraryItem } from "./library";
-import { ToolsMenu } from "./ToolsMenu";
+import { BulkUpscale, ToolsMenu } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { MediaPreview } from "./MediaPreview";
 import { formatBytes } from "./UserMenu";
@@ -201,6 +201,23 @@ export function AssetsStudio({
               >
                 Download
               </button>
+              <BulkUpscale
+                items={items
+                  .filter((item) => selected.has(item.id) && item.key)
+                  .map((item) => ({
+                    key: item.key,
+                    kind: item.kind,
+                    width: item.width,
+                    height: item.height,
+                    duration: item.duration,
+                    fps: item.fps,
+                  }))}
+                tools={tools}
+                onStarted={() => {
+                  setSelected(new Set());
+                  onToolJob();
+                }}
+              />
               <button
                 onClick={() => void remove([...selected])}
                 className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/25"
@@ -316,7 +333,7 @@ export function AssetsStudio({
                         />
                         <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-200">
                           {item.source === "processed"
-                            ? `✦ ${tools.find((tool) => tool.id === item.tool)?.name ?? item.name}`
+                            ? `✦ ${tools.find((tool) => tool.id === item.tool)?.name ?? item.name}${item.resolution ? ` · ${item.resolution}` : ""}`
                             : item.source === "generated"
                               ? `✦ ${modelLabel(item.generation?.model ?? "")}`
                               : "⇪ Upload"}
@@ -343,6 +360,12 @@ export function AssetsStudio({
               <ToolsMenu
                 kind={previewing.kind}
                 assetKey={previewing.key}
+                asset={{
+                  width: previewing.width,
+                  height: previewing.height,
+                  duration: previewing.duration,
+                  fps: previewing.fps,
+                }}
                 tools={tools}
                 onStarted={() => {
                   setPreviewId(null);

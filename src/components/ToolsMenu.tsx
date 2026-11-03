@@ -1,26 +1,107 @@
 "use client";
 
 // Tools for the asset on screen. The list is already limited to that asset's kind.
+// Upscale models that share a menu name collapse into one item with a model picker.
 
 import { useState } from "react";
-import { toolsForKind, type ToolFieldView, type ToolView } from "@/lib/toolTypes";
+import { toolsForKind, type ToolAsset, type ToolFieldView, type ToolView } from "@/lib/toolTypes";
+import { formatUpscaleCost, planBulkToolJobs, upscaleCost } from "@/lib/upscaleQuote";
 import { api } from "./api";
+
+interface MenuEntry {
+  id: string;
+  name: string;
+  description: string;
+  tools: ToolView[];
+}
+
+function menuEntries(tools: readonly ToolView[]): MenuEntry[] {
+  const out: MenuEntry[] = [];
+  const index = new Map<string, MenuEntry>();
+  for (const tool of tools) {
+    const key = tool.menu ?? tool.id;
+    const existing = index.get(key);
+    if (existing) {
+      existing.tools.push(tool);
+      continue;
+    }
+    const entry: MenuEntry = {
+      id: key,
+      name: tool.menu ?? tool.name,
+      description: tool.menu ? "Increase the resolution." : tool.description,
+      tools: [tool],
+    };
+    index.set(key, entry);
+    out.push(entry);
+  }
+  return out;
+}
+
+function defaults(tool: ToolView, prev?: Record<string, string | boolean>): Record<string, string | boolean> {
+  const initial: Record<string, string | boolean> = {};
+  for (const field of tool.fields) {
+    if (field.type === "boolean") initial[field.name] = field.default ?? false;
+    else if (field.type === "enum" || field.type === "string") initial[field.name] = field.default ?? "";
+    else if (field.default !== undefined) initial[field.name] = String(field.default);
+  }
+  const prevTarget = prev?.target;
+  const targetField = tool.fields.find((field) => field.name === "target");
+  if (
+    typeof prevTarget === "string" &&
+    targetField?.type === "enum" &&
+    targetField.options.includes(prevTarget)
+  )
+    initial.target = prevTarget;
+  return initial;
+}
+
+function estimateFor(tool: ToolView, subjects: readonly ToolAsset[], target: string | undefined): number | undefined {
+  if (!tool.quote) return undefined;
+  const list = subjects.length > 0 ? subjects : [{} as ToolAsset];
+  let sum = 0;
+  for (const subject of list) {
+    const part = upscaleCost(tool.quote, {
+      width: subject.width,
+      height: subject.height,
+      duration: subject.duration,
+      fps: subject.fps,
+      target,
+    });
+    if (part === undefined) return undefined;
+    sum += part;
+  }
+  return sum;
+}
 
 export function ToolsMenu({
   kind,
   assetKey,
+  asset,
+  assets,
   tools,
   onStarted,
+  placement = "up",
+  label = "Tools",
+  compact = false,
 }: {
   kind: string;
   /** Library key. Absent until the file is stored. */
   assetKey?: string;
+  /** Size of the one asset, for the cost estimate. */
+  asset?: Omit<ToolAsset, "kind" | "key">;
+  /** Bulk run: one job per asset. */
+  assets?: readonly ToolAsset[];
   tools: readonly ToolView[];
   /** The job is in the feed. */
   onStarted: () => void;
+  placement?: "up" | "down";
+  label?: string;
+  compact?: boolean;
 }) {
   const available = toolsForKind(tools, kind);
+  const entries = menuEntries(available);
   const [open, setOpen] = useState(false);
+  const [choices, setChoices] = useState<ToolView[] | null>(null);
   const [tool, setTool] = useState<ToolView | null>(null);
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -28,37 +109,54 @@ export function ToolsMenu({
 
   if (available.length === 0) return null;
 
-  function show(next: ToolView) {
-    const initial: Record<string, string | boolean> = {};
-    for (const field of next.fields) {
-      if (field.type === "boolean") initial[field.name] = field.default ?? false;
-      else if (field.type === "enum" || field.type === "string") initial[field.name] = field.default ?? "";
-      else if (field.default !== undefined) initial[field.name] = String(field.default);
-    }
+  function show(next: ToolView, prev?: Record<string, string | boolean>) {
     setTool(next);
-    setValues(initial);
+    setValues(defaults(next, prev));
     setError(null);
   }
 
+  function openEntry(entry: MenuEntry) {
+    setChoices(entry.tools.length > 1 ? entry.tools : null);
+    show(entry.tools[0]);
+  }
+
+  const subjects: readonly ToolAsset[] = assets ?? [{ kind, key: assetKey, ...asset }];
+  const target = typeof values.target === "string" ? values.target : undefined;
+  const estimate = tool ? estimateFor(tool, subjects, target) : undefined;
+  const count = assets?.length ?? 1;
+
   async function run() {
-    if (!tool || !assetKey) return;
+    if (!tool) return;
+    if (!assets && !assetKey) return;
     setBusy(true);
     setError(null);
     try {
       const params: Record<string, string | number | boolean> = {};
       for (const field of tool.fields) params[field.name] = paramValue(field, values[field.name]);
-      const res = await api("/api/fal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toolId: tool.id, assetIds: [assetKey], params }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        setError(body.error ?? `Couldn't start the tool (${res.status})`);
-        return;
+      const jobs = assets
+        ? planBulkToolJobs(
+            assets.flatMap((item) => (item.key ? [{ key: item.key, kind: item.kind }] : [])),
+            { id: tool.id, accepts: tool.accepts },
+            params,
+          )
+        : [{ toolId: tool.id, assetIds: [assetKey!], params }];
+      for (let i = 0; i < jobs.length; i++) {
+        const res = await api("/api/fal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(jobs[i]),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          const prefix = i > 0 ? `Queued ${i} of ${jobs.length}. ` : "";
+          setError(prefix + (body.error ?? `Couldn't start the tool (${res.status})`));
+          if (i > 0) onStarted();
+          return;
+        }
       }
       setOpen(false);
       setTool(null);
+      setChoices(null);
       onStarted();
     } catch (e) {
       setError((e as Error).message);
@@ -67,6 +165,8 @@ export function ToolsMenu({
     }
   }
 
+  const kindWord = kind === "image" ? (count === 1 ? "image" : "images") : count === 1 ? "video" : "videos";
+
   return (
     <div className="relative">
       <button
@@ -74,21 +174,37 @@ export function ToolsMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => {
-          setOpen((v) => !v);
-          setTool(null);
-          setError(null);
+          if (open) {
+            setOpen(false);
+            setTool(null);
+            setChoices(null);
+            setError(null);
+            return;
+          }
+          setOpen(true);
+          if (assets && entries.length === 1) openEntry(entries[0]);
+          else {
+            setTool(null);
+            setChoices(null);
+          }
         }}
-        className="rounded-xl border border-white/10 px-3 py-2 text-sm whitespace-nowrap text-zinc-200 hover:bg-white/5"
+        className={
+          compact
+            ? "rounded-full bg-white/10 px-3 py-1.5 text-xs hover:bg-white/15"
+            : "rounded-xl border border-white/10 px-3 py-2 text-sm whitespace-nowrap text-zinc-200 hover:bg-white/5"
+        }
       >
-        Tools
+        {label}
       </button>
       {open && (
         <div
           role="menu"
-          aria-label="Tools"
-          className="absolute right-0 bottom-full z-20 mb-2 w-72 rounded-xl border border-white/10 bg-panel p-2 text-left shadow-2xl shadow-black/50"
+          aria-label={label}
+          className={`absolute z-20 w-80 rounded-xl border border-white/10 bg-panel p-2 text-left shadow-2xl shadow-black/50 ${
+            placement === "down" ? "top-full left-0 mt-2" : "right-0 bottom-full mb-2"
+          }`}
         >
-          {!assetKey ? (
+          {!assetKey && !assets ? (
             <p className="px-2 py-1.5 text-xs text-zinc-500">Save the file before running a tool.</p>
           ) : tool ? (
             <form
@@ -100,11 +216,48 @@ export function ToolsMenu({
             >
               <button
                 type="button"
-                onClick={() => setTool(null)}
+                onClick={() => {
+                  if (assets) {
+                    setOpen(false);
+                    setTool(null);
+                    setChoices(null);
+                    return;
+                  }
+                  setTool(null);
+                  setChoices(null);
+                }}
                 className="text-[11px] text-zinc-500 hover:text-white"
               >
-                ← {tool.name}
+                ← {choices ? (tool.menu ?? tool.name) : tool.name}
               </button>
+              {assets && (
+                <p className="text-xs text-zinc-400">
+                  {count} {kindWord}
+                </p>
+              )}
+              {choices && (
+                <label className="block text-xs text-zinc-400">
+                  Model
+                  <select
+                    aria-label="Model"
+                    value={tool.id}
+                    onChange={(e) => {
+                      const next = choices.find((item) => item.id === e.target.value);
+                      if (next) show(next, values);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-zinc-100 outline-none"
+                  >
+                    {choices.map((item) => (
+                      <option key={item.id} value={item.id} className="bg-panel">
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {choices && tool.description && (
+                <p className="text-[11px] leading-snug text-zinc-500">{tool.description}</p>
+              )}
               {tool.fields.map((field) => (
                 <Field
                   key={field.name}
@@ -113,32 +266,71 @@ export function ToolsMenu({
                   onChange={(value) => setValues((prev) => ({ ...prev, [field.name]: value }))}
                 />
               ))}
+              {tool.menu === "Upscale" && (
+                <p className="text-xs text-zinc-200">
+                  {estimate === undefined ? "Estimate unavailable." : `Est. cost ${formatUpscaleCost(estimate)}`}
+                </p>
+              )}
               {error && <p className="text-xs text-red-300">{error}</p>}
               <button
                 type="submit"
                 disabled={busy}
                 className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-ink disabled:opacity-40"
               >
-                {busy ? "Starting…" : "Run"}
+                {busy ? "Starting…" : assets ? `Queue ${count}` : "Run"}
               </button>
             </form>
           ) : (
-            available.map((item) => (
+            entries.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 role="menuitem"
-                onClick={() => show(item)}
+                onClick={() => openEntry(item)}
                 className="block w-full rounded-lg px-2 py-2 text-left hover:bg-white/5"
               >
                 <span className="block text-sm text-zinc-100">{item.name}</span>
-                {item.description && <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">{item.description}</span>}
+                {item.description && (
+                  <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">{item.description}</span>
+                )}
               </button>
             ))
           )}
         </div>
       )}
     </div>
+  );
+}
+
+/** Selection bar: one upscale job per selected asset. Hidden when none of them can be upscaled. */
+export function BulkUpscale({
+  items,
+  tools,
+  onStarted,
+}: {
+  items: readonly ToolAsset[];
+  tools: readonly ToolView[];
+  onStarted: () => void;
+}) {
+  const kinds = new Set(items.map((item) => item.kind));
+  if (items.length === 0) return null;
+  if (kinds.size !== 1 || (!kinds.has("image") && !kinds.has("video"))) {
+    if (![...kinds].some((kind) => kind === "image" || kind === "video")) return null;
+    return <span className="text-xs text-zinc-400">Select images or videos, not a mix.</span>;
+  }
+  const kind = [...kinds][0];
+  const available = toolsForKind(tools, kind).filter((tool) => tool.menu === "Upscale");
+  if (available.length === 0) return null;
+  return (
+    <ToolsMenu
+      kind={kind}
+      assets={items}
+      tools={available}
+      onStarted={onStarted}
+      placement="down"
+      label="Upscale"
+      compact
+    />
   );
 }
 
@@ -175,6 +367,7 @@ function Field({
       <label className="block text-xs text-zinc-400">
         {field.label}
         <select
+          aria-label={field.label}
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
           className="mt-1 w-full rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-zinc-100 outline-none"

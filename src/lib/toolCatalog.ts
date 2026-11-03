@@ -37,6 +37,8 @@ export function runnableTools(): RunnableTool[] {
       description: model.description,
       accepts,
       fields: form.fields.map((field) => ({ ...field })),
+      ...(form.menu ? { menu: form.menu } : {}),
+      ...(form.quote ? { quote: { ...form.quote } } : {}),
       endpoint: route.endpoint,
       mapper: "fal.queue",
       inputKey: form.inputKey,
@@ -47,12 +49,14 @@ export function runnableTools(): RunnableTool[] {
 
 /** Slim list for the Tools menu. No endpoint ids. */
 export function publicTools(): ToolView[] {
-  return runnableTools().map(({ id, name, description, accepts, fields }) => ({
+  return runnableTools().map(({ id, name, description, accepts, fields, menu, quote }) => ({
     id,
     name,
     description,
     accepts,
     fields,
+    ...(menu ? { menu } : {}),
+    ...(quote ? { quote } : {}),
   }));
 }
 

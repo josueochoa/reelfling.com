@@ -50,6 +50,16 @@ function typeOf(file: File) {
   return "";
 }
 
+function videoInfo(url: string): Promise<{ duration: number; width: number; height: number }> {
+  return new Promise((resolve) => {
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.onloadedmetadata = () => resolve({ duration: el.duration, width: el.videoWidth, height: el.videoHeight });
+    el.onerror = () => resolve({ duration: NaN, width: 0, height: 0 });
+    el.src = url;
+  });
+}
+
 function mediaDuration(url: string, kind: "video" | "audio"): Promise<number> {
   return new Promise((resolve) => {
     const el = document.createElement(kind);
@@ -132,6 +142,8 @@ interface Prepared {
   file: File;
   kind: UploadKind;
   duration?: number;
+  width?: number;
+  height?: number;
   peaks?: number[];
   thumb?: Blob;
 }
@@ -149,15 +161,40 @@ async function prepare(original: File): Promise<Prepared> {
   type = file.type || type;
   if (file.size > rules.maxBytes) throw new Error(`${original.name} is too large. Use ${rules.label}.`);
 
-  if (kind === "image") return { file, kind, thumb: await imageThumb(file).catch(() => undefined) };
+  if (kind === "image") {
+    const bitmap = await createImageBitmap(file).catch(() => undefined);
+    const thumb = bitmap
+      ? await canvasToJpeg(drawScaled(bitmap, bitmap.width, bitmap.height, THUMB_SIDE), 0.8).catch(() => undefined)
+      : await imageThumb(file).catch(() => undefined);
+    return {
+      file,
+      kind,
+      thumb,
+      width: bitmap && bitmap.width > 0 ? bitmap.width : undefined,
+      height: bitmap && bitmap.height > 0 ? bitmap.height : undefined,
+    };
+  }
 
   const url = URL.createObjectURL(file);
   try {
+    if (kind === "video") {
+      const info = await videoInfo(url);
+      const duration = Number.isFinite(info.duration) ? info.duration : undefined;
+      if (rules.seconds && duration !== undefined && (duration < rules.seconds.min || duration > rules.seconds.max))
+        throw new Error(`${original.name} is ${duration.toFixed(1)} s long. Use ${rules.label}.`);
+      return {
+        file,
+        kind,
+        duration,
+        width: info.width > 0 ? info.width : undefined,
+        height: info.height > 0 ? info.height : undefined,
+        thumb: await videoThumb(url),
+      };
+    }
     const duration = await mediaDuration(url, kind);
     if (rules.seconds && Number.isFinite(duration) && (duration < rules.seconds.min || duration > rules.seconds.max))
       throw new Error(`${original.name} is ${duration.toFixed(1)} s long. Use ${rules.label}.`);
     const d = Number.isFinite(duration) ? duration : undefined;
-    if (kind === "video") return { file, kind, duration: d, thumb: await videoThumb(url) };
     return { file, kind, duration: d, peaks: await audioPeaks(file) };
   } finally {
     URL.revokeObjectURL(url);
@@ -293,7 +330,15 @@ export function useLibrary(): Library {
       if (abort.signal.aborted) return;
       await apiJson("/api/uploads/complete", {
         method: "POST",
-        body: JSON.stringify({ key: r.key, name, duration: p.duration, peaks: p.peaks, thumb: !!r.thumbUploadUrl }),
+        body: JSON.stringify({
+          key: r.key,
+          name,
+          duration: p.duration,
+          peaks: p.peaks,
+          thumb: !!r.thumbUploadUrl,
+          width: p.width,
+          height: p.height,
+        }),
       });
       // The uploaded copy is served from the bucket from now on.
       revoke(localFile);

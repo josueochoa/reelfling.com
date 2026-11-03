@@ -386,47 +386,6 @@
         "promptExpansion": false,
         "ratios": [],
         "references": {
-          "audio": 0,
-          "image": 0,
-          "total": 1,
-          "video": 1
-        },
-        "resolutions": [],
-        "seed": true,
-        "watermark": false
-      },
-      "description": "Upscale your videos using SeedVR2 with temporal consistency!",
-      "family": "SeedVR2",
-      "group": "video",
-      "id": "fal:fal-ai/seedvr/upscale/video",
-      "name": "SeedVR2",
-      "promptRequired": false,
-      "refSyntax": "at",
-      "routes": [
-        {
-          "endpoint": "fal-ai/seedvr/upscale/video",
-          "mapper": "fal.queue",
-          "provider": "fal"
-        }
-      ],
-      "task": "upscale",
-      "tasks": [
-        "upscale"
-      ]
-    },
-    {
-      "capabilities": {
-        "audio": false,
-        "camera": false,
-        "frames": {
-          "end": false,
-          "middle": false,
-          "start": false
-        },
-        "lastFrameOutput": false,
-        "promptExpansion": false,
-        "ratios": [],
-        "references": {
           "audio": 1,
           "image": 0,
           "total": 2,

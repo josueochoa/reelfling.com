@@ -50,6 +50,11 @@ export interface UploadItem {
   duration?: number;
   /** Waveform bar heights (0–100), for audio. */
   peaks?: number[];
+  width?: number;
+  height?: number;
+  fps?: number;
+  /** Label stored on a finished upscale, for example "1920×1080" or "4K". */
+  resolution?: string;
   hasThumb: boolean;
   createdAt: number;
 }

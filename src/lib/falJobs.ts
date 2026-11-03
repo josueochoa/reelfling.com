@@ -31,8 +31,9 @@ import {
   providerUrl,
   putAsset,
 } from "./storage";
-import { outputLineage } from "./registry/tool-forms";
+import { formFor, outputLineage, toolLimitError } from "./registry/tool-forms";
 import { prepareToolInput } from "./toolCatalog";
+import { upscaleResolution } from "./upscaleQuote";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
 
 /** Stored on a fal job when it was started from the Tools menu. */
@@ -244,6 +245,15 @@ export async function createToolJob(
   if (!asset) throw new ProviderError("That asset is no longer in your library.", 400);
   if (mediaKind(asset.contentType) !== prepared.tool.accepts)
     throw new ProviderError(prepared.tool.accepts === "image" ? "This tool needs an image." : "This tool needs a video.", 400);
+  const form = formFor(prepared.tool.id);
+  if (form) {
+    const limit = toolLimitError(
+      form,
+      { contentType: asset.contentType, duration: asset.meta?.duration },
+      prepared.tool.name,
+    );
+    if (limit) throw new ProviderError(limit, 400);
+  }
   const params = { ...prepared.body };
   delete params[prepared.tool.inputKey];
   return createFalJob(userId, prepared.tool.endpoint, prepared.body, apiKey, {
@@ -308,6 +318,12 @@ async function storeOutputs(userId: string, job: FalJob) {
     const contentType = contentTypeOf(file, source.headers.get("content-type"));
     const ext = EXT[contentType] ?? typeFromUrl(file.url)?.split("/")[1] ?? "bin";
     const lineage = outputLineage(job);
+    const parent = lineage.parentId ? await getAsset(userId, lineage.parentId) : undefined;
+    const size = upscaleResolution(
+      job.tool?.params ?? {},
+      { width: parent?.meta?.width, height: parent?.meta?.height },
+      file.width !== undefined || file.height !== undefined ? { width: file.width, height: file.height } : undefined,
+    );
     const asset = await putAsset(userId, {
       key: `fal/${job.id}/${i}.${ext}`,
       source,
@@ -316,6 +332,7 @@ async function storeOutputs(userId: string, job: FalJob) {
       parentId: lineage.parentId,
       tool: lineage.tool,
       name: lineage.tool ? job.tool?.name : undefined,
+      meta: size.resolution ? { width: size.width, height: size.height, resolution: size.resolution } : undefined,
     });
     outputs.push({ key: asset.key, contentType });
   }
