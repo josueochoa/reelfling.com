@@ -3,15 +3,15 @@
 // The Video tab: Seedance generations with the control panel on the left.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { restoreInputs } from "@/lib/inputs";
+import { modelsFor, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
+import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
 import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
-import { restoreInputs } from "@/lib/inputs";
-import { modelsFor, PROVIDER_INFO } from "@/lib/registry";
-import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 
 const POLL_MS = 5000;
 
@@ -30,11 +30,14 @@ export function VideoStudio({
   me,
   library,
   onOpenKeys,
+  openRouterModels,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
   library: Library;
   onOpenKeys: () => void;
+  /** Null until /api/models returns. Empty when that request failed. */
+  openRouterModels: VideoModel[] | null;
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -164,6 +167,7 @@ export function VideoStudio({
     await library.remove(item.id).catch((e) => setError((e as Error).message));
   }
 
+  const models = provider === "openrouter" ? (openRouterModels ?? []) : provider ? modelsFor(provider) : [];
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
@@ -172,7 +176,7 @@ export function VideoStudio({
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
           {provider ? (
             <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
-              Seedance via {PROVIDER_INFO[provider].label}
+              {provider === "openrouter" ? "OpenRouter" : `Seedance via ${PROVIDER_INFO[provider].label}`}
             </button>
           ) : (
             <span />
@@ -184,24 +188,28 @@ export function VideoStudio({
             </span>
           )}
         </header>
-        {provider ? (
+        {provider && models.length > 0 ? (
           <ControlPanel
             ref={panel}
             key={`${provider}-${preset.key}`}
             library={library}
             onOpenLibrary={() => setLibraryOpen(true)}
             onReferencesChange={setRefLabels}
-            models={modelsFor(provider)}
+            models={models}
             preset={preset}
             onGenerate={generate}
             error={error}
           />
+        ) : provider ? (
+          <p className="m-5 text-sm text-zinc-500">
+            {openRouterModels ? "No OpenRouter video models are available." : "Loading OpenRouter models…"}
+          </p>
         ) : (
           me && (
             <div className="m-5 rounded-2xl border border-dashed border-white/15 p-6 text-center">
               <p className="font-medium">Connect a provider</p>
               <p className="mt-1 text-sm text-zinc-400">
-                Add your ArgoLink or ModelArk API key. Generations are billed to your own account.
+                Add your ArgoLink, OpenRouter, or ModelArk API key. Generations run on your own provider account.
               </p>
               <button
                 onClick={onOpenKeys}

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { openRouterPrice } from "../../../scripts/catalog-map.mjs";
 import type { GenerateRequest } from "../types";
-import { ALL_MODELS } from "./generated";
+import { ALL_MODELS, openRouterPickerModels } from "./generated";
 import { MAPPERS } from "./mappers";
 import {
   MAPPER_IDS,
@@ -51,12 +53,17 @@ describe("model registry", () => {
   });
 
   it("keeps route mapper ids stable and only implements mappers a client calls", () => {
-    assert.deepEqual(Object.keys(MAPPERS).sort(), ["argolink.image.google", "argolink.image.openai"]);
+    assert.deepEqual(Object.keys(MAPPERS).sort(), [
+      "argolink.image.google",
+      "argolink.image.openai",
+      "openrouter.image",
+    ]);
     for (const model of ALL_MODELS)
       for (const route of model.routes) {
         assert.ok(ROUTE_PROVIDERS.includes(route.provider), route.provider);
         assert.ok(MAPPER_IDS.includes(route.mapper), `${model.id} names unknown mapper ${route.mapper}`);
-        if (route.mapper.startsWith("argolink.image.")) assert.equal(typeof MAPPERS[route.mapper], "function");
+        if (route.mapper.startsWith("argolink.image.") || route.mapper === "openrouter.image")
+          assert.equal(typeof MAPPERS[route.mapper], "function");
       }
   });
 
@@ -103,6 +110,52 @@ describe("model registry", () => {
     assert.ok(model && model.group === "image");
     assert.equal(model.capabilities.ratioResolutions?.["1:8"]?.includes("1k"), true);
     assert.equal(model.capabilities.ratioResolutions?.["1:8"]?.includes("2k") ?? false, false);
+  });
+
+  it("keeps the OpenRouter video models the studio runs", () => {
+    const endpoints = [
+      "bytedance/seedance-2.5",
+      "kwaivgi/kling-v3.0-pro",
+      "google/veo-3.1-fast",
+      "alibaba/wan-3.0",
+      "black-forest-labs/flux-3-video",
+      "x-ai/grok-imagine-video-1.5",
+      "minimax/hailuo-3",
+    ];
+    for (const endpoint of endpoints) {
+      const model = ALL_MODELS.find((entry) =>
+        entry.routes.some((route) => route.provider === "openrouter" && route.endpoint === endpoint),
+      );
+      assert.ok(model, endpoint);
+      assert.equal(model.group, "video");
+    }
+    const picker = openRouterPickerModels();
+    assert.deepEqual(
+      picker.slice(0, 3).map((model) => model.routes[0]?.endpoint),
+      ["bytedance/seedance-2.5", "kwaivgi/kling-v3.0-pro", "google/veo-3.1-fast"],
+    );
+    for (const model of picker) {
+      assert.equal(
+        model.routes.every((route) => route.provider === "openrouter"),
+        true,
+        model.id,
+      );
+      assert.ok(model.description.length <= 240, model.id);
+    }
+  });
+
+  it("does not import generated catalogs from client code", () => {
+    const banned = /from ["'][^"']*(?:registry\/generated|catalog\/(?:fal|openrouter)\.json)/;
+    const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+    assert.equal(banned.test(index), false, "index.ts");
+    const components = fileURLToPath(new URL("../../components", import.meta.url));
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+      });
+    for (const file of walk(components)) assert.equal(banned.test(readFileSync(file, "utf8")), false, file);
   });
 
   it("does not write API keys into the generated catalogs", () => {

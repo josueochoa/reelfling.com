@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { estimateCost, getModel } from "@/lib/registry";
+import { estimateCost } from "@/lib/registry";
+import { lookupModel } from "@/lib/registry/lookup";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 
@@ -30,7 +31,7 @@ export function Lightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const model = getModel(gen.model);
+  const model = lookupModel(gen.model);
   const cost =
     model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
   const details: [string, React.ReactNode][] = [

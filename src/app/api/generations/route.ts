@@ -1,7 +1,8 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
-import { getModel, isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
+import { catalogModel } from "@/lib/registry/generated";
+import { isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
     const provider = await providerForUser(user.id, providerId);
 
     const req = (await request.json()) as GenerateRequest;
-    const model = getModel(req.model);
+    const model = catalogModel(req.model);
     const route = model && routeFor(model, providerId);
     if (!model || !isVideo(model) || !route)
       return Response.json({ error: `Model "${req.model}" isn't available on ${provider.label}` }, { status: 400 });
@@ -105,6 +106,12 @@ export async function POST(request: Request) {
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
+
+    const caps = model.capabilities;
+    if (!caps.audio) delete req.generateAudio;
+    if (!caps.seed) delete req.seed;
+    if (!caps.watermark) delete req.watermark;
+    if (!(caps.camera && caps.camera.fixed)) delete req.cameraFixed;
 
     const frames = req.mode === "frames";
     const [first, last, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
@@ -123,16 +130,16 @@ export async function POST(request: Request) {
         ]);
 
     // Prompts are stored as written ("@Image 2"); the provider gets its own syntax and model id.
-    // Adapters read the fields they know; referenceOrder is only stored on the record below.
+    // referenceOrder is only stored on the record below.
     const { taskId } = await provider.createTask({
       ...req,
       model: route.endpoint,
       prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
       firstFrame: first?.url,
       lastFrame: last?.url,
-      referenceImages: referenceImages?.map((m) => m.url),
-      referenceVideos: referenceVideos?.map((m) => m.url),
-      referenceAudios: referenceAudios?.map((m) => m.url),
+      referenceImages: referenceImages?.map((media) => media.url),
+      referenceVideos: referenceVideos?.map((media) => media.url),
+      referenceAudios: referenceAudios?.map((media) => media.url),
     });
     const now = Date.now();
     const inputs: GenerationInputs = {

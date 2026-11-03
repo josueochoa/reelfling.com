@@ -3,12 +3,12 @@
 // Full-size view of a library file: plays videos and audio, shows images.
 
 import { useEffect } from "react";
-import { modelName } from "@/lib/registry";
+import { lookupModelName } from "@/lib/registry/lookup";
 import { fileSrc, type LibraryItem } from "./library";
 import { formatDuration, Waveform } from "./MediaBlocks";
 import { formatBytes } from "./UserMenu";
 
-const modelLabel = (id: string) => modelName(id);
+const modelLabel = (id: string) => lookupModelName(id);
 
 export function MediaPreview({
   item,

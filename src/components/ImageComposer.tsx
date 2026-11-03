@@ -61,7 +61,7 @@ export function ImageComposer({
   onGenerate: () => void;
   submitting: boolean;
   error: string | null;
-  /** No ArgoLink key yet: image models run through ArgoLink. */
+  /** No OpenRouter or ArgoLink key yet. */
   needsKey: boolean;
   onOpenKeys: () => void;
 }) {
@@ -91,7 +91,7 @@ export function ImageComposer({
       {needsKey && (
         <div className="mb-3 flex items-center gap-3 rounded-2xl bg-accent/10 px-4 py-2.5 text-sm">
           <span className="flex-1 text-zinc-200">
-            Image models run through ArgoLink. Add your ArgoLink API key to start.
+            The Image tab needs an OpenRouter or ArgoLink key.
           </span>
           <button onClick={onOpenKeys} className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-ink">
             Add key
