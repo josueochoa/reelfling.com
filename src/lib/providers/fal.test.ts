@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { shouldCancelFal, shouldPollFal, storeFailureUpdate } from "../falTypes";
+import { shouldCancelFal, shouldPollFal, storeFailureUpdate, storeGaveUp } from "../falTypes";
 import {
   cancelFal,
   collectOutputs,
@@ -8,6 +8,7 @@ import {
   fetchFalOutput,
   fieldErrorsOf,
   isFalApiHost,
+  outputBytes,
   pollFal,
   redactSecrets,
   submitFal,
@@ -235,16 +236,21 @@ describe("fal queue client", () => {
       assert.equal(reason.includes(KEY), false);
       return true;
     });
+    // One retry is allowed; the second failure is terminal and is not polled.
+    assert.equal(storeGaveUp(1), false);
+    assert.equal(storeGaveUp(2), true);
     const failed = storeFailureUpdate(reason);
     assert.equal(failed.status, "failed");
     assert.match(failed.error, /Couldn't save the result/);
     assert.match(failed.error, /404/);
     assert.equal(failed.error.includes(KEY), false);
-    // Succeeded-but-not-stored is not polled either: that was the 4s re-download loop.
     assert.equal(shouldPollFal(failed.status), false);
     assert.equal(shouldPollFal("succeeded"), false);
     assert.equal(shouldPollFal("queued"), true);
     assert.equal(shouldPollFal("running"), true);
+    assert.throws(() => outputBytes(null), /no size/);
+    assert.throws(() => outputBytes("0"), /no size/);
+    assert.equal(outputBytes("1200"), 1200);
   });
 
   it("cancels with PUT on the URL fal returned", async () => {

@@ -353,3 +353,10 @@ export async function fetchFalOutput(url: string): Promise<Response> {
   if (!res.ok) throw new ProviderError(`Couldn't download fal output (${res.status})`, 502);
   return res;
 }
+
+/** Rejects a missing or zero Content-Length. An unsized body would skip the storage cap. */
+export function outputBytes(header: string | null): number {
+  const bytes = Number(header);
+  if (!Number.isFinite(bytes) || bytes <= 0) throw new ProviderError("fal output had no size, so it wasn't saved.", 502);
+  return bytes;
+}

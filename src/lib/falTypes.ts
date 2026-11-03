@@ -15,7 +15,14 @@ export function shouldPollFal(status: FalJobStatus) {
   return status === "queued" || status === "running";
 }
 
-/** One failed copy ends the job. The tab and the cron both stop. */
+/** In-process copy tries. This is not a poll: the tab does not call back between them. */
+export const STORE_ATTEMPTS = 2;
+
+export function storeGaveUp(attempt: number) {
+  return attempt >= STORE_ATTEMPTS;
+}
+
+/** After the in-process tries are spent, the job is failed and nothing polls it. */
 export function storeFailureUpdate(message: string): { status: "failed"; error: string } {
   const reason = message.trim() || "The download failed.";
   return { status: "failed", error: `Couldn't save the result. ${reason}` };

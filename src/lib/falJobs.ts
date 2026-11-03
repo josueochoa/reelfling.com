@@ -5,6 +5,7 @@
 import {
   shouldCancelFal,
   storeFailureUpdate,
+  storeGaveUp,
   type FalFieldError,
   type FalJobStatus,
   type FalJobView,
@@ -15,13 +16,21 @@ import {
   cancelFal,
   collectOutputs,
   fetchFalOutput,
+  outputBytes,
   pollFal,
   redactSecrets,
   submitFal,
   type FalOutput,
 } from "./providers/fal";
 import { ProviderError } from "./providers/types";
-import { assertStorageAvailable, deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
+import {
+  assertStorageAvailable,
+  deleteAssetsUnder,
+  deleteGenerationAssets,
+  getAsset,
+  providerUrl,
+  putAsset,
+} from "./storage";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
 
 export interface FalJob {
@@ -77,8 +86,14 @@ export async function updateFalJob(userId: string, id: string, patch: Partial<Fa
   return next;
 }
 
-export async function removeFalJob(userId: string, id: string) {
+/** Indexed copies live under `fal/<id>/` and are tagged with this job id. Both go. */
+export async function deleteFalFiles(userId: string, id: string) {
   await deleteGenerationAssets(userId, id);
+  await deleteAssetsUnder(userId, `fal/${id}/`);
+}
+
+export async function removeFalJob(userId: string, id: string) {
+  await deleteFalFiles(userId, id);
   await run("DELETE FROM fal_jobs WHERE id = ? AND user_id = ?", id, userId);
 }
 
@@ -220,8 +235,14 @@ async function storeOutputs(userId: string, job: FalJob) {
   const outputs: FalJob["outputs"] = [];
   for (const [i, file] of files.entries()) {
     const source = await fetchFalOutput(file.url);
-    const bytes = Number(source.headers.get("content-length"));
-    await assertStorageAvailable(userId, Number.isFinite(bytes) && bytes > 0 ? bytes : 0);
+    let bytes: number;
+    try {
+      bytes = outputBytes(source.headers.get("content-length"));
+      await assertStorageAvailable(userId, bytes);
+    } catch (e) {
+      await source.body?.cancel().catch(() => {});
+      throw e;
+    }
     const contentType = contentTypeOf(file, source.headers.get("content-type"));
     const ext = EXT[contentType] ?? typeFromUrl(file.url)?.split("/")[1] ?? "bin";
     const asset = await putAsset(userId, {
@@ -257,16 +278,23 @@ export async function syncFalJob(userId: string, id: string): Promise<FalJob | u
   }
 
   if (job.status === "succeeded" && !job.stored) {
-    try {
-      await storeOutputs(userId, job);
-    } catch (e) {
-      // One failure is terminal. Retrying here is what made the open tab download
-      // every output again every few seconds, and the cron every minute after that.
-      const message = (e as Error).message || "The download failed.";
-      console.error(`[fal ${id}]`, message);
-      return updateFalJob(userId, id, storeFailureUpdate(message));
+    let last: unknown;
+    for (let attempt = 1; !storeGaveUp(attempt - 1); attempt++) {
+      try {
+        await storeOutputs(userId, job);
+        return getFalJob(userId, id);
+      } catch (e) {
+        last = e;
+        // One in-process retry. The job stays unpolled either way, so a blip
+        // does not start the 4s download loop.
+        if (storeGaveUp(attempt)) break;
+      }
     }
-    return getFalJob(userId, id);
+    const message = (last as Error)?.message || "The download failed.";
+    console.error(`[fal ${id}]`, message);
+    // Drop partial files (file 1 saved, file 2 failed) so they don't count toward quota.
+    await deleteFalFiles(userId, id).catch((e) => console.error(`[fal ${id} cleanup]`, (e as Error).message));
+    return updateFalJob(userId, id, storeFailureUpdate(message));
   }
   return job;
 }

@@ -267,6 +267,12 @@ export async function deleteGenerationAssets(userId: string, generationId: strin
   for (const row of rows) await deleteAsset(toAsset(row));
 }
 
+/** Deletes every indexed object under a key prefix, including ones with no generation id. */
+export async function deleteAssetsUnder(userId: string, prefix: string) {
+  const rows = await all<AssetRow>("SELECT * FROM assets WHERE user_id = ? AND key LIKE ?", userId, `${prefix}%`);
+  for (const row of rows) await deleteAsset(toAsset(row));
+}
+
 // ---------------------------------------------------------------- browser uploads
 
 const UPLOAD_URL_TTL_S = 15 * 60;
