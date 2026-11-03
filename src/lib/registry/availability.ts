@@ -81,16 +81,21 @@ function providerList(providers: readonly string[]): string {
   return `${providers.slice(0, -1).join(", ")} or ${providers[providers.length - 1]}`;
 }
 
+/** "an" before a vowel, "a" otherwise. The first provider name decides. */
+function article(provider: string): "a" | "an" {
+  return /^[aeiou]/i.test(provider) ? "an" : "a";
+}
+
 /** Hover text. Names providers only, for example "needs a fal or openrouter key". */
 export function availabilityHint(needs: readonly string[]): string {
   if (!needs.length) return "";
-  return `needs a ${providerList(needs)} key`;
+  return `needs ${article(needs[0])} ${providerList(needs)} key`;
 }
 
 /** Server error. Same providers as the hint, and nothing else. */
 export function availabilityError(needs: readonly string[]): string {
   if (!needs.length) return "This isn't available.";
-  return `This needs a ${providerList(needs)} key.`;
+  return `This needs ${article(needs[0])} ${providerList(needs)} key.`;
 }
 
 /** Null when the mode can run, or when no key would unlock it (the model simply lacks it). */

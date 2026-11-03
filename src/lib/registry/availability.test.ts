@@ -25,8 +25,8 @@ describe("availability", () => {
     const result = availability(model, keyedProviders({ workspaceProviders: [] }));
     assert.equal(result.available, false);
     assert.deepEqual(result.needs, ["argolink", "openrouter"]);
-    assert.equal(availabilityHint(result.needs), "needs a argolink or openrouter key");
-    assert.equal(availabilityError(result.needs), "This needs a argolink or openrouter key.");
+    assert.equal(availabilityHint(result.needs), "needs an argolink or openrouter key");
+    assert.equal(availabilityError(result.needs), "This needs an argolink or openrouter key.");
     assert.equal(availabilityError(result.needs).includes(secret), false);
   });
 
@@ -75,7 +75,7 @@ describe("availability", () => {
     session.splice(0, session.length);
     const after = see();
     assert.equal(after.available, false);
-    assert.equal(availabilityHint(after.needs), "needs a argolink or openrouter key");
+    assert.equal(availabilityHint(after.needs), "needs an argolink or openrouter key");
   });
 
   it("uses a team member's own key only when the owner allows it", () => {
@@ -124,7 +124,7 @@ describe("availability", () => {
     assert.ok(withRefs && isVideo(withRefs));
     assert.ok(noRefs && isVideo(noRefs));
     assert.equal(availability({ routes: modeRoutes(withRefs, "references") }, new Set(["argolink"])).available, true);
-    assert.equal(modeBlock(withRefs, "references", new Set()), "This needs a argolink key.");
+    assert.equal(modeBlock(withRefs, "references", new Set()), "This needs an argolink key.");
     assert.equal(modeRoutes(noRefs, "references").length, 0);
     assert.equal(modeBlock(noRefs, "references", new Set(["modelark"])), null);
     assert.equal(modeBlock(noRefs, "frames", new Set()), "This needs a modelark key.");
@@ -161,7 +161,7 @@ describe("availability", () => {
       () => pickRoute(model, { keyed: new Set(), workspace: new Set(), personal: new Set([secret]) }, { team: false, memberKeys: false }),
       (error: unknown) => {
         const message = (error as Error).message;
-        assert.equal(message, "This needs a argolink or openrouter key.");
+        assert.equal(message, "This needs an argolink or openrouter key.");
         assert.equal(message.includes(secret), false);
         assert.equal((error as { status?: number }).status, 400);
         return true;
