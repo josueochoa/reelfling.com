@@ -14,6 +14,7 @@ import {
   type ImageResolution,
 } from "@/lib/registry";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
+import { personalGenerationScope } from "@/lib/teamPolicy";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 
 export async function GET() {
@@ -45,6 +46,8 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const req = (await request.json()) as ImageRequest;
+    // The caller's own key and bucket, even if the body names a team or someone else.
+    const scope = personalGenerationScope(user.id, req);
     const model = getImageModel(req.model);
     if (!model) return bad(`Unknown model "${req.model}"`);
     const prompt = req.prompt?.trim();
@@ -53,7 +56,7 @@ export async function POST(request: Request) {
     if (invalid || !prompt) return bad(invalid ?? "Write a prompt");
     for (const key of refs) {
       // Uploads or generated images.
-      const asset = isAssetKey(key) ? await getAsset(user.id, key) : undefined;
+      const asset = isAssetKey(key) ? await getAsset(scope.storageUserId, key) : undefined;
       if (!asset || !(uploadKindOf(asset.contentType) === "image" || asset.contentType.startsWith("image/")))
         return bad("A reference isn't an image in your uploads. Remove it and add it again.");
     }
@@ -61,13 +64,13 @@ export async function POST(request: Request) {
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
     const imageProvider = imageProviderFor(
       user.activeProvider,
-      (await listKeys(user.id)).map((key) => key.provider),
+      (await listKeys(scope.keyUserId)).map((key) => key.provider),
     );
     if (!imageProvider)
       return bad("The Image tab needs an OpenRouter or ArgoLink key. Add one under API keys.");
     if (!routeFor(model, imageProvider))
       return bad(`${model.name} isn't available on ${PROVIDER_INFO[imageProvider].label}.`);
-    await assertStorageAvailable(user.id);
+    await assertStorageAvailable(scope.storageUserId);
 
     // "auto": the reference's shape if there is one; otherwise the model's own fallback.
     let aspect: string | undefined = req.ratio;
@@ -95,8 +98,8 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     };
-    await insertImageGeneration(user.id, gen);
-    await enqueueImageJob(user.id, gen.id);
+    await insertImageGeneration(scope.storageUserId, gen);
+    await enqueueImageJob(scope.storageUserId, gen.id);
     return Response.json(gen, { status: 201 });
   } catch (e) {
     return errorResponse(e);

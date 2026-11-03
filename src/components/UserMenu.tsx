@@ -94,6 +94,14 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
           >
             API keys
           </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              window.location.hash = "team";
+            }}
+          >
+            Team
+          </MenuItem>
           <MenuItem onClick={signOut}>Sign out</MenuItem>
         </div>
       )}

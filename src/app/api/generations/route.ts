@@ -1,6 +1,7 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
+import { personalGenerationScope } from "@/lib/teamPolicy";
 import { applyCameraMove } from "@/lib/registry/camera-apply";
 import { catalogModel } from "@/lib/registry/generated";
 import { isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
@@ -94,19 +95,20 @@ function frameFields(media: ResolvedMedia | undefined, keyName: "firstFrameKey" 
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
+    const req = (await request.json()) as GenerateRequest;
+    // The caller's own key and bucket, even if the body names a team or someone else.
+    const scope = personalGenerationScope(user.id, req);
     const providerId = user.activeProvider;
     if (!providerId) return Response.json({ error: "Add an API key in Settings to start generating" }, { status: 400 });
-    const provider = await providerForUser(user.id, providerId);
-
-    const req = (await request.json()) as GenerateRequest;
+    const provider = await providerForUser(scope.keyUserId, providerId);
     const model = catalogModel(req.model);
     const route = model && routeFor(model, providerId);
     if (!model || !isVideo(model) || !route)
       return Response.json({ error: `Model "${req.model}" isn't available on ${provider.label}` }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
-    // The result will be copied into the user's bucket, so don't start one they can't keep.
-    await assertStorageAvailable(user.id);
+    // The result will be copied into the caller's bucket, so don't start one they can't keep.
+    await assertStorageAvailable(scope.storageUserId);
 
     const caps = model.capabilities;
     if (!caps.audio) delete req.generateAudio;
@@ -116,11 +118,11 @@ export async function POST(request: Request) {
 
     const frames = req.mode === "frames";
     const [first, last, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
-      frames && req.firstFrame ? resolveOne(user.id, req.firstFrame, "image") : undefined,
-      frames && req.firstFrame && req.lastFrame ? resolveOne(user.id, req.lastFrame, "image") : undefined,
-      resolveList(user.id, frames ? undefined : req.referenceImages, "image"),
-      resolveList(user.id, frames ? undefined : req.referenceVideos, "video"),
-      resolveList(user.id, frames ? undefined : req.referenceAudios, "audio"),
+      frames && req.firstFrame ? resolveOne(scope.storageUserId, req.firstFrame, "image") : undefined,
+      frames && req.firstFrame && req.lastFrame ? resolveOne(scope.storageUserId, req.lastFrame, "image") : undefined,
+      resolveList(scope.storageUserId, frames ? undefined : req.referenceImages, "image"),
+      resolveList(scope.storageUserId, frames ? undefined : req.referenceVideos, "video"),
+      resolveList(scope.storageUserId, frames ? undefined : req.referenceAudios, "audio"),
     ]);
     const blocks = frames
       ? undefined
@@ -173,7 +175,7 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     };
-    await insertGeneration(user.id, gen);
+    await insertGeneration(scope.storageUserId, gen);
     return Response.json(gen, { status: 201 });
   } catch (e) {
     return errorResponse(e);

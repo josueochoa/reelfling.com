@@ -551,3 +551,28 @@ export async function serveAsset(asset: Asset, opts: { downloadName?: string; th
     headers: { Location: location, "Cache-Control": "private, max-age=600" },
   });
 }
+
+/**
+ * Reads an object on the server. Callers that proxy bytes to a teammate use this
+ * and return them directly, so the client never sees a signed URL.
+ */
+export async function openAsset(asset: Asset, opts: { thumb?: boolean; range?: string | null } = {}) {
+  const cfg = r2();
+  const key = opts.thumb && asset.meta?.thumb ? asset.meta.thumb : asset.key;
+  const headers: Record<string, string> = {};
+  if (opts.range) headers.Range = opts.range;
+  let res: Response;
+  try {
+    res = await s3(cfg, objectUrl(cfg, asset.bucket, key), { method: "GET", headers });
+  } catch (e) {
+    if ((e as { upstreamStatus?: number }).upstreamStatus === 404) throw new StorageError("Not found", 404);
+    throw e;
+  }
+  return {
+    status: res.status,
+    body: res.body,
+    contentType: res.headers.get("content-type"),
+    contentLength: res.headers.get("content-length"),
+    contentRange: res.headers.get("content-range"),
+  };
+}

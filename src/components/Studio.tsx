@@ -13,10 +13,11 @@ import { FalStudio, type FalTabHandle } from "./FalStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
 import { useLibrary, type LibraryItem } from "./library";
+import { TeamStudio } from "./TeamStudio";
 import { UserMenu } from "./UserMenu";
 import { VideoStudio, type StudioTabHandle } from "./VideoStudio";
 
-const TABS = ["video", "image", "fal", "assets"] as const;
+const TABS = ["video", "image", "fal", "assets", "team"] as const;
 type Tab = (typeof TABS)[number];
 
 // The tab lives in the URL hash (#image, #assets), so reload and Back keep it.
@@ -103,6 +104,9 @@ export function Studio() {
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
         <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
+      </div>
+      <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
+        <TeamStudio me={me} active={tab === "team"} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio
