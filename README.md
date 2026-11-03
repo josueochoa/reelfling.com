@@ -34,7 +34,7 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 
 - **Assets**: everything in the user's bucket in one place: generated videos and images, uploads, and tool outputs. Filter by type (sidebar, with counts and storage used), source (All / Generated / Uploaded / Processed), model and prompt/name; grouped by day, with bulk select, download and delete. Any asset can be sent to the Image or Video tab as a reference, generated ones included. Deleting a generated video deletes its generation; deleting a generated image removes it from its generation (which goes with its last image).
 
-  Image and video detail (Assets, and the video and image lightboxes) has a Tools menu filtered by asset type. A tool is a catalog entry plus a parameter form; running it queues the existing fal job, which shows in the fal feed with progress and cancel. The result is a new asset (`parent_id`, `tool`) and the original is left as it was. Background removal (BiRefNet v2) is the first one. Upscale is catalogued but has no form yet.
+  Asset detail (Assets, and the video and image lightboxes) shows a Tools menu when a catalog tool matches that asset's type. A tool is a catalog entry plus a parameter form; running it queues the existing fal job, which shows in the fal feed with progress and cancel. The result is a new asset (`parent_id`, `tool`) and the original is left as it was. Background removal (BiRefNet v2) is the first one, and it only appears on images.
 
   Generated images and videos get thumbnails lazily: the first time a browser shows one without a thumbnail, it draws a small JPEG (canvas, via the bucket's CORS rule) and saves it next to the file (`/api/assets/thumb`).
 

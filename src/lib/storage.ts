@@ -409,7 +409,7 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
       ...(a.tool ? { tool: a.tool } : {}),
     };
     if (a.key.startsWith("uploads/"))
-      return [{ ...base, ...lineage, source: a.tool ? "processed" : "upload", name: a.name ?? a.key.split("/").pop()! }];
+      return [{ ...base, source: "upload", name: a.name ?? a.key.split("/").pop()! }];
     if (a.key.startsWith("fal/")) {
       const job = a.generationId ? fal.get(a.generationId) : undefined;
       if (!job) return [];

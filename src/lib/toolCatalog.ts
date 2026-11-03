@@ -5,14 +5,11 @@ import { buildToolBody, formFor, TOOL_FORMS } from "./registry/tool-forms";
 import type { ModelEntry } from "./registry/types";
 import type { ToolAccepts, ToolView } from "./toolTypes";
 
-/** Image tools read images. Video tools, including upscale, read videos. */
+/** The asset kind a tool catalog entry reads. Other groups are not tools. */
 export function catalogAccepts(model: ModelEntry): ToolAccepts | undefined {
-  if (model.group === "tool") {
-    const accepts = model.capabilities.accepts;
-    return accepts === "image" || accepts === "video" ? accepts : undefined;
-  }
-  if (model.group === "video" && model.tasks.includes("upscale")) return "video";
-  return undefined;
+  if (model.group !== "tool") return undefined;
+  const accepts = model.capabilities.accepts;
+  return accepts === "image" || accepts === "video" ? accepts : undefined;
 }
 
 export interface RunnableTool extends ToolView {
@@ -23,7 +20,7 @@ export interface RunnableTool extends ToolView {
 
 /**
  * A tool is runnable when the catalog and a form schema agree on the asset kind
- * and the route is the generic fal queue. Upscale stays out until it has a form.
+ * and the route is the generic fal queue.
  */
 export function runnableTools(): RunnableTool[] {
   const tools: RunnableTool[] = [];

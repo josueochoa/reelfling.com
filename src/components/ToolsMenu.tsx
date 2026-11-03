@@ -26,7 +26,7 @@ export function ToolsMenu({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (kind !== "image" && kind !== "video") return null;
+  if (available.length === 0) return null;
 
   function show(next: ToolView) {
     const initial: Record<string, string | boolean> = {};
@@ -122,8 +122,6 @@ export function ToolsMenu({
                 {busy ? "Starting…" : "Run"}
               </button>
             </form>
-          ) : available.length === 0 ? (
-            <p className="px-2 py-1.5 text-xs text-zinc-500">No {kind} tools yet.</p>
           ) : (
             available.map((item) => (
               <button

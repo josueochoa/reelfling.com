@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { setTestEnv, type AppEnv } from "./db";
 import { isFalApiHost } from "./providers/fal";
 import { outputLineage, parseToolParams, TOOL_FORMS } from "./registry/tool-forms";
-import { catalogAccepts, publicTools, runnableTools } from "./toolCatalog";
+import { publicTools, runnableTools } from "./toolCatalog";
 import { toolsForKind, type ToolView } from "./toolTypes";
 
 const SECRET = "test-auth-secret-at-least-32-characters";
@@ -155,7 +155,7 @@ function submitResponse() {
 }
 
 const imageTools: ToolView[] = [{ id: "image-tool", name: "Cut", description: "", accepts: "image", fields: [] }];
-const videoTools: ToolView[] = [{ id: "video-tool", name: "Upscale", description: "", accepts: "video", fields: [] }];
+const videoTools: ToolView[] = [{ id: "video-tool", name: "Clip", description: "", accepts: "video", fields: [] }];
 
 describe("tool catalog", () => {
   it("offers background removal for images and nothing for video", () => {
@@ -179,12 +179,6 @@ describe("tool catalog", () => {
       toolsForKind([...imageTools, ...videoTools], "video").map((tool) => tool.id),
       ["video-tool"],
     );
-  });
-
-  it("keeps upscale in the catalog without a form, so it is not offered", () => {
-    const upscale = runnableTools().find((tool) => tool.id.includes("upscale"));
-    assert.equal(upscale, undefined);
-    assert.equal(catalogAccepts({ group: "video", tasks: ["upscale"], capabilities: {} } as never), "video");
   });
 
   it("rejects a tool setting the schema does not list", () => {
