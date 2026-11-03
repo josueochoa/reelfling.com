@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { cameraMoveLabel } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
 
@@ -47,6 +48,7 @@ export function GenerationCard({
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
   const model = lookupModel(gen.model);
+  const camera = cameraMoveLabel(gen.cameraMove);
   const ready = gen.status === "succeeded";
   // The output is a video, so it can be a reference only once it's stored. Continue-from-last-frame
   // covers using a clip as the next start; there is no image to offer as a start frame.
@@ -96,6 +98,7 @@ export function GenerationCard({
             <Meta>{gen.resolution}</Meta>
             <Meta>{gen.duration}s</Meta>
             <Meta>{gen.ratio}</Meta>
+            {camera && <Meta>{camera}</Meta>}
             {ready && <Meta>{formatSecs(elapsed)}</Meta>}
           </div>
           <div className="flex shrink-0 gap-1">

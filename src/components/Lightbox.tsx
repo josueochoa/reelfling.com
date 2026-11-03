@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { estimateCost } from "@/lib/registry";
+import { cameraMoveLabel, estimateCost } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
@@ -32,6 +32,7 @@ export function Lightbox({
   }, [onClose]);
 
   const model = lookupModel(gen.model);
+  const camera = cameraMoveLabel(gen.cameraMove);
   const cost =
     model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
   const details: [string, React.ReactNode][] = [
@@ -43,6 +44,7 @@ export function Lightbox({
     ["Audio", gen.generateAudio ? "On" : "Off"],
     ["Render time", formatSecs(elapsed)],
   ];
+  if (camera) details.splice(5, 0, ["Camera", camera]);
   if (gen.seed !== undefined) details.push(["Seed", gen.seed]);
   if (gen.tokens !== undefined) details.push(["Tokens", gen.tokens.toLocaleString()]);
   if (gen.billedSeconds !== undefined) details.push(["Billed", `${gen.billedSeconds}s`]);

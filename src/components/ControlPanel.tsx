@@ -2,8 +2,16 @@
 
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { invalidMentions, mentionToken, remapMentions, type RefCounts, type RefKind } from "@/lib/mentions";
-import { estimateCost, type VideoModel } from "@/lib/registry";
+import {
+  cameraMoveLabel,
+  cameraMovesFor,
+  estimateCost,
+  keptCameraMove,
+  type CameraMove,
+  type VideoModel,
+} from "@/lib/registry";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
+import { CameraMoves } from "./CameraMoves";
 import type { UploadKind } from "@/lib/uploads";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
@@ -29,6 +37,8 @@ export interface Preset {
   referenceKeys?: string[];
   /** Inline note, for a Reuse that couldn't find every file. */
   notice?: string;
+  /** Camera preset to restore. A move this model ignores is dropped. */
+  cameraMove?: string;
 }
 
 /** A frame is a library item, or a one-off URL that isn't in the library. */
@@ -141,6 +151,9 @@ export function ControlPanel({
   // Latest list for handlers that run after an await.
   const refsNow = useRef(refIds);
   const [seed, setSeed] = useState("");
+  const [cameraMove, setCameraMove] = useState<CameraMove | undefined>(() =>
+    keptCameraMove(initialModel, preset.cameraMove),
+  );
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -148,6 +161,8 @@ export function ControlPanel({
   const editor = useRef<PromptEditorHandle>(null);
 
   const caps = model.capabilities;
+  const moves = cameraMovesFor(model);
+  const showFixed = moves.length === 0 && !!(caps.camera && caps.camera.fixed);
   const durations = caps.durations;
   const hasRefs = caps.references.total > 0;
   const effectiveMode: GenerationMode = hasRefs ? mode : "frames";
@@ -355,6 +370,7 @@ export function ControlPanel({
     setDuration((d) => clampDuration(d, m));
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
+    setCameraMove((move) => keptCameraMove(m, move));
   }
 
   const uploading =
@@ -383,7 +399,8 @@ export function ControlPanel({
       duration,
       generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
-      cameraFixed: caps.camera && caps.camera.fixed ? cameraFixed : undefined,
+      cameraMove: moves.length && cameraMove ? cameraMove : undefined,
+      cameraFixed: showFixed ? cameraFixed : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
@@ -493,6 +510,12 @@ export function ControlPanel({
           )}
         </Section>
 
+        {moves.length > 0 && (
+          <Section label="Camera" aside={cameraMoveLabel(cameraMove) ?? "None"}>
+            <CameraMoves value={cameraMove} onChange={setCameraMove} />
+          </Section>
+        )}
+
         <Section label="Aspect ratio">
           <div className="flex flex-wrap gap-1.5">
             {caps.ratios.map((r) => (
@@ -547,7 +570,7 @@ export function ControlPanel({
         )}
         {caps.audio === "required" && <p className="text-xs text-zinc-500">Audio is included with this model.</p>}
 
-        {(caps.seed || (caps.camera && caps.camera.fixed) || caps.watermark) && (
+        {(caps.seed || showFixed || caps.watermark) && (
           <div>
             <button onClick={() => setShowAdvanced((s) => !s)} className="text-xs text-zinc-500 hover:text-zinc-300">
               {showAdvanced ? "− Hide" : "+ Show"} advanced
@@ -573,9 +596,7 @@ export function ControlPanel({
                     </div>
                   </Section>
                 )}
-                {caps.camera && caps.camera.fixed && (
-                  <Toggle label="Fixed camera" checked={cameraFixed} onChange={setCameraFixed} />
-                )}
+                {showFixed && <Toggle label="Fixed camera" checked={cameraFixed} onChange={setCameraFixed} />}
                 {caps.watermark && <Toggle label="Watermark" checked={watermark} onChange={setWatermark} />}
               </div>
             )}

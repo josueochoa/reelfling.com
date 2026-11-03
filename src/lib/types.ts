@@ -1,4 +1,4 @@
-import type { StudioProviderId } from "./registry";
+import type { CameraMove, StudioProviderId } from "./registry";
 
 export type GenerationMode = "frames" | "references";
 
@@ -14,6 +14,8 @@ export interface GenerateRequest {
   seed?: number;
   watermark?: boolean;
   cameraFixed?: boolean;
+  /** Composer preset. The server maps it; the stored prompt stays as written. */
+  cameraMove?: CameraMove;
   firstFrame?: string;
   lastFrame?: string;
   referenceImages?: string[];
@@ -71,6 +73,8 @@ export interface Generation {
   duration: number;
   generateAudio: boolean;
   seed?: number;
+  /** Preset id, when the user chose one. Absent on older records. */
+  cameraMove?: CameraMove;
   /** Counts, plus the R2 keys of frames and reference blocks when they were saved. */
   inputs: GenerationInputs;
   /** Temporary signed URL from ModelArk (expires ~24h). */

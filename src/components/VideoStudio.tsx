@@ -130,6 +130,7 @@ export function VideoStudio({
       resolution: gen.resolution,
       duration: gen.duration,
       generateAudio: gen.generateAudio,
+      cameraMove: gen.cameraMove,
       mode: asFirstFrame ? "frames" : (restored?.mode ?? gen.mode),
       firstFrame: asFirstFrame,
       firstFrameKey: restored?.firstFrameKey,

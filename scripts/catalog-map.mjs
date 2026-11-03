@@ -178,12 +178,28 @@ export function openRouterModel(model) {
       references: { image: 0, video: 0, audio: 0, total: 0 },
       seed: model.seed === true,
       promptExpansion: has(/enhance_?prompt|prompt_extend|prompt_expansion/i) ? "optional" : false,
-      camera: has(/camera/i) ? { fixed: has(/fixed/i) } : false,
+      camera: openRouterCamera(pass),
       watermark: has(/watermark/i),
       lastFrameOutput: false,
     }),
     price,
   });
+}
+
+/**
+ * Camera capability from OpenRouter `allowed_passthrough_parameters`.
+ * `camera_fixed` is mapped because BytePlus documents it as a boolean lock.
+ * Other names (`shot_type`, `motion_prompt`, `cfg_scale`, …) are not camera moves
+ * and stay unmapped until their values are checked.
+ */
+export function openRouterCamera(pass) {
+  const names = Array.isArray(pass) ? pass.map((name) => String(name)) : [];
+  if (!names.includes("camera_fixed")) return false;
+  return {
+    fixed: true,
+    prompt: true,
+    native: { static: { param: "camera_fixed", value: true } },
+  };
 }
 
 function openRouterTasks(id, frames) {
@@ -364,11 +380,11 @@ export function falModel(spec, raw, unit) {
   const resolutions = resolutionsFrom(props);
   const ratios = ratiosFrom(props);
   const promptExpansion = hasKey(props, /prompt_expansion|prompt_optimizer|enhance_prompt/) ? "optional" : false;
+  // Only `camera_fixed` is a verified camera parameter. A property whose name
+  // merely contains "camera" is left off until its schema is checked.
   const camera = hasKey(props, /^camera_fixed$/)
-    ? { fixed: true }
-    : hasKey(props, /camera/)
-      ? { fixed: false }
-      : false;
+    ? { fixed: true, prompt: true, native: { static: { param: "camera_fixed", value: true } } }
+    : false;
   const price = priceFromUnit(unit?.unit_price, unit?.unit);
   const display = (meta.display_name || spec.endpoint).trim();
   const family = display.split(/\s+/)[0]?.replace(/:$/, "") || spec.endpoint.split("/")[0];

@@ -1,4 +1,5 @@
 import {
+  CAMERA_MOVE_IDS,
   IMAGE_TASKS,
   MAPPER_IDS,
   ROUTE_PROVIDERS,
@@ -104,6 +105,18 @@ export function parseModel(value: unknown): ModelEntry {
   return { ...base, group: "tool" as const, task, tasks, capabilities: base.capabilities } as unknown as ToolModel;
 }
 
+function assertCamera(model: VideoModel) {
+  const camera = model.capabilities.camera;
+  if (!camera || !camera.native) return;
+  for (const [move, binding] of Object.entries(camera.native)) {
+    if (!(CAMERA_MOVE_IDS as readonly string[]).includes(move))
+      throw new Error(`${model.id} maps unknown camera move "${move}"`);
+    const value = binding as { param?: unknown; value?: unknown } | undefined;
+    if (!value || value.param !== "camera_fixed" || typeof value.value !== "boolean")
+      throw new Error(`${model.id} camera move "${move}" is not the camera_fixed boolean`);
+  }
+}
+
 const VIDEO_PRICE = new Set(["per_second", "tokens", "per_megapixel"]);
 const IMAGE_PRICE = new Set(["per_image", "per_megapixel", "tokens"]);
 
@@ -134,6 +147,7 @@ export function assertRegistry(models: readonly ModelEntry[]) {
       }
       if (model.price && !VIDEO_PRICE.has(model.price.type))
         throw new Error(`${model.id} uses price "${model.price.type}", which isn't a video formula`);
+      assertCamera(model);
     } else if (model.group === "image") {
       for (const task of model.tasks)
         if (!IMAGE_TASKS.includes(task)) throw new Error(`${model.id} lists ${task}, which isn't an image task`);

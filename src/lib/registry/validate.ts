@@ -1,6 +1,7 @@
 import type { GenerateRequest } from "../types";
-import type { ImageModel, ImageQuality, VideoModel } from "./types";
+import { cameraMovesFor, isCameraMove } from "./camera";
 import { ratioAllowed } from "./price";
+import type { ImageModel, ImageQuality, VideoModel } from "./types";
 
 export interface ImageRequestInput {
   prompt?: string;
@@ -44,6 +45,8 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
   if (req.generateAudio && caps.audio === false) return `${label} doesn't generate audio`;
   if (req.seed !== undefined && !caps.seed) return `${label} doesn't take a seed`;
   if (req.cameraFixed && !(caps.camera && caps.camera.fixed)) return `${label} doesn't take camera settings`;
+  if (req.cameraMove && (!isCameraMove(req.cameraMove) || !cameraMovesFor(model).includes(req.cameraMove)))
+    return `${label} doesn't take camera moves`;
   if (req.watermark && !caps.watermark) return `${label} doesn't take a watermark`;
   return null;
 }
