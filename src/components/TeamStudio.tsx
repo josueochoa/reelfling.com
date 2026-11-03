@@ -395,24 +395,17 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
 }
 
 function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; meId?: string }) {
+  const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   const fileUrl = teamMediaUrl(teamId, asset.ownerId, asset.key);
+  // The grid never points a <video> at the file. Same as the Assets grid: a thumbnail
+  // image, and the file loads only when the tile is opened.
   const thumbUrl = asset.hasThumb ? teamMediaUrl(teamId, asset.ownerId, asset.key, true) : undefined;
   return (
     <li className="overflow-hidden rounded-xl border border-white/10" data-testid="team-asset">
-      <div className="grid aspect-video place-items-center bg-white/5">
-        {failed || asset.kind === "audio" ? (
+      <div className="relative grid aspect-video place-items-center bg-white/5">
+        {asset.kind === "audio" || (asset.kind === "video" && (!thumbUrl || failed)) ? (
           <span className="text-xs tracking-wide text-zinc-500 uppercase">{asset.kind}</span>
-        ) : asset.kind === "video" ? (
-          <video
-            src={fileUrl}
-            poster={thumbUrl}
-            controls
-            preload="none"
-            onError={() => setFailed(true)}
-            data-testid="team-video"
-            className="h-full w-full object-contain"
-          />
         ) : (
           // Authenticated same-origin bytes. next/image would fetch them without the session.
           // eslint-disable-next-line @next/next/no-img-element
@@ -424,7 +417,31 @@ function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; 
             className="h-full w-full object-contain"
           />
         )}
+        {asset.kind === "video" && (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label={`Play ${asset.name}`}
+            data-testid="team-video"
+            className="absolute inset-0 grid place-items-center"
+          >
+            <span className="grid size-9 place-items-center rounded-full bg-black/60 text-xs text-white">▶</span>
+          </button>
+        )}
       </div>
+      {open && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-6" onClick={() => setOpen(false)}>
+          <video
+            src={fileUrl}
+            controls
+            autoPlay
+            playsInline
+            data-testid="team-video-player"
+            className="max-h-[80dvh] w-full max-w-4xl bg-black"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
       <div className="px-2.5 py-2">
         <p className="truncate text-sm">{asset.name}</p>
         <p className="truncate text-xs text-zinc-500">
