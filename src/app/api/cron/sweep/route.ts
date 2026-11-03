@@ -1,3 +1,4 @@
+import { failAbandonedFalCopies, syncFalJob, unfinishedFalJobs } from "@/lib/falJobs";
 import { failStaleImageJobs } from "@/lib/images";
 import { deleteOrphanUploads } from "@/lib/storage";
 import { syncGeneration, unfinishedGenerations } from "@/lib/store";
@@ -16,6 +17,7 @@ declare global {
 /**
  * Called every minute by the Worker's cron handler (worker.ts), in-process. Finishes
  * generations nobody is watching: syncs their status and copies finished videos to R2.
+ * Open fal jobs are polled the same way, and every output is copied into the user's bucket.
  * Also deletes reference uploads that were never used.
  * The one-off token is only known inside this isolate, so the route can't be called from outside.
  */
@@ -43,5 +45,29 @@ export async function POST(request: Request) {
     console.error("[sweep image jobs]", e);
     return 0;
   });
-  return Response.json({ checked: pending.length, failed, orphansDeleted, staleImageJobs });
+  const abandonedFalCopies = await failAbandonedFalCopies(MAX_AGE_MS).catch((e) => {
+    console.error("[sweep fal copies]", (e as Error).message);
+    return 0;
+  });
+  const falPending = await unfinishedFalJobs(BATCH, MAX_AGE_MS);
+  let falFailed = 0;
+  for (let i = 0; i < falPending.length; i += CONCURRENCY) {
+    await Promise.all(
+      falPending.slice(i, i + CONCURRENCY).map((job) =>
+        syncFalJob(job.user_id, job.id).catch((e) => {
+          falFailed++;
+          console.error(`[sweep fal ${job.id}]`, (e as Error).message);
+        }),
+      ),
+    );
+  }
+  return Response.json({
+    checked: pending.length,
+    failed,
+    orphansDeleted,
+    staleImageJobs,
+    falChecked: falPending.length,
+    falFailed,
+    abandonedFalCopies,
+  });
 }

@@ -1,5 +1,6 @@
 // The Assets view across sources: deleting means different things per kind of file.
 
+import { getFalJob, removeFalJob, updateFalJob } from "./falJobs";
 import { getImageGeneration, removeImageGeneration, updateImageGeneration } from "./images";
 import { deleteAsset, getAsset } from "./storage";
 import { removeGeneration } from "./store";
@@ -14,6 +15,14 @@ export async function deleteUserAsset(userId: string, key: string) {
   const asset = await getAsset(userId, key);
   if (!asset) return;
   if (key.startsWith("videos/") && asset.generationId) return removeGeneration(userId, asset.generationId);
+  if (key.startsWith("fal/") && asset.generationId) {
+    const job = await getFalJob(userId, asset.generationId);
+    const rest = job?.outputs.filter((output) => output.key !== key) ?? [];
+    if (!job || !rest.length) return removeFalJob(userId, asset.generationId);
+    await deleteAsset(asset);
+    await updateFalJob(userId, job.id, { outputs: rest });
+    return;
+  }
   if (key.startsWith("images/") && asset.generationId) {
     const gen = await getImageGeneration(userId, asset.generationId);
     const rest = gen?.images.filter((i) => i.key !== key) ?? [];

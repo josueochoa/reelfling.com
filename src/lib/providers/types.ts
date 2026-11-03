@@ -1,5 +1,5 @@
 import type { ProviderCredentials } from "../keys";
-import type { ProviderId } from "../models";
+import type { StudioProviderId } from "../models";
 import type { GenerateRequest, TaskStatus } from "../types";
 
 /** Provider task state, normalized to ModelArk's status vocabulary. */
@@ -17,7 +17,7 @@ export interface TaskSnapshot {
 
 /** A provider client bound to one user's credentials. */
 export interface VideoProvider {
-  id: ProviderId;
+  id: StudioProviderId;
   label: string;
   /** Cheap authenticated call to check the key; `detail` is shown to the user (e.g. balance). */
   verifyKey(): Promise<{ detail?: string }>;

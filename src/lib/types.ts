@@ -1,4 +1,4 @@
-import type { ProviderId, Ratio, Resolution } from "./models";
+import type { Ratio, Resolution, StudioProviderId } from "./models";
 
 export type GenerationMode = "frames" | "references";
 
@@ -58,7 +58,7 @@ export const TERMINAL_STATUSES: TaskStatus[] = ["succeeded", "failed", "cancelle
 export interface Generation {
   id: string;
   /** Missing on records created before providers existed (= modelark). */
-  provider?: ProviderId;
+  provider?: StudioProviderId;
   taskId: string;
   status: TaskStatus;
   /** 0–100 while in flight, when the provider reports it. */

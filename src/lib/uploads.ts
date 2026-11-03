@@ -60,11 +60,11 @@ export type AssetSource = "upload" | "generated";
 export interface AssetItem extends UploadItem {
   source: AssetSource;
   /** For generated assets: what made it. */
-  generation?: { id: string; tab: "video" | "image"; model: string; prompt: string };
+  generation?: { id: string; tab: "video" | "image" | "fal"; model: string; prompt: string };
 }
 
 /** Keys of assets the app lists and lets users reference (not thumbnails or old `refs/`). */
-export const isAssetKey = (key: string) => /^(uploads|videos|images)\/[\w./-]+$/.test(key) && !key.includes("..");
+export const isAssetKey = (key: string) => /^(uploads|videos|images|fal)\/[\w./-]+$/.test(key) && !key.includes("..");
 
 /** Stable same-origin URLs; the server redirects to a short-lived signed R2 URL. */
 export const assetFileUrl = (key: string, opts: { thumb?: boolean; download?: boolean } = {}) =>

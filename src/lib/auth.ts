@@ -8,7 +8,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
-import type { ProviderId } from "./models";
+import { isStudioProvider, type StudioProviderId } from "./models";
 import { randomToken, sha256 } from "./crypto";
 import { env, first, run } from "./db";
 
@@ -23,7 +23,7 @@ export interface User {
   email: string;
   name: string | null;
   avatarUrl: string | null;
-  activeProvider: ProviderId | null;
+  activeProvider: StudioProviderId | null;
 }
 
 interface UserRow {
@@ -31,7 +31,7 @@ interface UserRow {
   email: string;
   name: string | null;
   avatar_url: string | null;
-  active_provider: ProviderId | null;
+  active_provider: string | null;
 }
 
 const toUser = (r: UserRow): User => ({
@@ -39,7 +39,8 @@ const toUser = (r: UserRow): User => ({
   email: r.email,
   name: r.name,
   avatarUrl: r.avatar_url,
-  activeProvider: r.active_provider,
+  // fal is a key, not a studio provider. An old or unexpected value is treated as unset.
+  activeProvider: r.active_provider && isStudioProvider(r.active_provider) ? r.active_provider : null,
 });
 
 export class AuthError extends Error {
@@ -73,7 +74,7 @@ export async function upsertUser(profile: { email: string; name?: string; avatar
   return toUser((await first<UserRow>("SELECT * FROM users WHERE email = ?", email))!);
 }
 
-export async function setActiveProvider(userId: string, provider: ProviderId | null) {
+export async function setActiveProvider(userId: string, provider: StudioProviderId | null) {
   await run("UPDATE users SET active_provider = ? WHERE id = ?", provider, userId);
 }
 

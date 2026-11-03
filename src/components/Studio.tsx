@@ -7,13 +7,14 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
+import { FalStudio, type FalTabHandle } from "./FalStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
 import { useLibrary, type LibraryItem } from "./library";
 import { UserMenu } from "./UserMenu";
 import { VideoStudio, type StudioTabHandle } from "./VideoStudio";
 
-const TABS = ["video", "image", "assets"] as const;
+const TABS = ["video", "image", "fal", "assets"] as const;
 type Tab = (typeof TABS)[number];
 
 // The tab lives in the URL hash (#image, #assets), so reload and Back keep it.
@@ -30,6 +31,7 @@ export function Studio() {
   const library = useLibrary();
   const video = useRef<StudioTabHandle>(null);
   const image = useRef<StudioTabHandle>(null);
+  const fal = useRef<FalTabHandle>(null);
 
   const loadMe = useCallback(() => apiJson<Me>("/api/me").then(setMe), []);
   useEffect(() => {
@@ -81,6 +83,9 @@ export function Studio() {
           }}
         />
       </div>
+      <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
+        <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
+      </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio
           me={me}
@@ -91,6 +96,7 @@ export function Studio() {
           onDeleted={() => {
             video.current?.reload();
             image.current?.reload();
+            fal.current?.reload();
             void loadMe();
           }}
         />

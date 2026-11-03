@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/models";
+import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/models";
 import { apiJson, type Me } from "./api";
 
-const ORDER: ProviderId[] = ["argolink", "modelark"];
+const ORDER: ProviderId[] = ["argolink", "modelark", "fal"];
 
 export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
   useEffect(() => {
@@ -18,7 +18,7 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
       <div
         role="dialog"
         aria-label="API keys"
-        className="m-auto w-full max-w-lg rounded-2xl border border-white/10 bg-panel p-6"
+        className="m-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-panel p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
@@ -118,7 +118,7 @@ function ProviderRow({
         </div>
         {saved && (
           <div className="flex shrink-0 gap-1.5 text-xs">
-            {!active && (
+            {isStudioProvider(provider) && !active && (
               <button
                 onClick={activate}
                 disabled={busy}
