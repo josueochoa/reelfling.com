@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { shouldCancelFal } from "../falTypes";
+import { shouldCancelFal, shouldPollFal, storeFailureUpdate } from "../falTypes";
 import {
   cancelFal,
   collectOutputs,
@@ -220,6 +220,31 @@ describe("fal queue client", () => {
     assert.equal(shouldCancelFal("running"), true);
     assert.equal(shouldCancelFal("succeeded"), false);
     assert.equal(shouldCancelFal("failed"), false);
+  });
+
+  it("a failed output download fails the job and the tab stops polling", async () => {
+    install((call) => {
+      assert.equal(call.authorization, null);
+      assert.equal(call.url.includes(KEY), false);
+      return new Response("gone", { status: 404 });
+    });
+    let reason = "";
+    await assert.rejects(() => fetchFalOutput("https://v3.fal.media/files/missing.png"), (err: Error) => {
+      reason = err.message;
+      assert.match(reason, /Couldn't download fal output \(404\)/);
+      assert.equal(reason.includes(KEY), false);
+      return true;
+    });
+    const failed = storeFailureUpdate(reason);
+    assert.equal(failed.status, "failed");
+    assert.match(failed.error, /Couldn't save the result/);
+    assert.match(failed.error, /404/);
+    assert.equal(failed.error.includes(KEY), false);
+    // Succeeded-but-not-stored is not polled either: that was the 4s re-download loop.
+    assert.equal(shouldPollFal(failed.status), false);
+    assert.equal(shouldPollFal("succeeded"), false);
+    assert.equal(shouldPollFal("queued"), true);
+    assert.equal(shouldPollFal("running"), true);
   });
 
   it("cancels with PUT on the URL fal returned", async () => {

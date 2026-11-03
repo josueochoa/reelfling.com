@@ -3,7 +3,7 @@
 // Any fal endpoint: an id plus a JSON input. Field errors from a 422 render here, inline.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { FalFieldError, FalJobView } from "@/lib/falTypes";
+import { shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
 import { assetFileUrl } from "@/lib/uploads";
 import { api, type Me } from "./api";
 
@@ -12,8 +12,7 @@ export interface FalTabHandle {
 }
 
 const POLL_MS = 4000;
-const needsPoll = (job: FalJobView) =>
-  job.status === "queued" || job.status === "running" || (job.status === "succeeded" && !job.stored);
+const needsPoll = (job: FalJobView) => shouldPollFal(job.status);
 
 const STATUS_LABEL: Record<FalJobView["status"], string> = {
   queued: "Queued",
@@ -103,12 +102,16 @@ export function FalStudio({
   }, [reload]);
 
   useEffect(() => {
-    const timer = setInterval(async () => {
+    const timer = setInterval(() => {
       const pending = jobsRef.current.filter(needsPoll);
-      await Promise.all(
+      void Promise.all(
         pending.map(async (job) => {
-          const res = await api(`/api/fal/${job.id}`);
-          if (res.ok) upsert(await res.json());
+          try {
+            const res = await api(`/api/fal/${job.id}`);
+            if (res.ok) upsert(await res.json());
+          } catch {
+            // A 401 sends the user to /login. Anything else must not reject the timer.
+          }
         }),
       );
     }, POLL_MS);
@@ -156,7 +159,7 @@ export function FalStudio({
   async function remove(job: FalJobView) {
     setJobs((prev) => prev.filter((item) => item.id !== job.id));
     const res = await api(`/api/fal/${job.id}`, { method: "DELETE" });
-    if (!res.ok && res.status !== 204) reload();
+    if (!res.ok) reload();
   }
 
   return (
@@ -200,7 +203,7 @@ export function FalStudio({
                     Delete
                   </button>
                 </div>
-                {job.status === "failed" && (
+                {(job.status === "failed" || job.error) && (
                   <div className="mt-3 space-y-1">
                     <FieldErrors fields={job.fields} />
                     {job.error && !job.fields?.length && <p className="text-xs text-red-300">{job.error}</p>}

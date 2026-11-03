@@ -7,6 +7,20 @@ export function shouldCancelFal(status: FalJobStatus) {
   return status === "queued" || status === "running";
 }
 
+/**
+ * The open tab polls only while fal is still working. A succeeded job whose files
+ * failed to copy is marked failed instead, so this never stays true forever.
+ */
+export function shouldPollFal(status: FalJobStatus) {
+  return status === "queued" || status === "running";
+}
+
+/** One failed copy ends the job. The tab and the cron both stop. */
+export function storeFailureUpdate(message: string): { status: "failed"; error: string } {
+  const reason = message.trim() || "The download failed.";
+  return { status: "failed", error: `Couldn't save the result. ${reason}` };
+}
+
 /** One field from a fal 422 (`detail[].loc` / `detail[].msg`). */
 export interface FalFieldError {
   field: string;

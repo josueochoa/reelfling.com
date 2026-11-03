@@ -2,7 +2,13 @@
 // fal returned, and the files copied into the user's bucket. The API key is never stored
 // on the row (see redactSecrets).
 
-import { shouldCancelFal, type FalFieldError, type FalJobStatus, type FalJobView } from "./falTypes";
+import {
+  shouldCancelFal,
+  storeFailureUpdate,
+  type FalFieldError,
+  type FalJobStatus,
+  type FalJobView,
+} from "./falTypes";
 import { all, first, run } from "./db";
 import { getCredentials } from "./keys";
 import {
@@ -15,7 +21,7 @@ import {
   type FalOutput,
 } from "./providers/fal";
 import { ProviderError } from "./providers/types";
-import { deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
+import { assertStorageAvailable, deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
 
 export interface FalJob {
@@ -214,6 +220,8 @@ async function storeOutputs(userId: string, job: FalJob) {
   const outputs: FalJob["outputs"] = [];
   for (const [i, file] of files.entries()) {
     const source = await fetchFalOutput(file.url);
+    const bytes = Number(source.headers.get("content-length"));
+    await assertStorageAvailable(userId, Number.isFinite(bytes) && bytes > 0 ? bytes : 0);
     const contentType = contentTypeOf(file, source.headers.get("content-type"));
     const ext = EXT[contentType] ?? typeFromUrl(file.url)?.split("/")[1] ?? "bin";
     const asset = await putAsset(userId, {
@@ -224,7 +232,7 @@ async function storeOutputs(userId: string, job: FalJob) {
     });
     outputs.push({ key: asset.key, contentType });
   }
-  await updateFalJob(userId, job.id, { outputs, stored: true });
+  await updateFalJob(userId, job.id, { outputs, stored: true, error: undefined });
 }
 
 /** Pulls the latest queue state and, once it succeeds, copies outputs into R2. */
@@ -249,8 +257,33 @@ export async function syncFalJob(userId: string, id: string): Promise<FalJob | u
   }
 
   if (job.status === "succeeded" && !job.stored) {
-    await storeOutputs(userId, job).catch((e) => console.error(`[fal ${id}]`, (e as Error).message));
+    try {
+      await storeOutputs(userId, job);
+    } catch (e) {
+      // One failure is terminal. Retrying here is what made the open tab download
+      // every output again every few seconds, and the cron every minute after that.
+      const message = (e as Error).message || "The download failed.";
+      console.error(`[fal ${id}]`, message);
+      return updateFalJob(userId, id, storeFailureUpdate(message));
+    }
     return getFalJob(userId, id);
   }
   return job;
+}
+
+/** Succeeded jobs whose files were never saved, past the window where a copy could still work. */
+export async function failAbandonedFalCopies(maxAgeMs: number) {
+  const now = Date.now();
+  const res = await run(
+    `UPDATE fal_jobs
+     SET data = json_set(data, '$.status', 'failed', '$.error', ?, '$.updatedAt', ?, '$.completedAt', ?)
+     WHERE json_extract(data, '$.status') = 'succeeded'
+       AND json_extract(data, '$.stored') IS NOT 1
+       AND created_at < ?`,
+    "Couldn't save the result before the file expired.",
+    now,
+    now,
+    now - maxAgeMs,
+  );
+  return res.meta.changes;
 }

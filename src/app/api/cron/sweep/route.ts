@@ -1,4 +1,4 @@
-import { syncFalJob, unfinishedFalJobs } from "@/lib/falJobs";
+import { failAbandonedFalCopies, syncFalJob, unfinishedFalJobs } from "@/lib/falJobs";
 import { failStaleImageJobs } from "@/lib/images";
 import { deleteOrphanUploads } from "@/lib/storage";
 import { syncGeneration, unfinishedGenerations } from "@/lib/store";
@@ -45,6 +45,10 @@ export async function POST(request: Request) {
     console.error("[sweep image jobs]", e);
     return 0;
   });
+  const abandonedFalCopies = await failAbandonedFalCopies(MAX_AGE_MS).catch((e) => {
+    console.error("[sweep fal copies]", (e as Error).message);
+    return 0;
+  });
   const falPending = await unfinishedFalJobs(BATCH, MAX_AGE_MS);
   let falFailed = 0;
   for (let i = 0; i < falPending.length; i += CONCURRENCY) {
@@ -64,5 +68,6 @@ export async function POST(request: Request) {
     staleImageJobs,
     falChecked: falPending.length,
     falFailed,
+    abandonedFalCopies,
   });
 }
