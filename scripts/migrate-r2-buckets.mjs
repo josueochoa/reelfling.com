@@ -12,9 +12,6 @@
 // buckets and write access to the new one. --local / --persist-to go to `wrangler d1 execute`.
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { AwsClient } from "aws4fetch";
 
 const args = process.argv.slice(2);
@@ -39,18 +36,12 @@ const client = new AwsClient({
 const sqlString = (s) => `'${String(s).replaceAll("'", "''")}'`;
 
 function d1(sql) {
-  const dir = mkdtempSync(join(tmpdir(), "d1-"));
-  const file = join(dir, "q.sql");
-  writeFileSync(file, sql);
-  try {
-    const out = execFileSync("npx", ["wrangler", "d1", "execute", "DB", ...d1Args, "--json", "--file", file], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "inherit"],
-    });
-    return JSON.parse(out)[0]?.results ?? [];
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  // --command, not --file: with --remote, --file prints upload progress before the JSON.
+  const out = execFileSync("npx", ["wrangler", "d1", "execute", "DB", ...d1Args, "--json", "--command", sql], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  return JSON.parse(out)[0]?.results ?? [];
 }
 
 /** Server-side copy within the account: no bytes pass through here. */
