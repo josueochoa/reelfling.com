@@ -1,6 +1,6 @@
 import { authMode, errorResponse, requireUser, setActiveProvider, signOutUrl } from "@/lib/auth";
 import { listKeys } from "@/lib/keys";
-import { isStudioProvider, type ProviderId } from "@/lib/models";
+import { isStudioProvider, type ProviderId } from "@/lib/registry";
 import { storageUsage } from "@/lib/storage";
 
 /** The signed-in user, their saved keys (masked), the provider they generate with, storage used and how to sign out. */

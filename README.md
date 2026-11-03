@@ -30,7 +30,7 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 ## Tabs
 
 - **Video**: Seedance (see below).
-- **Image**: Nano Banana 2.1 and GPT Image 2.5 Sunburst through ArgoLink's images API (needs an ArgoLink key). Pick a ratio (or Auto, which matches the first reference image), resolution (1K/2K/4K), quality (GPT only) and 1–4 images; reference images come from Uploads and are mentioned as `@Image 1`. Models and prices are in `src/lib/imageModels.ts`.
+- **Image**: Nano Banana 2.1 and GPT Image 2.5 Sunburst through ArgoLink's images API (needs an ArgoLink key). Pick a ratio (or Auto, which matches the first reference image), resolution (1K/2K/4K), quality (when the model offers it) and 1–4 images; reference images come from Uploads and are mentioned as `@Image 1`. Models, capabilities and price formulas are in `src/lib/registry`.
 
 - **Assets**: everything in the user's bucket in one place: generated videos and images, and uploads. Filter by type (sidebar, with counts and storage used), source (All / Generated / Uploaded), model and prompt/name; grouped by day, with bulk select, download and delete. Any asset can be sent to the Image or Video tab as a reference, generated ones included. Deleting a generated video deletes its generation; deleting a generated image removes it from its generation (which goes with its last image).
 
@@ -52,7 +52,7 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 | Seed / watermark / fixed camera | yes | no (rejected upstream, so hidden) |
 | Continue from last frame | yes | no |
 | Progress % | no | yes |
-| Cost estimate in UI | no | yes (from ArgoLink's per-second prices) |
+| Cost estimate in UI | yes (token estimate from BytePlus's published formula) | yes (per-second prices) |
 
 ## Storage
 
@@ -76,7 +76,7 @@ Queue   ──► /api/images/run             one image job per message (worker.
 Cron    ──► /api/cron/sweep             every minute (worker.ts): finish unwatched generations, fail stuck image jobs
 ```
 
-- `src/lib/models.ts`: model catalog (IDs, ratios, resolutions, durations, audio/frames/reference limits). **Edit this file to add or update models.** The UI and the server validation both read from it.
+- `src/lib/registry/`: one model catalog for video and image. Each entry has a family, task, provider routes (provider, endpoint, input mapper) and capabilities. ModelArk and ArgoLink are hand-written in `hand.ts`. `npm run catalog:sync` regenerates the fal and OpenRouter JSON from the live catalogs (`FAL_KEY` / `OPENROUTER_API_KEY` are optional and never written). The UI and the server validation both read from the registry.
 - `src/lib/providers/`: one adapter per provider (`modelark.ts`, `argolink.ts`) behind a common `VideoProvider` interface. Statuses are normalized to `queued/running/succeeded/failed`. The ArgoLink adapter uploads local images through `/v1/media/uploads`, because ArgoLink only accepts HTTPS media.
 - `src/lib/auth.ts`, `google.ts`, `keys.ts`, `crypto.ts`: Access JWT verification / Google sessions, encrypted keys.
 - `src/lib/db.ts`: the Worker env and D1 helpers. Schema: `migrations/`.
@@ -88,7 +88,7 @@ Cron    ──► /api/cron/sweep             every minute (worker.ts): finish u
 ### Modes
 
 - **Frames**: text-to-video, or image-to-video with a start frame and an optional end frame.
-- **References**: images, videos and audio in one box, as blocks in any order. They're mentioned in the prompt as `@Image 1`, `@Video 1`, `@Audio 1`, numbered per kind in the order shown, and the numbers follow when you reorder or remove blocks. Limits per model are in `models.ts`, and file rules in `src/lib/uploads.ts`:
+- **References**: images, videos and audio in one box, as blocks in any order. They're mentioned in the prompt as `@Image 1`, `@Video 1`, `@Audio 1`, numbered per kind in the order shown, and the numbers follow when you reorder or remove blocks. Limits per model are in the registry, and file rules in `src/lib/uploads.ts`:
   - images: JPEG/PNG up to 20 MB (other formats are converted to JPEG in the browser);
   - video: MP4/MOV up to 100 MB, 2–30 s;
   - audio: MP3/WAV up to 15 MB, 2–30 s.

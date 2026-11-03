@@ -2,16 +2,11 @@
 // Docs: https://docs.byteplus.com/en/docs/ModelArk (Video Generation API)
 
 import type { ProviderCredentials } from "../keys";
-import type { GenerateRequest, TaskStatus } from "../types";
+import { buildModelArkVideo } from "../registry/bodies";
+import type { TaskStatus } from "../types";
 import { ProviderError, type ProviderFactory } from "./types";
 
 const DEFAULT_BASE_URL = "https://ark.ap-southeast.bytepluses.com/api/v3";
-
-type ContentItem =
-  | { type: "text"; text: string }
-  | { type: "image_url"; image_url: { url: string }; role?: "first_frame" | "last_frame" | "reference_image" }
-  | { type: "video_url"; video_url: { url: string }; role: "reference_video" }
-  | { type: "audio_url"; audio_url: { url: string }; role: "reference_audio" };
 
 interface ArkTask {
   id: string;
@@ -44,36 +39,7 @@ async function ark<T>(creds: ProviderCredentials, path: string, init?: RequestIn
   return body as T;
 }
 
-export function buildTaskBody(req: GenerateRequest) {
-  const content: ContentItem[] = [];
-  if (req.prompt.trim()) content.push({ type: "text", text: req.prompt.trim() });
-
-  if (req.mode === "frames") {
-    if (req.firstFrame) content.push({ type: "image_url", image_url: { url: req.firstFrame }, role: "first_frame" });
-    if (req.firstFrame && req.lastFrame)
-      content.push({ type: "image_url", image_url: { url: req.lastFrame }, role: "last_frame" });
-  } else {
-    for (const url of req.referenceImages ?? [])
-      content.push({ type: "image_url", image_url: { url }, role: "reference_image" });
-    for (const url of req.referenceVideos ?? [])
-      content.push({ type: "video_url", video_url: { url }, role: "reference_video" });
-    for (const url of req.referenceAudios ?? [])
-      content.push({ type: "audio_url", audio_url: { url }, role: "reference_audio" });
-  }
-
-  return {
-    model: req.model,
-    content,
-    ratio: req.ratio,
-    resolution: req.resolution,
-    duration: req.duration,
-    watermark: req.watermark ?? false,
-    ...(req.generateAudio !== undefined && { generate_audio: req.generateAudio }),
-    ...(req.seed !== undefined && { seed: req.seed }),
-    ...(req.cameraFixed && { camera_fixed: true }),
-    return_last_frame: true,
-  };
-}
+export const buildTaskBody = buildModelArkVideo;
 
 export const modelArk: ProviderFactory = (creds) => ({
   id: "modelark",

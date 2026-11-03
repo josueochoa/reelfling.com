@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/models";
+import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { apiJson, type Me } from "./api";
 
 const ORDER: ProviderId[] = ["argolink", "modelark", "fal"];

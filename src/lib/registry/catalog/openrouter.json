@@ -1,0 +1,2048 @@
+{
+  "docs": "https://openrouter.ai/docs/api/api-reference/video-generation/list-all-video-generation-models",
+  "models": [
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 3
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "9:21"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "HappyHorse 1.0 is a video generation model from Alibaba. It generates short videos from a text prompt, a single starting image, or a set of reference images, with output up...",
+      "family": "Alibaba",
+      "group": "video",
+      "id": "openrouter:alibaba/happyhorse-1.0",
+      "name": "Alibaba: HappyHorse 1.0",
+      "price": {
+        "byResolution": {
+          "1080p": 0.1694,
+          "720p": 0.0988
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/happyhorse-1.0",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 3
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "21:9",
+          "9:21"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "HappyHorse 1.1 is a video generation model from Alibaba. It generates short videos from a text prompt, a single starting image, or a set of reference images, with output up...",
+      "family": "Alibaba",
+      "group": "video",
+      "id": "openrouter:alibaba/happyhorse-1.1",
+      "name": "Alibaba: HappyHorse 1.1",
+      "price": {
+        "byResolution": {
+          "1080p": 0.1278,
+          "720p": 0.0988
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/happyhorse-1.1",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 10,
+          "min": 5,
+          "options": [
+            5,
+            10
+          ]
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Alibaba's most advanced video generation model, supporting over 10 visual creation capabilities in a unified system. Wan 2.6 generates 1080p video at 24fps from text, images, reference videos, or audio,...",
+      "family": "Alibaba",
+      "group": "video",
+      "id": "openrouter:alibaba/wan-2.6",
+      "name": "Alibaba: Wan 2.6",
+      "price": {
+        "byResolution": {
+          "1080p": 0.12,
+          "480p": 0.04,
+          "720p": 0.08
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-2.6",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 10,
+          "min": 2
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan 2.7 is a video generation model from Alibaba. It supports text-to-video, image-to-video with first and last frame control, and reference-to-video, where multiple reference images guide the style and content...",
+      "family": "Alibaba",
+      "group": "video",
+      "id": "openrouter:alibaba/wan-2.7",
+      "name": "Alibaba: Wan 2.7",
+      "price": {
+        "byResolution": {
+          "*": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-2.7",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 2
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan 3.0 is a video generation model from Alibaba for text-to-video, image-to-video, and reference-guided video generation. It produces 480p, 720p, or 1080p video with durations from 2 to 30 seconds.",
+      "family": "Alibaba",
+      "group": "video",
+      "id": "openrouter:alibaba/wan-3.0",
+      "name": "Alibaba: Wan 3.0",
+      "price": {
+        "byResolution": {
+          "1080p": 0.2,
+          "480p": 0.05,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-3.0",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 2
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan 3.0 Prime is a fast-mode variant of [Wan 3.0](https://openrouter.ai/alibaba/wan-3.0) from Alibaba. It supports text-to-video and first-frame image-to-video generation.",
+      "family": "Alibaba",
+      "group": "video",
+      "id": "openrouter:alibaba/wan-3.0-prime",
+      "name": "Alibaba: Wan 3.0 Prime",
+      "price": {
+        "byResolution": {
+          "1080p": 0.28,
+          "480p": 0.068,
+          "720p": 0.14
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-3.0-prime",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 20,
+          "min": 5
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p",
+          "2K",
+          "4K"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "FLUX.3 Video is a video generation model from Black Forest Labs. It supports text-to-video, image-guided generation with opening and closing keyframes, and video continuation workflows, making it suited for controlled...",
+      "family": "Black Forest Labs",
+      "group": "video",
+      "id": "openrouter:black-forest-labs/flux-3-video",
+      "name": "Black Forest Labs: FLUX 3 Video",
+      "price": {
+        "byResolution": {
+          "*": 0.17,
+          "1080p": 0.29,
+          "2K": 0.28,
+          "4K": 0.41,
+          "720p": 0.17
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "black-forest-labs/flux-3-video",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "FLUX Video Edit [fast] takes a source video and an edit prompt and returns a precisely edited video. Add, remove, or replace objects and characters, rebuild the setting, edit on-screen...",
+      "family": "Black Forest Labs",
+      "group": "video",
+      "id": "openrouter:black-forest-labs/flux-video-edit",
+      "name": "Black Forest Labs: FLUX Video Edit",
+      "price": {
+        "byResolution": {
+          "*": 0.03
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "black-forest-labs/flux-video-edit",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "v2v-edit",
+      "tasks": [
+        "v2v-edit"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "FLUX Video Upscale is a video upscaling model from Black Forest Labs. It enlarges a single source video by 1.5× to 3× while preserving its duration, with an optional prompt...",
+      "family": "Black Forest Labs",
+      "group": "video",
+      "id": "openrouter:black-forest-labs/flux-video-upscale",
+      "name": "Black Forest Labs: FLUX Video Upscale",
+      "price": {
+        "perSecond": true,
+        "type": "per_megapixel",
+        "usd": 0.035
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "black-forest-labs/flux-video-upscale",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "upscale",
+      "tasks": [
+        "upscale"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 12,
+          "min": 4
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "9:21",
+          "4:3",
+          "16:9",
+          "21:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": true
+      },
+      "description": "ByteDance's next-generation audio-visual generation model with a 4.5B parameter Dual-Branch Diffusion Transformer architecture. Seedance 1.5 Pro generates video and audio simultaneously in a single unified pass — eliminating the timing...",
+      "family": "ByteDance",
+      "group": "video",
+      "id": "openrouter:bytedance/seedance-1-5-pro",
+      "name": "ByteDance: Seedance 1.5 Pro",
+      "price": {
+        "byResolution": {
+          "1080p": 0.0000012,
+          "480p": 0.0000012,
+          "720p": 0.0000012
+        },
+        "fps": 24,
+        "pixels": {
+          "1080p": {
+            "height": 1080,
+            "width": 1920
+          },
+          "480p": {
+            "height": 480,
+            "width": 864
+          },
+          "720p": {
+            "height": 720,
+            "width": 1280
+          }
+        },
+        "type": "tokens",
+        "usdPerToken": 0.0000012
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedance-1-5-pro",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 4
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9",
+          "21:9",
+          "9:21"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p",
+          "4K"
+        ],
+        "seed": true,
+        "watermark": true
+      },
+      "description": "Seedance 2.0 is a video generation model from ByteDance. It supports text-to-video, image-to-video with first and last frame control, and multimodal reference-to-video. It is particularly strong at preserving character consistency,...",
+      "family": "ByteDance",
+      "group": "video",
+      "id": "openrouter:bytedance/seedance-2.0",
+      "name": "ByteDance: Seedance 2.0",
+      "price": {
+        "byResolution": {
+          "1080p": 0.0000077,
+          "480p": 0.000007,
+          "4K": 0.000004,
+          "720p": 0.000007
+        },
+        "fps": 24,
+        "pixels": {
+          "1080p": {
+            "height": 1080,
+            "width": 1920
+          },
+          "480p": {
+            "height": 480,
+            "width": 864
+          },
+          "4K": {
+            "height": 2160,
+            "width": 3840
+          },
+          "720p": {
+            "height": 720,
+            "width": 1280
+          }
+        },
+        "type": "tokens",
+        "usdPerToken": 0.000007
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedance-2.0",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 4
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9",
+          "21:9",
+          "9:21"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "seed": true,
+        "watermark": true
+      },
+      "description": "Seedance 2.0 Fast is a video generation model from ByteDance. It supports text-to-video, image-to-video with first and last frame control, and multimodal reference-to-video. It prioritizes generation speed and lower cost...",
+      "family": "ByteDance",
+      "group": "video",
+      "id": "openrouter:bytedance/seedance-2.0-fast",
+      "name": "ByteDance: Seedance 2.0 Fast",
+      "price": {
+        "byResolution": {
+          "480p": 0.0000042,
+          "720p": 0.0000042
+        },
+        "fps": 24,
+        "pixels": {
+          "480p": {
+            "height": 480,
+            "width": 864
+          },
+          "720p": {
+            "height": 720,
+            "width": 1280
+          }
+        },
+        "type": "tokens",
+        "usdPerToken": 0.0000042
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedance-2.0-fast",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 4
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9",
+          "21:9",
+          "9:21"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "seed": true,
+        "watermark": true
+      },
+      "description": "Seedance 2.0 Mini is a video generation model from ByteDance. It supports text-to-video, image-to-video with first and last frame control, and multimodal reference-to-video with image, video, and audio inputs. It...",
+      "family": "ByteDance",
+      "group": "video",
+      "id": "openrouter:bytedance/seedance-2.0-mini",
+      "name": "ByteDance: Seedance 2.0 Mini",
+      "price": {
+        "byResolution": {
+          "480p": 0.0000035,
+          "720p": 0.0000035
+        },
+        "fps": 24,
+        "pixels": {
+          "480p": {
+            "height": 480,
+            "width": 864
+          },
+          "720p": {
+            "height": 720,
+            "width": 1280
+          }
+        },
+        "type": "tokens",
+        "usdPerToken": 0.0000035
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedance-2.0-mini",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 4
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16",
+          "21:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "seed": true,
+        "watermark": true
+      },
+      "description": "Seedance 2.5 is a video generation model from ByteDance. It is suited for long-form storytelling, multimodal reference-based generation, video editing, and video extension. It supports first-frame and first-and-last-frame control, up...",
+      "family": "ByteDance",
+      "group": "video",
+      "id": "openrouter:bytedance/seedance-2.5",
+      "name": "ByteDance: Seedance 2.5",
+      "price": {
+        "byResolution": {
+          "480p": 0.0000107,
+          "720p": 0.0000107
+        },
+        "fps": 24,
+        "pixels": {
+          "480p": {
+            "height": 480,
+            "width": 864
+          },
+          "720p": {
+            "height": 720,
+            "width": 1280
+          }
+        },
+        "type": "tokens",
+        "usdPerToken": 0.0000107
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedance-2.5",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 6,
+          "max": 8,
+          "min": 4,
+          "options": [
+            4,
+            6,
+            8
+          ]
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p",
+          "4K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Google's state-of-the-art video generation model, built for maximum visual fidelity in final production cuts. Veo 3.1 generates high-quality 1080p video from text or image prompts with native synchronized audio —...",
+      "family": "Google",
+      "group": "video",
+      "id": "openrouter:google/veo-3.1",
+      "name": "Google: Veo 3.1",
+      "price": {
+        "byResolution": {
+          "*": 0.2,
+          "4K": 0.4
+        },
+        "byResolutionWithAudio": {
+          "*": 0.4,
+          "4K": 0.6
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/veo-3.1",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 6,
+          "max": 8,
+          "min": 4,
+          "options": [
+            4,
+            6,
+            8
+          ]
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p",
+          "4K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Google's mid-tier video generation model balancing speed and quality. Veo 3.1 Fast generates high-quality video from text or image prompts with native synchronized audio, offering faster turnaround than Veo 3.1...",
+      "family": "Google",
+      "group": "video",
+      "id": "openrouter:google/veo-3.1-fast",
+      "name": "Google: Veo 3.1 Fast",
+      "price": {
+        "byResolution": {
+          "*": 0.1,
+          "4K": 0.25,
+          "720p": 0.08
+        },
+        "byResolutionWithAudio": {
+          "*": 0.12,
+          "4K": 0.3,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/veo-3.1-fast",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 6,
+          "max": 8,
+          "min": 4,
+          "options": [
+            4,
+            6,
+            8
+          ]
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Google's most cost-effective video generation model, designed for high-volume applications and rapid iteration. Veo 3.1 Lite generates 720p and 1080p video from text or image prompts with native synchronized audio...",
+      "family": "Google",
+      "group": "video",
+      "id": "openrouter:google/veo-3.1-lite",
+      "name": "Google: Veo 3.1 Lite",
+      "price": {
+        "byResolution": {
+          "*": 0.05,
+          "720p": 0.03
+        },
+        "byResolutionWithAudio": {
+          "*": 0.08,
+          "720p": 0.05
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/veo-3.1-lite",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "HeyGen: Avatar IV is an image-to-video model that animates a single photo into an expressive, lip-synced talking-head video. Rather than only matching mouth shapes to words, it interprets the vocal...",
+      "family": "HeyGen",
+      "group": "video",
+      "id": "openrouter:heygen/avatar-iv",
+      "name": "HeyGen: Avatar IV",
+      "price": {
+        "byResolution": {
+          "*": 0.05
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "heygen/avatar-iv",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "avatar",
+      "tasks": [
+        "avatar"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 5
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "768p",
+          "1080p",
+          "2K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "HeyGen Video is a general-purpose video generation model from HeyGen. It renders short clips with synthesized audio (dialogue, ambience, and sound effects) in a single call, working from a text...",
+      "family": "HeyGen",
+      "group": "video",
+      "id": "openrouter:heygen/heygen-video-1",
+      "name": "HeyGen: HeyGen Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.1,
+          "2K": 0.1,
+          "480p": 0.02,
+          "768p": 0.036
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "heygen/heygen-video-1",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 3
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling v3.0 Pro is Kuaishou's premium video generation model, offering higher visual quality than the Standard tier. It supports text-to-video and image-to-video workflows, with first-frame and last-frame control for precise...",
+      "family": "Kling",
+      "group": "video",
+      "id": "openrouter:kwaivgi/kling-v3.0-pro",
+      "name": "Kling: Video v3.0 Pro",
+      "price": {
+        "byResolution": {
+          "*": 0.112,
+          "1080p": 0.112,
+          "480p": 0.112,
+          "720p": 0.112
+        },
+        "byResolutionWithAudio": {
+          "*": 0.168
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "kwaivgi/kling-v3.0-pro",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 3
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling v3.0 Standard is a video generation model from Kuaishou. It supports text-to-video and image-to-video workflows, with first-frame and last-frame control for guided scene composition. Clips range from 3 to...",
+      "family": "Kling",
+      "group": "video",
+      "id": "openrouter:kwaivgi/kling-v3.0-std",
+      "name": "Kling: Video v3.0 Standard",
+      "price": {
+        "byResolution": {
+          "*": 0.084,
+          "1080p": 0.084,
+          "480p": 0.084,
+          "720p": 0.084
+        },
+        "byResolutionWithAudio": {
+          "*": 0.126
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "kwaivgi/kling-v3.0-std",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 10,
+          "min": 5,
+          "options": [
+            5,
+            10
+          ]
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling Video O1 is a video generation model from Kuaishou. It supports text and image inputs with video output, enabling text-to-video and image-to-video workflows. It is suited for cinematic content...",
+      "family": "Kling",
+      "group": "video",
+      "id": "openrouter:kwaivgi/kling-video-o1",
+      "name": "Kling: Video O1",
+      "price": {
+        "byResolution": {
+          "*": 0.112
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "kwaivgi/kling-video-o1",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 6,
+          "max": 10,
+          "min": 6,
+          "options": [
+            6,
+            10
+          ]
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Hailuo 2.3 is a video generation model from MiniMax. It accepts text prompts and reference images as input and generates video output, supporting both text-to-video and image-to-video workflows. It is...",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "openrouter:minimax/hailuo-2.3",
+      "name": "MiniMax: Hailuo 2.3",
+      "price": {
+        "byResolution": {
+          "*": 0.0817
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/hailuo-2.3",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 5
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "2K"
+        ],
+        "seed": false,
+        "watermark": true
+      },
+      "description": "MiniMax H3 is a lightweight, open-weights video generation model from MiniMax. It is designed for precise multimodal editing and controlled content generation, including instruction-guided edits, text and brand rendering, and...",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "openrouter:minimax/hailuo-3",
+      "name": "MiniMax: H3",
+      "price": {
+        "byResolution": {
+          "*": 0.13
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/hailuo-3",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 5
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "768p",
+          "480p"
+        ],
+        "seed": false,
+        "watermark": true
+      },
+      "description": "MiniMax H3 Max is a video-generation model from MiniMax, jointly released with fal.ai. Derived through additional training from MiniMax H3, it is designed for faster text-to-video and image-to-video generation with...",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "openrouter:minimax/hailuo-3-max",
+      "name": "MiniMax: H3 Max",
+      "price": {
+        "byResolution": {
+          "*": 0.08,
+          "480p": 0.05,
+          "768p": 0.08
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/hailuo-3-max",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "4:3",
+          "3:2",
+          "1:1",
+          "2:3",
+          "3:4",
+          "9:16",
+          "21:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Runway Aleph 2.0 is an in-context video editing model from Runway. It applies text instructions and keyframe-guided edits across existing footage while preserving details that are not meant to change....",
+      "family": "Runway",
+      "group": "video",
+      "id": "openrouter:runway/aleph-2",
+      "name": "Runway: Aleph 2.0",
+      "price": {
+        "byResolution": {
+          "*": 0.28
+        },
+        "minimum": 56,
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "runway/aleph-2",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 10,
+          "min": 2
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Runway Gen-4.5 is a video generation model from Runway for text-to-video and image-to-video workflows. It is designed for cinematic scene creation with strong motion quality, visual fidelity, and prompt adherence....",
+      "family": "Runway",
+      "group": "video",
+      "id": "openrouter:runway/gen-4.5",
+      "name": "Runway: Gen-4.5",
+      "price": {
+        "byResolution": {
+          "*": 0.12
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "runway/gen-4.5",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 5,
+          "min": 3,
+          "options": [
+            3,
+            5
+          ]
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "TBC mischief 1 is the world's first neuron-derived video model from The Biological Computing Co. It supports image to video and is a fast and affordable way to bring ideas...",
+      "family": "TBC",
+      "group": "video",
+      "id": "openrouter:tbc/mischief-1",
+      "name": "TBC: mischief 1",
+      "price": {
+        "byResolution": {
+          "480p": 0.005,
+          "720p": 0.01
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "tbc/mischief-1",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 1
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Grok Imagine Video is SpaceXAI's fast, text-, image-, and reference-conditioned video generation model. It produces short videos (1–15 seconds, 24 fps) at 480p or 720p across seven aspect ratios -...",
+      "family": "SpaceXAI",
+      "group": "video",
+      "id": "openrouter:x-ai/grok-imagine-video",
+      "name": "SpaceXAI: Grok Imagine Video",
+      "price": {
+        "byResolution": {
+          "480p": 0.05,
+          "720p": 0.07
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "x-ai/grok-imagine-video",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 1
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Grok Imagine Video 1.5 is a video generation model from SpaceXAI. It creates videos from text prompts, with an optional starting image to guide the scene. It can direct subject...",
+      "family": "SpaceXAI",
+      "group": "video",
+      "id": "openrouter:x-ai/grok-imagine-video-1.5",
+      "name": "SpaceXAI: Grok Imagine Video 1.5",
+      "price": {
+        "byResolution": {
+          "1080p": 0.25,
+          "480p": 0.08,
+          "720p": 0.14
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "x-ai/grok-imagine-video-1.5",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 1
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Grok Imagine Video 1.5 Lite is a faster, lower-cost video generation model from SpaceXAI, distilled from [Grok Imagine Video 1.5](/x-ai/grok-imagine-video-1.5). It supports text-to-video and image-to-video, trading some quality for speed...",
+      "family": "SpaceXAI",
+      "group": "video",
+      "id": "openrouter:x-ai/grok-imagine-video-1.5-lite",
+      "name": "SpaceXAI: Grok Imagine Video 1.5 Lite",
+      "price": {
+        "byResolution": {
+          "1080p": 0.14,
+          "480p": 0.02,
+          "720p": 0.03
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "x-ai/grok-imagine-video-1.5-lite",
+          "mapper": "openrouter.video",
+          "provider": "openrouter"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v",
+        "i2v"
+      ]
+    }
+  ],
+  "source": "openrouter"
+}

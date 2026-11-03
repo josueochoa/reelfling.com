@@ -1,0 +1,550 @@
+{
+  "docs": "https://fal.ai/docs/platform-apis/v1/models",
+  "models": [
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 2,
+          "max": 30,
+          "min": 2
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 5,
+          "image": 0,
+          "total": 10,
+          "video": 5
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan 3.0 is the latest generation AI video model, delivering enhanced motion smoothness, superior scene fidelity, and greater visual coherence.",
+      "family": "Wan",
+      "group": "video",
+      "id": "fal:alibaba/wan-3.0/reference-to-video",
+      "name": "Wan 3.0",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-3.0/reference-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "ref2v",
+      "tasks": [
+        "ref2v"
+      ]
+    },
+    {
+      "capabilities": {},
+      "description": "Bria RMBG 2.0 enables seamless removal of backgrounds from images, ideal for professional editing tasks. Trained exclusively on licensed data for safe and risk-free commercial use. Model weights for commercial use are available here: https://share-eu1.hsforms.com/2GLpEVQqJTI2Lj7AMYwgfIwf4e04",
+      "family": "Bria",
+      "group": "tool",
+      "id": "fal:fal-ai/bria/background/remove",
+      "name": "Bria RMBG 2.0",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/bria/background/remove",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 4,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true
+      },
+      "description": "FLUX.1 [dev] is a 12 billion parameter flow transformer that generates high-quality images from text. It is suitable for personal and commercial use.",
+      "family": "FLUX.1",
+      "group": "image",
+      "id": "fal:fal-ai/flux/dev",
+      "name": "FLUX.1 [dev]",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/flux/dev",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image",
+      "tasks": [
+        "image"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 4,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 1,
+          "total": 1,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true
+      },
+      "description": "FLUX.1 Image-to-Image is a high-performance endpoint for the FLUX.1 [dev] model that enables rapid transformation of existing images, delivering high-quality style transfers and image modifications with the core FLUX capabilities.",
+      "family": "FLUX.1",
+      "group": "image",
+      "id": "fal:fal-ai/flux/dev/image-to-image",
+      "name": "FLUX.1 [dev]",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/flux/dev/image-to-image",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image-edit",
+      "tasks": [
+        "image-edit"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 1,
+          "image": 0,
+          "total": 1,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling AI Avatar v2 Standard: Endpoint for creating avatar videos with realistic humans, animals, cartoons, or stylized characters",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:fal-ai/kling-video/ai-avatar/v2/standard",
+      "name": "Kling AI Avatar v2 Standard",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/kling-video/ai-avatar/v2/standard",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "avatar",
+      "tasks": [
+        "avatar"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 1,
+          "video": 1
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Transfer movements from a reference video to any character image. Cost-effective mode for motion transfer, perfect for portraits and simple animations.",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:fal-ai/kling-video/v3/pro/motion-control",
+      "name": "Kling Video",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/kling-video/v3/pro/motion-control",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "motion",
+      "tasks": [
+        "motion"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 3
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling 3.0 Pro: Top-tier text-to-video with cinematic visuals, fluid motion, and native audio generation, with multi-shot support.",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:fal-ai/kling-video/v3/pro/text-to-video",
+      "name": "Kling Video v3 Text to Video [Pro]",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/kling-video/v3/pro/text-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "promptExpansion": false,
+        "seed": false
+      },
+      "description": "Generate speech from text prompts and different voices using the MiniMax Speech-2.8 HD model, which leverages advanced AI techniques to create high-quality text-to-speech.",
+      "family": "MiniMax",
+      "group": "speech",
+      "id": "fal:fal-ai/minimax/speech-2.8-hd",
+      "name": "MiniMax Speech 2.8 [HD]",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/minimax/speech-2.8-hd",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tts",
+      "tasks": [
+        "tts"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Generate video clips from your images using MiniMax Video model",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "fal:fal-ai/minimax/video-01/image-to-video",
+      "name": "MiniMax (Hailuo AI) Video 01",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/minimax/video-01/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 1,
+          "video": 1
+        },
+        "resolutions": [],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Upscale your videos using SeedVR2 with temporal consistency!",
+      "family": "SeedVR2",
+      "group": "video",
+      "id": "fal:fal-ai/seedvr/upscale/video",
+      "name": "SeedVR2",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/seedvr/upscale/video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "upscale",
+      "tasks": [
+        "upscale"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 1,
+          "image": 0,
+          "total": 2,
+          "video": 1
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "sync-3 most powerful lipsync model yet, featuring native visual intelligence for professional-quality video.",
+      "family": "sync-3",
+      "group": "video",
+      "id": "fal:fal-ai/sync-lipsync/v3",
+      "name": "sync-3 Lipsync",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/sync-lipsync/v3",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "lipsync",
+      "tasks": [
+        "lipsync"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 10,
+          "min": 1
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "580p",
+          "720p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan-2.2 text-to-video is a video model that generates high-quality videos with high visual quality and motion diversity from text prompts.",
+      "family": "Wan-2.2",
+      "group": "video",
+      "id": "fal:fal-ai/wan/v2.2-a14b/text-to-video",
+      "name": "Wan-2.2 Text-to-Video A14B",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/wan/v2.2-a14b/text-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 1
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "auto",
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 3,
+          "image": 0,
+          "total": 4,
+          "video": 1
+        },
+        "resolutions": [
+          "480P",
+          "768P",
+          "1080P",
+          "2K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "H3 Max Extend Video adds a text-guided continuation to an existing video. It supports prompt expansion, adjustable duration and aspect ratio, and output resolutions from 480p to 2K, returning either the full extended video or only the new footage.",
+      "family": "H3",
+      "group": "video",
+      "id": "fal:minimax/h3-max/extend-video",
+      "name": "H3 Max Extend Video",
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/h3-max/extend-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "extend",
+      "tasks": [
+        "extend"
+      ]
+    }
+  ],
+  "source": "fal"
+}

@@ -1,6 +1,6 @@
 import { errorResponse, requireUser, setActiveProvider } from "@/lib/auth";
 import { deleteKey, listKeys, savedKeyBody, saveKey } from "@/lib/keys";
-import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/models";
+import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { createProvider } from "@/lib/providers";
 import { verifyFalKey } from "@/lib/providers/fal";
 
