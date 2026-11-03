@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { VideoModel } from "@/lib/registry";
+import type { CatalogTool } from "@/lib/registry/availability";
 import { rememberModels } from "@/lib/registry/lookup";
 import { apiJson, setWorkspace, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
@@ -30,6 +31,7 @@ export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
   const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
+  const [tools, setTools] = useState<CatalogTool[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
 
@@ -46,10 +48,11 @@ export function Studio() {
     void loadMe();
   }, [loadMe]);
   useEffect(() => {
-    apiJson<{ models: VideoModel[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; tools?: CatalogTool[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
         setOpenRouterModels(body.models);
+        setTools(body.tools ?? []);
       })
       .catch(() => setOpenRouterModels([]));
   }, []);
@@ -94,6 +97,7 @@ export function Studio() {
           me={me}
           tab={tab}
           openRouterModels={openRouterModels}
+          tools={tools}
           onOpenKeys={openKeys}
           onChanged={loadMe}
         />
@@ -111,12 +115,14 @@ function WorkspaceView({
   me,
   tab,
   openRouterModels,
+  tools,
   onOpenKeys,
   onChanged,
 }: {
   me: Me;
   tab: Tab;
   openRouterModels: VideoModel[] | null;
+  tools: readonly CatalogTool[];
   onOpenKeys: () => void;
   onChanged: () => Promise<void>;
 }) {
@@ -133,7 +139,14 @@ function WorkspaceView({
   return (
     <>
       <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
-        <VideoStudio ref={video} me={me} library={library} onOpenKeys={onOpenKeys} openRouterModels={openRouterModels} />
+        <VideoStudio
+          ref={video}
+          me={me}
+          library={library}
+          onOpenKeys={onOpenKeys}
+          openRouterModels={openRouterModels}
+          tools={tools}
+        />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
         <ImageStudio

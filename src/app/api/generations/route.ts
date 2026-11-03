@@ -1,10 +1,11 @@
 import { errorResponse } from "@/lib/auth";
-import { openGenerationKey, runWithCap } from "@/lib/generationKey";
+import { openGenerationKey, resolveAvailableRoute, runWithCap } from "@/lib/generationKey";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { createProvider } from "@/lib/providers";
+import { modeBlock } from "@/lib/registry/availability";
 import { applyCameraMove } from "@/lib/registry/camera-apply";
 import { catalogModel } from "@/lib/registry/generated";
-import { estimateCost, isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
+import { estimateCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
@@ -99,14 +100,16 @@ export async function POST(request: Request) {
     const { user, workspace } = await requireWorkspace(request);
     const req = (await request.json()) as GenerateRequest & { keySource?: KeySource };
     const requested = workspace.kind === "team" && req.keySource === "member" ? "member" : workspace.kind === "team" ? "team" : "member";
-    const providerId =
-      requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
-    if (!providerId) return Response.json({ error: "Add an API key in Settings to start generating" }, { status: 400 });
-
     const model = catalogModel(req.model);
-    const route = model && routeFor(model, providerId);
-    if (!model || !isVideo(model) || !route)
-      return Response.json({ error: `Model "${req.model}" isn't available on this provider` }, { status: 400 });
+    if (!model || !isVideo(model))
+      return Response.json({ error: `Model "${req.model}" isn't available` }, { status: 400 });
+    // Same check the picker uses. Nothing is sent to a provider until a route has a key.
+    const prefer = requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
+    const { route, source, keyed } = await resolveAvailableRoute(model, workspace, user.id, { requested, prefer });
+    if (!isStudioProvider(route.provider))
+      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
+    const modeError = modeBlock(model, req.mode, keyed);
+    if (modeError) return Response.json({ error: modeError }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     await assertStorageAvailable(workspace.id);
@@ -114,8 +117,8 @@ export async function POST(request: Request) {
     const opened = await openGenerationKey({
       workspace,
       userId: user.id,
-      provider: providerId,
-      requested,
+      provider: route.provider,
+      requested: source,
       estimate,
     });
 
@@ -143,7 +146,7 @@ export async function POST(request: Request) {
 
     // The record keeps the prompt as written. applyCameraMove may append a camera
     // sentence, or set camera_fixed, only on the copy the provider receives.
-    const provider = createProvider(providerId, opened.creds);
+    const provider = createProvider(route.provider, opened.creds);
     const { taskId } = await runWithCap(opened, () =>
       provider.createTask(
       applyCameraMove(model, {
@@ -170,7 +173,7 @@ export async function POST(request: Request) {
     };
     const gen: Generation = {
       id: crypto.randomUUID(),
-      provider: providerId,
+      provider: route.provider,
       taskId,
       status: "queued",
       model: req.model,
@@ -184,7 +187,7 @@ export async function POST(request: Request) {
       ...(req.cameraMove ? { cameraMove: req.cameraMove } : {}),
       inputs,
       keySource: opened.source,
-      route: providerId,
+      route: route.provider,
       routeEndpoint: route.endpoint,
       estimatedCost: estimate,
       keyWorkspaceId: opened.keyWorkspaceId,

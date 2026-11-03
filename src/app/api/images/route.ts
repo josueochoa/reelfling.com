@@ -1,7 +1,6 @@
 import { errorResponse } from "@/lib/auth";
-import { openGenerationKey, runWithCap } from "@/lib/generationKey";
+import { openGenerationKey, resolveAvailableRoute, runWithCap } from "@/lib/generationKey";
 import { enqueueImageJob, insertImageGeneration, listImageGenerations, type ImageGeneration } from "@/lib/images";
-import { listKeys } from "@/lib/keys";
 import { invalidMentions } from "@/lib/mentions";
 import type { KeySource } from "@/lib/scope";
 import {
@@ -9,9 +8,8 @@ import {
   getImageModel,
   imageProviderFor,
   imageRequestError,
-  PROVIDER_INFO,
   ratioAllowed,
-  routeFor,
+  type ImageKeyProvider,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
@@ -62,21 +60,23 @@ export async function POST(request: Request) {
     }
     const mentions = invalidMentions(prompt, { Image: refs.length, Video: 0, Audio: 0 });
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
-    const own = workspace.kind === "team" && req.keySource === "member";
-    const active = own ? user.activeProvider : workspace.activeProvider;
-    const keyWorkspaceId = own ? user.id : workspace.id;
-    const imageProvider = imageProviderFor(active, (await listKeys(keyWorkspaceId)).map((key) => key.provider));
-    if (!imageProvider)
-      return bad("The Image tab needs an OpenRouter or ArgoLink key. Add one under API keys.");
-    if (!routeFor(model, imageProvider))
-      return bad(`${model.name} isn't available on ${PROVIDER_INFO[imageProvider].label}.`);
+    const requested: KeySource =
+      workspace.kind === "team" && req.keySource === "member" ? "member" : workspace.kind === "team" ? "team" : "member";
+    const active = requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
+    const { route, source } = await resolveAvailableRoute(model, workspace, user.id, {
+      requested,
+      prefer: (keyed) => imageProviderFor(active, [...keyed]),
+    });
+    if (route.provider !== "argolink" && route.provider !== "openrouter")
+      return bad("This model isn't available on the image tab.");
+    const imageProvider: ImageKeyProvider = route.provider;
     await assertStorageAvailable(workspace.id);
     const estimate = estimateCost(model, { resolution: req.resolution, count: req.count }) ?? 0;
     const opened = await openGenerationKey({
       workspace,
       userId: user.id,
       provider: imageProvider,
-      requested: own ? "member" : workspace.kind === "team" ? "team" : "member",
+      requested: source,
       estimate,
     });
     // Cap is checked before the job is queued. The queue is not the provider, but a
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
       cost: estimate,
       keySource: opened.source,
       route: imageProvider,
-      routeEndpoint: routeFor(model, imageProvider)?.endpoint,
+      routeEndpoint: route.endpoint,
       estimatedCost: estimate,
       keyWorkspaceId: opened.keyWorkspaceId,
       createdAt: now,

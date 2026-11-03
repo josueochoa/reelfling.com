@@ -1,7 +1,8 @@
 import { errorResponse } from "@/lib/auth";
 import { createFalJob, listFalJobs, publicFalJob } from "@/lib/falJobs";
-import { openGenerationKey, runWithCap } from "@/lib/generationKey";
+import { openGenerationKey, resolveAvailableRoute, runWithCap } from "@/lib/generationKey";
 import { FalValidationError } from "@/lib/providers/fal";
+import { FAL_ROUTES } from "@/lib/registry/availability";
 import { catalogModel } from "@/lib/registry/generated";
 import { estimateCost } from "@/lib/registry";
 import type { KeySource } from "@/lib/scope";
@@ -31,11 +32,16 @@ export async function POST(request: Request) {
     const model = catalogModel(endpointId);
     const estimate = model ? (estimateCost(model, {}) ?? 0) : 0;
     const requested = workspace.kind === "team" && body.keySource === "member" ? "member" : workspace.kind === "team" ? "team" : "member";
+    // Any fal endpoint needs a fal key. Refuse before submitFal sees the request.
+    const { source } = await resolveAvailableRoute({ routes: FAL_ROUTES }, workspace, user.id, {
+      requested,
+      prefer: "fal",
+    });
     const opened = await openGenerationKey({
       workspace,
       userId: user.id,
       provider: "fal",
-      requested,
+      requested: source,
       estimate,
     });
     const job = await runWithCap(opened, () =>
