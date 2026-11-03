@@ -153,40 +153,43 @@ export async function createInvite(teamId: string, userId: string, origin: strin
   return { url: `${origin.replace(/\/+$/, "")}/invite/${token}`, expiresAt };
 }
 
+/** Marks the invite used. A second update matches no row. */
+export const CLAIM_INVITE_SQL =
+  "UPDATE team_invites SET used_by = ? WHERE token_hash = ? AND used_by IS NULL AND expires_at > ?";
+
+/**
+ * Adds the member only when the claim update in this same transaction changed a row
+ * (`changes() = 1`). A repeat, a second person, or a removed member inserts nothing.
+ * Both statements go out in one D1 batch, which is one transaction: if the insert
+ * fails, the claim rolls back with it.
+ */
+export const JOIN_CLAIMED_INVITE_SQL = `INSERT OR IGNORE INTO team_members (team_id, user_id, role, joined_at)
+SELECT team_id, ?, 'member', ?
+FROM team_invites
+WHERE token_hash = ? AND used_by = ? AND changes() = 1`;
+
 export async function acceptInvite(userId: string, token: unknown) {
   if (typeof token !== "string" || token.length < 20 || token.length > 200)
     throw new TeamError("Invite is invalid or expired", 404);
   const hash = sha256(token);
   const now = Date.now();
-  // One claim wins. A second request from that same person, while they are still
-  // a member, is the same join. After removal the row stays claimed, so the link
-  // cannot add them again.
-  const claimed = await run(
-    "UPDATE team_invites SET used_by = ? WHERE token_hash = ? AND used_by IS NULL AND expires_at > ?",
-    userId,
-    hash,
-    now,
-  );
+  const db = env().DB;
+  await db.batch([
+    db.prepare(CLAIM_INVITE_SQL).bind(userId, hash, now),
+    db.prepare(JOIN_CLAIMED_INVITE_SQL).bind(userId, now, hash, userId),
+  ]);
   const row = await first<{ team_id: string; used_by: string | null }>(
     "SELECT team_id, used_by FROM team_invites WHERE token_hash = ?",
     hash,
   );
   if (!row || row.used_by !== userId) throw new TeamError("Invite is invalid or expired", 404);
-  if (claimed.meta.changes) {
-    await run(
-      "INSERT OR IGNORE INTO team_members (team_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)",
-      row.team_id,
-      userId,
-      now,
-    );
-  } else {
-    const still = await first<{ user_id: string }>(
-      "SELECT user_id FROM team_members WHERE team_id = ? AND user_id = ?",
-      row.team_id,
-      userId,
-    );
-    if (!still) throw new TeamError("Invite is invalid or expired", 404);
-  }
+  // Still a member: a repeat of their own claim. Removed: the link stays claimed and does not re-add them.
+  const member = await first<{ user_id: string }>(
+    "SELECT user_id FROM team_members WHERE team_id = ? AND user_id = ?",
+    row.team_id,
+    userId,
+  );
+  if (!member) throw new TeamError("Invite is invalid or expired", 404);
   return teamDetail(row.team_id, userId);
 }
 

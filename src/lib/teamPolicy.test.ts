@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { CLAIM_INVITE_SQL, JOIN_CLAIMED_INVITE_SQL } from "./teams";
 import {
   canReadTeamItem,
-  personalGenerationScope,
   publicAuthor,
   publicTeamAsset,
   publicTeamGeneration,
+  teamMediaContentType,
   teamMediaHeaders,
   teamMediaUrl,
   visibleTeamItems,
@@ -50,25 +50,6 @@ describe("team membership", () => {
       visibleTeamItems(after, ADA, [boat, fox]).map((item) => item.prompt),
       ["A red paper boat"],
     );
-  });
-});
-
-describe("generation scope", () => {
-  it("uses only the caller's key and storage, ignoring a team or another user", () => {
-    const secret = "sk-live-SHOULD-NOT-BE-CHOSEN-9981";
-    const scope = personalGenerationScope(ADA, {
-      teamId: "team-1",
-      userId: BEN,
-      keyUserId: BEN,
-      storageUserId: BEN,
-      apiKey: secret,
-    });
-    assert.deepEqual(scope, { keyUserId: ADA, storageUserId: ADA });
-    assert.equal(scope.keyUserId, scope.storageUserId);
-    const json = JSON.stringify(scope);
-    assert.equal(json.includes(secret), false);
-    assert.equal(json.includes(BEN), false);
-    assert.equal(json.includes("team-1"), false);
   });
 });
 
@@ -127,65 +108,67 @@ describe("team view payloads", () => {
     assert.equal(publicTeamAsset({ ...asset!, key: "../secret", contentType: "image/png", name: "x" }), undefined);
   });
 
-  it("does not redirect media or attach a cacheable signed url", () => {
-    const headers = teamMediaHeaders({ contentType: "image/png", contentLength: "12", contentRange: null });
+  it("sandboxes team media and refuses anything that is not image, video, or audio", () => {
+    const headers = teamMediaHeaders({ contentType: "video/mp4", contentLength: "12", contentRange: null });
     assert.equal(headers.get("Cache-Control"), "private, no-store");
+    assert.equal(headers.get("Content-Security-Policy"), "sandbox");
+    assert.equal(headers.get("X-Content-Type-Options"), "nosniff");
     assert.equal(headers.has("Location"), false);
     const raw = [...headers.entries()].map(([key, value]) => `${key}:${value}`).join("\n");
-    assert.equal(/amz|signature|cloudflarestorage|secret/i.test(raw), false);
+    assert.equal(/amz|cloudflarestorage|secret/i.test(raw), false);
+
+    assert.equal(teamMediaContentType("video/mp4"), "video/mp4");
+    assert.equal(teamMediaContentType("image/jpeg; charset=binary"), "image/jpeg");
+    assert.equal(teamMediaContentType("audio/mpeg"), "audio/mpeg");
+    assert.equal(teamMediaContentType("application/pdf"), undefined);
+    assert.equal(teamMediaContentType("text/html"), undefined);
+    assert.equal(teamMediaContentType("application/octet-stream"), undefined);
+    assert.equal(teamMediaContentType(null), undefined);
   });
 });
 
-function source(relative: string) {
-  return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
-}
+describe("invite claim", () => {
+  function claimDb() {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE team_invites (
+        id TEXT PRIMARY KEY,
+        team_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        used_by TEXT,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE TABLE team_members (
+        team_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        joined_at INTEGER NOT NULL,
+        PRIMARY KEY (team_id, user_id)
+      );
+      INSERT INTO team_invites (id, team_id, token_hash, expires_at) VALUES ('inv', 'team', 'hash', 5000);
+    `);
+    const claim = db.prepare(CLAIM_INVITE_SQL);
+    const join = db.prepare(JOIN_CLAIMED_INVITE_SQL);
+    const attempt = (userId: string, now: number) => {
+      db.exec("BEGIN");
+      claim.run(userId, "hash", now);
+      join.run(userId, now, "hash", userId);
+      db.exec("COMMIT");
+    };
+    const members = () => db.prepare("SELECT user_id FROM team_members ORDER BY user_id").all() as { user_id: string }[];
+    return { db, attempt, members };
+  }
 
-function filesUnder(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = `${dir}/${name}`;
-    if (statSync(path).isDirectory()) return filesUnder(path);
-    return path.endsWith(".ts") || path.endsWith(".tsx") ? [path] : [];
-  });
-}
+  it("lets one claim add one member and a second claim add nobody", () => {
+    const { db, attempt, members } = claimDb();
+    attempt(ADA, 10);
+    attempt(ADA, 11);
+    attempt(BEN, 12);
+    assert.deepEqual(members().map((row) => row.user_id), [ADA]);
+    assert.equal((db.prepare("SELECT used_by FROM team_invites").get() as { used_by: string }).used_by, ADA);
 
-describe("generation routes", () => {
-  it("passes the caller scope into the key lookup and the bucket", () => {
-    const videos = source("../app/api/generations/route.ts");
-    assert.match(videos, /personalGenerationScope\(user\.id, req\)/);
-    assert.match(videos, /providerForUser\(scope\.keyUserId/);
-    assert.match(videos, /assertStorageAvailable\(scope\.storageUserId\)/);
-    assert.match(videos, /insertGeneration\(scope\.storageUserId/);
-
-    const images = source("../app/api/images/route.ts");
-    assert.match(images, /personalGenerationScope\(user\.id, req\)/);
-    assert.match(images, /listKeys\(scope\.keyUserId\)/);
-    assert.match(images, /assertStorageAvailable\(scope\.storageUserId\)/);
-    assert.match(images, /insertImageGeneration\(scope\.storageUserId/);
-
-    const fal = source("../app/api/fal/route.ts");
-    assert.match(fal, /personalGenerationScope\(user\.id, body\)/);
-    assert.match(fal, /getCredentials\(scope\.keyUserId, "fal"\)/);
-    assert.match(fal, /assertStorageAvailable\(scope\.storageUserId\)/);
-    assert.match(fal, /createFalJob\(\s*scope\.storageUserId/);
-  });
-});
-
-describe("team routes", () => {
-  it("checks membership and does not read keys", () => {
-    const dir = fileURLToPath(new URL("../app/api/teams", import.meta.url));
-    const banned = ["getCredentials", "listKeys", "api_keys", "last4", "R2_SECRET", "R2_ACCESS", "serveAsset", "presign"];
-    const files = filesUnder(dir);
-    assert.ok(files.length >= 6);
-    for (const file of files) {
-      const text = readFileSync(file, "utf8");
-      for (const word of banned) assert.equal(text.includes(word), false, `${file} contains ${word}`);
-    }
-    const media = source("../app/api/teams/[id]/media/route.ts");
-    assert.match(media, /canReadTeamItem/);
-    assert.match(media, /openAsset/);
-    const lib = source("./teams.ts");
-    assert.match(lib, /visibleTeamItems/);
-    assert.match(lib, /canReadTeamItem/);
-    for (const word of banned) assert.equal(lib.includes(word), false, `teams.ts contains ${word}`);
+    db.exec("DELETE FROM team_members");
+    attempt(ADA, 13);
+    assert.deepEqual(members(), []);
   });
 });

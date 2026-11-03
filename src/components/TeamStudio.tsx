@@ -396,7 +396,8 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
 
 function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; meId?: string }) {
   const [failed, setFailed] = useState(false);
-  const src = teamMediaUrl(teamId, asset.ownerId, asset.key, asset.hasThumb);
+  const fileUrl = teamMediaUrl(teamId, asset.ownerId, asset.key);
+  const thumbUrl = asset.hasThumb ? teamMediaUrl(teamId, asset.ownerId, asset.key, true) : undefined;
   return (
     <li className="overflow-hidden rounded-xl border border-white/10" data-testid="team-asset">
       <div className="grid aspect-video place-items-center bg-white/5">
@@ -404,17 +405,19 @@ function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; 
           <span className="text-xs tracking-wide text-zinc-500 uppercase">{asset.kind}</span>
         ) : asset.kind === "video" ? (
           <video
-            src={src}
+            src={fileUrl}
+            poster={thumbUrl}
             controls
-            preload="metadata"
+            preload="none"
             onError={() => setFailed(true)}
+            data-testid="team-video"
             className="h-full w-full object-contain"
           />
         ) : (
           // Authenticated same-origin bytes. next/image would fetch them without the session.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={src}
+            src={thumbUrl ?? fileUrl}
             alt=""
             onError={() => setFailed(true)}
             referrerPolicy="no-referrer"

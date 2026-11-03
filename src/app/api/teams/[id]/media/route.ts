@@ -1,6 +1,6 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { getAsset, openAsset } from "@/lib/storage";
-import { canReadTeamItem, teamMediaHeaders } from "@/lib/teamPolicy";
+import { canReadTeamItem, teamMediaContentType, teamMediaHeaders } from "@/lib/teamPolicy";
 import { memberIds } from "@/lib/teams";
 import { isAssetKey } from "@/lib/uploads";
 
@@ -19,13 +19,18 @@ export async function GET(request: Request, ctx: RouteContext<"/api/teams/[id]/m
     const ids = await memberIds(id);
     if (!canReadTeamItem(ids, user.id, ownerId)) return new Response("Not found", { status: 404 });
     const asset = await getAsset(ownerId, key);
-    if (!asset) return new Response("Not found", { status: 404 });
+    if (!asset || !teamMediaContentType(asset.contentType)) return new Response("Not found", { status: 404 });
     const thumb = params.has("thumb");
     const opened = await openAsset(asset, { thumb, range: request.headers.get("range") });
+    const contentType = teamMediaContentType(thumb ? opened.contentType || "image/jpeg" : opened.contentType || asset.contentType);
+    if (!contentType) {
+      await opened.body?.cancel();
+      return new Response("Not found", { status: 404 });
+    }
     return new Response(opened.body, {
       status: opened.status,
       headers: teamMediaHeaders({
-        contentType: opened.contentType || (thumb ? "image/jpeg" : asset.contentType),
+        contentType,
         contentLength: opened.contentLength,
         contentRange: opened.contentRange,
       }),

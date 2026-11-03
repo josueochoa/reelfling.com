@@ -1,6 +1,4 @@
-// Who may see a teammate's work, and which user a generation belongs to.
-// Pure: no database, no keys, no storage. The routes call these and nothing else
-// decides membership or which key a generation uses.
+// Who may see a teammate's work. Pure: no database, no keys, no storage.
 
 import { isAssetKey, uploadKindOf, type UploadKind } from "./uploads";
 
@@ -56,19 +54,6 @@ export function cleanTeamName(name: unknown): string {
   const trimmed = name.trim();
   if (!trimmed || trimmed.length > 60) throw new Error("Team name must be 1–60 characters");
   return trimmed;
-}
-
-/**
- * A generation always uses the signed-in caller's own key and own bucket.
- * A team id, or any other user id, on the request is ignored.
- */
-export function personalGenerationScope(
-  callerId: string,
-  request?: unknown,
-): { keyUserId: string; storageUserId: string } {
-  void request;
-  if (!callerId) throw new Error("Missing caller");
-  return { keyUserId: callerId, storageUserId: callerId };
 }
 
 /**
@@ -131,7 +116,7 @@ export function publicTeamGeneration(input: {
   };
 }
 
-function assetKind(contentType: string): UploadKind | undefined {
+export function assetKind(contentType: string): UploadKind | undefined {
   return (
     uploadKindOf(contentType) ??
     (contentType.startsWith("image/")
@@ -170,6 +155,14 @@ export function publicTeamAsset(input: {
   };
 }
 
+/** image/*, video/*, or audio/* with no parameters. Anything else is not served from the team route. */
+export function teamMediaContentType(contentType: string | null | undefined): string | undefined {
+  if (!contentType) return undefined;
+  const mime = contentType.split(";")[0].trim().toLowerCase();
+  if (!assetKind(mime) || !/^(image|video|audio)\/[\w.+-]+$/.test(mime)) return undefined;
+  return mime;
+}
+
 /** Same-origin media URL. The server checks membership; this carries no signature and no key. */
 export function teamMediaUrl(teamId: string, ownerId: string, key: string, thumb = false): string {
   const params = new URLSearchParams({ owner: ownerId, key });
@@ -191,6 +184,8 @@ export function teamMediaHeaders(upstream: {
   headers.set("Cache-Control", "private, no-store");
   headers.set("Referrer-Policy", "no-referrer");
   headers.set("X-Content-Type-Options", "nosniff");
+  // A teammate's file is rendered on this origin. Sandbox it if a browser treats the response as a document.
+  headers.set("Content-Security-Policy", "sandbox");
   headers.set("Accept-Ranges", "bytes");
   if (upstream.contentLength) headers.set("Content-Length", upstream.contentLength);
   if (upstream.contentRange) headers.set("Content-Range", upstream.contentRange);

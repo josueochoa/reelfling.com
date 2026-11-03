@@ -1,7 +1,6 @@
 import { errorResponse, requireUser } from "@/lib/auth";
 import { createFalJob, listFalJobs, publicFalJob } from "@/lib/falJobs";
 import { getCredentials } from "@/lib/keys";
-import { personalGenerationScope } from "@/lib/teamPolicy";
 import { FalValidationError } from "@/lib/providers/fal";
 import { assertStorageAvailable } from "@/lib/storage";
 
@@ -20,16 +19,14 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const body = (await request.json()) as { endpointId?: string; input?: unknown };
-    // The caller's own key and bucket, even if the body names a team or someone else.
-    const scope = personalGenerationScope(user.id, body);
     const endpointId = body.endpointId?.trim() ?? "";
     if (!endpointId) return Response.json({ error: "Enter an endpoint id" }, { status: 400 });
     if (!body.input || typeof body.input !== "object" || Array.isArray(body.input))
       return Response.json({ error: "Input must be a JSON object" }, { status: 400 });
-    const creds = await getCredentials(scope.keyUserId, "fal");
+    const creds = await getCredentials(user.id, "fal");
     if (!creds) return Response.json({ error: "Add your fal API key under API keys." }, { status: 400 });
-    await assertStorageAvailable(scope.storageUserId);
-    const job = await createFalJob(scope.storageUserId, endpointId, body.input, creds.apiKey);
+    await assertStorageAvailable(user.id);
+    const job = await createFalJob(user.id, endpointId, body.input, creds.apiKey);
     return Response.json(publicFalJob(job), { status: 201 });
   } catch (e) {
     if (e instanceof FalValidationError)
