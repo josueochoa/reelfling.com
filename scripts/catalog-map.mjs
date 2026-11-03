@@ -91,6 +91,23 @@ function collectRates(skus, supported, pred) {
   return out;
 }
 
+/** `video_tokens_with_video_input` and its 1080p / 4k overrides. */
+function withVideoTokenRates(skus, supported) {
+  const base = dollars(skus, "video_tokens_with_video_input");
+  if (base === undefined) return { usd: undefined, byResolution: {} };
+  const byResolution = {};
+  for (const res of supported) {
+    const specific =
+      res.toLowerCase() === "1080p"
+        ? skus.video_tokens_1080p_with_video_input
+        : res.toLowerCase() === "4k"
+          ? skus.video_tokens_4k_with_video_input
+          : undefined;
+    byResolution[res] = specific !== undefined ? Number(specific) : base;
+  }
+  return { usd: base, byResolution };
+}
+
 function pixelsFor(resolutions) {
   const pixels = {};
   for (const res of resolutions ?? []) {
@@ -125,10 +142,13 @@ export function openRouterPrice(model) {
       byResolution[res] = specific !== undefined ? Number(specific) : base;
     }
     const pixels = pixelsFor(supported);
+    const withVideo = withVideoTokenRates(skus, supported);
     return {
       type: "tokens",
       usdPerToken: base,
+      ...(withVideo.usd !== undefined ? { usdPerTokenWithVideo: withVideo.usd } : {}),
       ...(Object.keys(byResolution).length ? { byResolution } : {}),
+      ...(Object.keys(withVideo.byResolution).length ? { byResolutionWithVideo: withVideo.byResolution } : {}),
       fps: 24,
       ...(Object.keys(pixels).length ? { pixels } : {}),
     };
@@ -151,7 +171,8 @@ export function openRouterPrice(model) {
 export function openRouterModel(model) {
   const frames = new Set(model.supported_frame_images ?? []);
   const id = String(model.id);
-  const { task, tasks } = openRouterTasks(id, frames);
+  const references = openRouterReferences(model);
+  const { task, tasks } = openRouterTasks(id, frames, references);
   const durations = Array.isArray(model.supported_durations) ? durationCap(model.supported_durations) : undefined;
   const pass = model.allowed_passthrough_parameters ?? [];
   const has = (pattern) => pass.some((name) => pattern.test(name));
@@ -175,7 +196,7 @@ export function openRouterModel(model) {
       ratios: model.supported_aspect_ratios ?? [],
       audio: model.generate_audio === true ? "optional" : false,
       frames: { start, middle: frames.has("middle_frame"), end: frames.has("last_frame") },
-      references: { image: 0, video: 0, audio: 0, total: 0 },
+      references,
       seed: model.seed === true,
       promptExpansion: has(/enhance_?prompt|prompt_extend|prompt_expansion/i) ? "optional" : false,
       camera: openRouterCamera(pass),
@@ -202,7 +223,19 @@ export function openRouterCamera(pass) {
   };
 }
 
-function openRouterTasks(id, frames) {
+/**
+ * Reference caps the video models API does not publish (`per_request_limits` is null).
+ * Seedance 2.5's model page says "up to 50 image, video, and audio reference assets":
+ * https://openrouter.ai/bytedance/seedance-2.5
+ * Each kind shares that combined ceiling. Other models stay at zero until their page
+ * states a number.
+ */
+export function openRouterReferences(model) {
+  if (String(model?.id) === "bytedance/seedance-2.5") return { image: 50, video: 50, audio: 50, total: 50 };
+  return { image: 0, video: 0, audio: 0, total: 0 };
+}
+
+function openRouterTasks(id, frames, references) {
   const slug = id.toLowerCase();
   if (slug.includes("upscale")) return { task: "upscale", tasks: ["upscale"] };
   if (slug.includes("avatar")) return { task: "avatar", tasks: ["avatar"] };
@@ -211,6 +244,8 @@ function openRouterTasks(id, frames) {
   const tasks = [];
   if (!/image-to-video|\/i2v/.test(slug)) tasks.push("t2v");
   if (frames.has("first_frame")) tasks.push("i2v");
+  const refs = references ?? { image: 0, video: 0, audio: 0 };
+  if (refs.image + refs.video + refs.audio > 0) tasks.push("ref2v");
   if (!tasks.length) tasks.push("t2v");
   const order = VIDEO_TASKS;
   tasks.sort((a, b) => order.indexOf(a) - order.indexOf(b));

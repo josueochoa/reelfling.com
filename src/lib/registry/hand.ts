@@ -1,4 +1,4 @@
-import type { CameraCapabilities, ImageModel, ImageResolution, VideoModel } from "./types";
+import type { CameraCapabilities, ImageModel, ImageResolution, PerSecondPrice, VideoModel } from "./types";
 
 const RATIOS = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"] as const;
 
@@ -55,6 +55,14 @@ function image(model: ImageModel & { price: NonNullable<ImageModel["price"]> }):
 
 const perImage = (price: Record<ImageResolution, number>) => ({ type: "per_image" as const, byResolution: price });
 
+/** Per-second price with ArgoLink's reference-video billing (floor seconds, 5/3 minimum). */
+function argolinkSeconds(
+  byResolution: PerSecondPrice["byResolution"],
+  byResolutionWithVideo: PerSecondPrice["byResolution"],
+): PerSecondPrice {
+  return { type: "per_second", byResolution, byResolutionWithVideo, referenceBilling: "argolink" };
+}
+
 /** ModelArk and ArgoLink. Edited by hand; fal and OpenRouter come from catalog:sync. */
 export const HAND_MODELS: Array<VideoModel | ImageModel> = [
   video({
@@ -78,11 +86,16 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       frames: { start: true, middle: false, end: true },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    // $7.00 / M tokens at 480p and 720p, $7.70 / M at 1080p, no video input.
+    // Without video: $7.00 / M tokens at 480p and 720p, $7.70 / M at 1080p.
+    // With video: $4.30 / M at 480p and 720p, $4.70 / M at 1080p. Input video seconds
+    // are added to the token count; reference images and audio are free.
+    // https://ai.byteplus.com/ark/region:ap-southeast-1/docs/model-pricing
     price: {
       type: "tokens",
       usdPerToken: 0.000007,
+      usdPerTokenWithVideo: 0.0000043,
       byResolution: { "480p": 0.000007, "720p": 0.000007, "1080p": 0.0000077 },
+      byResolutionWithVideo: { "480p": 0.0000043, "720p": 0.0000043, "1080p": 0.0000047 },
       fps: 24,
       pixels: SEEDANCE_2_PIXELS,
     },
@@ -137,7 +150,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 30, default: 5 },
       references: { image: 30, video: 10, audio: 10, total: 50 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0874, "720p": 0.196, "1080p": 0.483 } },
+    // https://argolink.io/en/models/seedance-2.5 — with-video rates are the lower tier.
+    price: argolinkSeconds(
+      { "480p": 0.0874, "720p": 0.196, "1080p": 0.483 },
+      { "480p": 0.0523, "720p": 0.117, "1080p": 0.289 },
+    ),
   }),
   video({
     id: "seedance-2.0",
@@ -156,7 +173,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 15, default: 5 },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0598, "720p": 0.129, "1080p": 0.318, "4k": 0.661 } },
+    // https://argolink.io/en/models/seedance-2.0
+    price: argolinkSeconds(
+      { "480p": 0.0598, "720p": 0.129, "1080p": 0.318, "4k": 0.661 },
+      { "480p": 0.0367, "720p": 0.0792, "1080p": 0.194, "4k": 0.397 },
+    ),
   }),
   video({
     id: "seedance-2.0-fast",
@@ -175,7 +196,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 15, default: 5 },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0478, "720p": 0.103 } },
+    // https://argolink.io/en/models/seedance-2.0-fast
+    price: argolinkSeconds(
+      { "480p": 0.0478, "720p": 0.103 },
+      { "480p": 0.0282, "720p": 0.0607 },
+    ),
   }),
   video({
     id: "seedance-2.0-mini",
@@ -194,7 +219,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 15, default: 5 },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0299, "720p": 0.0643 } },
+    // https://argolink.io/en/models/seedance-2.0-mini
+    price: argolinkSeconds(
+      { "480p": 0.0299, "720p": 0.0643 },
+      { "480p": 0.0179, "720p": 0.0386 },
+    ),
   }),
   image({
     id: "nano-banana-2.1",

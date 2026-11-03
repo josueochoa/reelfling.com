@@ -33,8 +33,18 @@ export function Lightbox({
 
   const model = lookupModel(gen.model);
   const camera = cameraMoveLabel(gen.cameraMove);
+  const billed = gen.billedSeconds;
+  // billed_seconds already include reference video. Multiply them by the with-video
+  // rate instead of the output rate (53 × 0.0874 was the overcharge).
+  const hadReferenceVideo = (gen.inputs?.videos ?? 0) > 0 || (billed !== undefined && billed > gen.duration);
   const cost =
-    model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
+    model &&
+    estimateCost(model, {
+      resolution: gen.resolution,
+      duration: billed ?? gen.duration,
+      audio: gen.generateAudio,
+      ...(hadReferenceVideo && billed !== undefined ? { referenceVideoSeconds: 0, durationIsBilled: true } : {}),
+    });
   const details: [string, React.ReactNode][] = [
     ["Model", model?.name ?? gen.model],
     ["Provider", gen.provider ?? "modelark"],

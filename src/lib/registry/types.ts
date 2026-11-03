@@ -202,6 +202,16 @@ export type PerSecondPrice = {
   /** USD per output second. "*" is the rate when the resolution has no entry. */
   byResolution: Readonly<Record<string, number>>;
   byResolutionWithAudio?: Readonly<Record<string, number>>;
+  /**
+   * USD per billed second when the request includes any reference video.
+   * Every billed second uses this rate, including the output.
+   */
+  byResolutionWithVideo?: Readonly<Record<string, number>>;
+  /**
+   * `argolink`: billed seconds = output + floor(reference-video seconds),
+   * and at least ceil(output × 5/3). Reference images and audio are free.
+   */
+  referenceBilling?: "argolink";
   /** Floor for one generation, when the provider publishes one. */
   minimum?: number;
 };
@@ -224,9 +234,13 @@ export type TokenPrice = {
   /** USD per token. Resolution entries override it. */
   usdPerToken: number;
   byResolution?: Readonly<Record<string, number>>;
+  /** USD per token when the request includes any reference video. */
+  usdPerTokenWithVideo?: number;
+  byResolutionWithVideo?: Readonly<Record<string, number>>;
   /**
    * Representative 16:9 output size used to estimate tokens before the provider
-   * reports real usage. Tokens ≈ duration × width × height × fps / 1024.
+   * reports real usage. Tokens ≈ (output seconds + reference-video seconds) × width × height × fps / 1024.
+   * Reference images and audio are not added.
    */
   pixels?: Readonly<Record<string, { width: number; height: number }>>;
   fps?: number;
@@ -300,4 +314,17 @@ export interface EstimateInput {
   audio?: boolean;
   count?: number;
   megapixels?: number;
+  /**
+   * Total reference-video seconds. Omit when the request has no reference video.
+   * `0` still selects the with-video rate (a clip under a second, or a finished
+   * job whose billed seconds already include the reference).
+   * Reference images and audio are not part of this input.
+   */
+  referenceVideoSeconds?: number;
+  /**
+   * `duration` is the provider's billed seconds (output plus reference video,
+   * minimum already applied). Use the with-video rate and do not add reference
+   * seconds or the output minimum again.
+   */
+  durationIsBilled?: boolean;
 }
