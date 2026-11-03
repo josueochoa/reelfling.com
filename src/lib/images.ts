@@ -4,6 +4,7 @@
 // into the user's R2 bucket as assets of the generation.
 
 import { all, env, first, run } from "./db";
+import { downloadGeneratedImage } from "./imageDownload";
 import { getImageModel, gptSize, type ImageQuality, type ImageResolution } from "./imageModels";
 import { getCredentials } from "./keys";
 import { normalizeMentions } from "./mentions";
@@ -108,20 +109,6 @@ interface ArgoImages {
   data?: { url?: string; b64_json?: string }[];
 }
 
-/** The output image as a response to stream into R2. ArgoLink links are public; fall back to auth. */
-async function download(item: { url?: string; b64_json?: string }, apiKey: string): Promise<Response> {
-  if (item.b64_json) {
-    const bytes = Uint8Array.from(atob(item.b64_json), (c) => c.charCodeAt(0));
-    return new Response(bytes, { headers: { "content-type": "image/jpeg", "content-length": String(bytes.length) } });
-  }
-  if (!item.url) throw new Error("ArgoLink returned an image without data");
-  let res = await fetch(item.url);
-  if (res.status === 401 || res.status === 403)
-    res = await fetch(item.url, { headers: { Authorization: `Bearer ${apiKey}` } });
-  if (!res.ok) throw new Error(`Couldn't download the generated image (${res.status})`);
-  return res;
-}
-
 const EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
 /** Runs a queued job to completion. Safe to call more than once. */
@@ -165,7 +152,7 @@ export async function runImageJob(userId: string, id: string) {
 
     const images: ImageGeneration["images"] = [];
     for (const [i, item] of items.entries()) {
-      const source = await download(item, creds.apiKey);
+      const source = await downloadGeneratedImage(item);
       const contentType = source.headers.get("content-type")?.split(";")[0] || "image/jpeg";
       const asset = await putAsset(userId, {
         key: `images/${id}/${i}.${EXT[contentType] ?? "jpg"}`,
