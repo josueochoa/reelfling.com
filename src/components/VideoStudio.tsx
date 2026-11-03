@@ -6,7 +6,8 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "r
 import { restoreInputs } from "@/lib/inputs";
 import { modelsFor, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
-import { api, apiJson, type Me } from "./api";
+import { api, apiJson, type KeySource, type Me } from "./api";
+import { KeyChoice } from "./Teams";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
@@ -47,7 +48,9 @@ export function VideoStudio({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
-  const provider = me?.user.activeProvider ?? null;
+  const [keySource, setKeySource] = useState<KeySource>("team");
+  const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
+  const provider = ownKeys && keySource === "member" ? (me?.user.activeProvider ?? null) : (me?.workspace.activeProvider ?? null);
   const gensRef = useRef(generations);
   useEffect(() => {
     gensRef.current = generations;
@@ -102,7 +105,12 @@ export function VideoStudio({
   async function generate(req: GenerateRequest) {
     setError(null);
     try {
-      upsert(await apiJson<Generation>("/api/generations", { method: "POST", body: JSON.stringify(req) }));
+      upsert(
+        await apiJson<Generation>("/api/generations", {
+          method: "POST",
+          body: JSON.stringify({ ...req, ...(ownKeys ? { keySource } : {}) }),
+        }),
+      );
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -175,13 +183,16 @@ export function VideoStudio({
     <div className="flex h-full flex-col lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
-          {provider ? (
-            <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
-              {provider === "openrouter" ? "OpenRouter" : `Seedance via ${PROVIDER_INFO[provider].label}`}
-            </button>
-          ) : (
-            <span />
-          )}
+          <div className="flex items-center gap-2">
+            {provider ? (
+              <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
+                {provider === "openrouter" ? "OpenRouter" : `Seedance via ${PROVIDER_INFO[provider].label}`}
+              </button>
+            ) : (
+              <span />
+            )}
+            {ownKeys && <KeyChoice value={keySource} onChange={setKeySource} />}
+          </div>
           {active > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-zinc-400">
               <span className="size-1.5 animate-pulse rounded-full bg-accent" />
@@ -210,14 +221,26 @@ export function VideoStudio({
             <div className="m-5 rounded-2xl border border-dashed border-white/15 p-6 text-center">
               <p className="font-medium">Connect a provider</p>
               <p className="mt-1 text-sm text-zinc-400">
-                Add your ArgoLink, OpenRouter, or ModelArk API key. Generations run on your own provider account.
+                {me.workspace.kind === "team"
+                  ? me.workspace.role === "member" && !me.workspace.adminsManageKeys
+                    ? "This team has no API key yet. Ask an owner to add one."
+                    : "Add the team's API key. Everyone generates with it unless own keys are on."
+                  : "Add your ArgoLink, OpenRouter, or ModelArk API key. Generations run on your own provider account."}
               </p>
-              <button
-                onClick={onOpenKeys}
-                className="mt-4 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink"
-              >
-                Add API key
-              </button>
+              {ownKeys && (
+                <div className="mt-3 flex justify-center">
+                  <KeyChoice value={keySource} onChange={setKeySource} />
+                </div>
+              )}
+              {(me.workspace.kind !== "team" || me.workspace.role !== "member" || me.workspace.adminsManageKeys) &&
+                keySource !== "member" && (
+                  <button
+                    onClick={onOpenKeys}
+                    className="mt-4 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-ink"
+                  >
+                    Add API key
+                  </button>
+                )}
             </div>
           )
         )}
@@ -265,6 +288,7 @@ export function VideoStudio({
                     onReuse={() => reuse(g)}
                     onUseAsReference={() => void referenceStoredVideo(g)}
                     onDelete={() => remove(g)}
+                    showCreator={me?.workspace.kind === "team"}
                   />
                 ))}
               </div>

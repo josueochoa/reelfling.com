@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { cameraMoveLabel } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
+import { withWorkspace } from "./api";
+import { Avatar } from "./Teams";
 
-export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
+export const videoSrc = (g: Generation, download = false) =>
+  withWorkspace(`/api/generations/${g.id}/video${download ? "?download" : ""}`);
 
 export function useElapsed(gen: Generation) {
   const running = !TERMINAL_STATUSES.includes(gen.status);
@@ -38,12 +41,14 @@ export function GenerationCard({
   onReuse,
   onUseAsReference,
   onDelete,
+  showCreator,
 }: {
   gen: Generation;
   onOpen: () => void;
   onReuse: () => void;
   onUseAsReference: () => void;
   onDelete: () => void;
+  showCreator?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
@@ -93,7 +98,8 @@ export function GenerationCard({
           </div>
         )}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
+          <div className="flex flex-wrap items-center gap-1 text-[10px] text-zinc-500">
+            {showCreator && gen.creator && <Avatar person={gen.creator} size="size-5" />}
             <Meta>{model?.name ?? gen.model}</Meta>
             <Meta>{gen.resolution}</Meta>
             <Meta>{gen.duration}s</Meta>

@@ -3,6 +3,7 @@
 
 import type { ProviderCredentials } from "../keys";
 import { buildModelArkVideo } from "../registry/bodies";
+import { reportedUsd } from "../reportedCost";
 import type { TaskStatus } from "../types";
 import { ProviderError, type ProviderFactory } from "./types";
 
@@ -67,6 +68,7 @@ export const modelArk: ProviderFactory = (creds) => ({
       error: task.error?.message,
       seed: task.seed,
       tokens: task.usage?.completion_tokens,
+      costUsd: reportedUsd(task),
     };
   },
 

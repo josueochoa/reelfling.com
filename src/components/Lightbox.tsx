@@ -89,7 +89,7 @@ export function Lightbox({
           <div className="mt-auto grid gap-2">
             {ready && (
               <a
-                href={`${videoSrc(gen)}?download`}
+                href={videoSrc(gen, true)}
                 className="rounded-xl bg-accent py-2.5 text-center text-sm font-semibold text-ink"
               >
                 Download

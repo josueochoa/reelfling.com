@@ -7,10 +7,14 @@ import { createHash } from "node:crypto";
 import { AwsClient } from "aws4fetch";
 import { all, env, first, run } from "./db";
 import { candidateUserIds, referencedKeySet, withoutReferenced } from "./inputs";
-import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
+import { byWorkspace, wsArgs } from "./scope";
+import { thumbKeyFor, uploadKindOf, type AssetItem, type Creator } from "./uploads";
 
 export interface Asset {
+  /** Creator. Personal rows use the user id; the primary key stays (user_id, key). */
   userId: string;
+  workspaceId: string;
+  createdBy: string | null;
   key: string;
   bucket: string;
   bytes: number;
@@ -32,6 +36,8 @@ export interface AssetMeta {
 
 interface AssetRow {
   user_id: string;
+  workspace_id: string | null;
+  created_by: string | null;
   key: string;
   bucket: string;
   bytes: number;
@@ -44,6 +50,8 @@ interface AssetRow {
 
 const toAsset = (r: AssetRow): Asset => ({
   userId: r.user_id,
+  workspaceId: r.workspace_id ?? r.user_id,
+  createdBy: r.created_by,
   key: r.key,
   bucket: r.bucket,
   bytes: r.bytes,
@@ -128,23 +136,49 @@ async function s3(
 
 // ---------------------------------------------------------------- buckets
 
-export async function getBucket(userId: string): Promise<string | undefined> {
-  return (await first<{ name: string }>("SELECT name FROM buckets WHERE user_id = ?", userId))?.name;
+export async function getBucket(workspaceId: string): Promise<string | undefined> {
+  return (
+    await first<{ name: string }>(
+      `SELECT name FROM buckets WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)`,
+      workspaceId,
+      workspaceId,
+    )
+  )?.name;
 }
 
-/** Creates the user's bucket on first use. Idempotent, so concurrent or retried calls are safe. */
-export async function ensureBucket(userId: string): Promise<string> {
-  const existing = await getBucket(userId);
+/**
+ * Creates the workspace's bucket on first use. Personal workspaces keep user_id set
+ * (the bucket name stays prefix + user id). A team bucket has user_id NULL.
+ */
+export async function ensureBucket(workspaceId: string): Promise<string> {
+  const existing = await getBucket(workspaceId);
   if (existing) return existing;
   const cfg = r2();
-  const name = `${cfg.prefix}-${userId.toLowerCase()}`;
+  const name = `${cfg.prefix}-${workspaceId.toLowerCase()}`;
+  const kind = (await first<{ kind: string }>("SELECT kind FROM workspaces WHERE id = ?", workspaceId))?.kind;
+  const team = kind === "team";
   try {
     await s3(cfg, objectUrl(cfg, name), { method: "PUT" });
   } catch (e) {
     // Created by a concurrent request, or by an earlier attempt that didn't get recorded.
     if ((e as { code?: string }).code !== "BucketAlreadyOwnedByYou") throw e;
   }
-  await run("INSERT OR IGNORE INTO buckets (user_id, name, created_at) VALUES (?, ?, ?)", userId, name, Date.now());
+  if (team) {
+    await run(
+      "INSERT OR IGNORE INTO buckets (user_id, name, created_at, workspace_id) VALUES (NULL, ?, ?, ?)",
+      name,
+      Date.now(),
+      workspaceId,
+    );
+  } else {
+    await run(
+      "INSERT OR IGNORE INTO buckets (user_id, name, created_at, workspace_id) VALUES (?, ?, ?, ?)",
+      workspaceId,
+      name,
+      Date.now(),
+      workspaceId,
+    );
+  }
   return name;
 }
 
@@ -152,8 +186,12 @@ export async function ensureBucket(userId: string): Promise<string> {
  * Lets browsers PUT uploads straight into the bucket. Any origin is fine: every request
  * still needs a URL signed by the server, which is the actual access control.
  */
-async function ensureCors(userId: string, bucket: string) {
-  const row = await first<{ cors: number }>("SELECT cors FROM buckets WHERE user_id = ?", userId);
+async function ensureCors(workspaceId: string, bucket: string) {
+  const row = await first<{ cors: number }>(
+    "SELECT cors FROM buckets WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)",
+    workspaceId,
+    workspaceId,
+  );
   if (row?.cors) return;
   const cfg = r2();
   const xml =
@@ -168,15 +206,19 @@ async function ensureCors(userId: string, bucket: string) {
     body: xml,
     headers: { "Content-Type": "application/xml", "Content-MD5": createHash("md5").update(xml).digest("base64") },
   });
-  await run("UPDATE buckets SET cors = 1 WHERE user_id = ?", userId);
+  await run(
+    "UPDATE buckets SET cors = 1 WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)",
+    workspaceId,
+    workspaceId,
+  );
 }
 
 // ---------------------------------------------------------------- assets
 
 export const videoKey = (generationId: string) => `videos/${generationId.replace(/[^a-zA-Z0-9_-]/g, "")}.mp4`;
 
-export async function getAsset(userId: string, key: string): Promise<Asset | undefined> {
-  const row = await first<AssetRow>("SELECT * FROM assets WHERE user_id = ? AND key = ?", userId, key);
+export async function getAsset(workspaceId: string, key: string): Promise<Asset | undefined> {
+  const row = await first<AssetRow>(`SELECT * FROM assets WHERE key = ? AND ${byWorkspace()}`, key, ...wsArgs(workspaceId));
   return row && toAsset(row);
 }
 
@@ -200,21 +242,23 @@ async function uploadBody(res: Response): Promise<{ body: BodyInit; bytes: numbe
 
 /** Copies a fetched file (e.g. a provider's video) into the user's bucket and indexes it. */
 export async function putAsset(
-  userId: string,
+  workspaceId: string,
   {
     key,
     source,
     contentType,
     generationId = null,
+    createdBy = null,
   }: {
     key: string;
     source: Response;
     contentType: string;
     generationId?: string | null;
+    createdBy?: string | null;
   },
 ): Promise<Asset> {
   const cfg = r2();
-  const bucket = await ensureBucket(userId);
+  const bucket = await ensureBucket(workspaceId);
   const { body, bytes } = await uploadBody(source);
   await s3(cfg, objectUrl(cfg, bucket, key), {
     method: "PUT",
@@ -222,17 +266,28 @@ export async function putAsset(
     // Content-Length comes from the body: a byte array or a FixedLengthStream.
     headers: { "Content-Type": contentType },
   });
-  return recordAsset({ userId, key, bucket, bytes, contentType, generationId, createdAt: Date.now() });
+  return recordAsset({
+    userId: createdBy ?? workspaceId,
+    workspaceId,
+    createdBy,
+    key,
+    bucket,
+    bytes,
+    contentType,
+    generationId,
+    createdAt: Date.now(),
+  });
 }
 
 async function recordAsset(asset: Asset): Promise<Asset> {
-  const { userId, key, bucket, bytes, contentType, generationId } = asset;
+  const { userId, workspaceId, key, bucket, bytes, contentType, generationId } = asset;
   await run(
-    `INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name, meta)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name, meta, workspace_id, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (user_id, key) DO UPDATE SET
        bucket = excluded.bucket, bytes = excluded.bytes, content_type = excluded.content_type,
-       created_at = excluded.created_at, name = excluded.name, meta = excluded.meta`,
+       created_at = excluded.created_at, name = excluded.name, meta = excluded.meta,
+       workspace_id = excluded.workspace_id, created_by = COALESCE(excluded.created_by, assets.created_by)`,
     userId,
     key,
     bucket,
@@ -242,6 +297,8 @@ async function recordAsset(asset: Asset): Promise<Asset> {
     asset.createdAt,
     asset.name ?? null,
     asset.meta ? JSON.stringify(asset.meta) : null,
+    workspaceId,
+    asset.createdBy,
   );
   return asset;
 }
@@ -250,7 +307,7 @@ export async function deleteAsset(asset: Asset) {
   const cfg = r2();
   if (asset.meta?.thumb) await deleteObject(cfg, asset.bucket, asset.meta.thumb);
   await deleteObject(cfg, asset.bucket, asset.key);
-  await run("DELETE FROM assets WHERE user_id = ? AND key = ?", asset.userId, asset.key);
+  await run(`DELETE FROM assets WHERE key = ? AND ${byWorkspace()}`, asset.key, ...wsArgs(asset.workspaceId));
 }
 
 async function deleteObject(cfg: R2Config, bucket: string, key: string) {
@@ -259,18 +316,22 @@ async function deleteObject(cfg: R2Config, bucket: string, key: string) {
   });
 }
 
-export async function deleteGenerationAssets(userId: string, generationId: string) {
+export async function deleteGenerationAssets(workspaceId: string, generationId: string) {
   const rows = await all<AssetRow>(
-    "SELECT * FROM assets WHERE user_id = ? AND generation_id = ?",
-    userId,
+    `SELECT * FROM assets WHERE generation_id = ? AND ${byWorkspace()}`,
     generationId,
+    ...wsArgs(workspaceId),
   );
   for (const row of rows) await deleteAsset(toAsset(row));
 }
 
 /** Deletes every indexed object under a key prefix, including ones with no generation id. */
-export async function deleteAssetsUnder(userId: string, prefix: string) {
-  const rows = await all<AssetRow>("SELECT * FROM assets WHERE user_id = ? AND key LIKE ?", userId, `${prefix}%`);
+export async function deleteAssetsUnder(workspaceId: string, prefix: string) {
+  const rows = await all<AssetRow>(
+    `SELECT * FROM assets WHERE key LIKE ? AND ${byWorkspace()}`,
+    `${prefix}%`,
+    ...wsArgs(workspaceId),
+  );
   for (const row of rows) await deleteAsset(toAsset(row));
 }
 
@@ -279,10 +340,10 @@ export async function deleteAssetsUnder(userId: string, prefix: string) {
 const UPLOAD_URL_TTL_S = 15 * 60;
 
 /** Signed URLs the browser PUTs files to, straight into the user's bucket. */
-export async function createUpload(userId: string, keys: string[]) {
+export async function createUpload(workspaceId: string, keys: string[]) {
   const cfg = r2();
-  const bucket = await ensureBucket(userId);
-  await ensureCors(userId, bucket);
+  const bucket = await ensureBucket(workspaceId);
+  await ensureCors(workspaceId, bucket);
   return Promise.all(keys.map((key) => presign(cfg, "PUT", bucket, key, UPLOAD_URL_TTL_S)));
 }
 
@@ -303,14 +364,20 @@ async function headObject(cfg: R2Config, bucket: string, key: string) {
  * Indexes a file the browser uploaded, plus its thumbnail if one was sent. Size and type
  * come from what actually landed in the bucket. Returns undefined if the file isn't there.
  */
-export async function completeUpload(userId: string, key: string, { name, meta }: { name: string; meta: AssetMeta }) {
+export async function completeUpload(
+  workspaceId: string,
+  key: string,
+  { name, meta, createdBy }: { name: string; meta: AssetMeta; createdBy: string },
+) {
   const cfg = r2();
-  const bucket = await ensureBucket(userId);
+  const bucket = await ensureBucket(workspaceId);
   const file = await headObject(cfg, bucket, key);
   if (!file) return undefined;
   const thumb = meta.thumb ? await headObject(cfg, bucket, meta.thumb) : undefined;
   return recordAsset({
-    userId,
+    userId: createdBy,
+    workspaceId,
+    createdBy,
     key,
     bucket,
     // The thumbnail counts toward the quota too.
@@ -327,28 +394,43 @@ export async function completeUpload(userId: string, key: string, { name, meta }
  * Every asset the user would want to see, newest first: uploads, generated videos and
  * generated images, with the prompt and model of the generation that made them.
  */
-export async function listAssets(userId: string): Promise<AssetItem[]> {
-  const [rows, videoGens, imageGens, falJobs] = await Promise.all([
+/** The users who created rows of a table in a workspace, by id. */
+export async function creatorsIn(
+  table: "assets" | "generations" | "image_generations" | "fal_jobs",
+  workspaceId: string,
+) {
+  const rows = await all<Creator>(
+    `SELECT id, email, name, avatar_url AS avatarUrl FROM users
+     WHERE id IN (SELECT DISTINCT created_by FROM ${table} WHERE ${byWorkspace()})`,
+    ...wsArgs(workspaceId),
+  );
+  return new Map(rows.map((c) => [c.id, c]));
+}
+
+export async function listAssets(workspaceId: string): Promise<AssetItem[]> {
+  const scope = wsArgs(workspaceId);
+  const [rows, videoGens, imageGens, falJobs, creators] = await Promise.all([
     all<AssetRow>(
-      `SELECT * FROM assets WHERE user_id = ? AND (key LIKE 'uploads/%' OR key LIKE 'videos/%' OR key LIKE 'images/%' OR key LIKE 'fal/%')
+      `SELECT * FROM assets WHERE ${byWorkspace()} AND (key LIKE 'uploads/%' OR key LIKE 'videos/%' OR key LIKE 'images/%' OR key LIKE 'fal/%')
        ORDER BY created_at DESC LIMIT 2000`,
-      userId,
+      ...scope,
     ),
     all<{ id: string; model: string; prompt: string; duration: number }>(
       `SELECT id, json_extract(data, '$.model') AS model, json_extract(data, '$.prompt') AS prompt,
-              json_extract(data, '$.duration') AS duration FROM generations WHERE user_id = ?`,
-      userId,
+              json_extract(data, '$.duration') AS duration FROM generations WHERE ${byWorkspace()}`,
+      ...scope,
     ),
     all<{ id: string; model: string; prompt: string }>(
       `SELECT id, json_extract(data, '$.model') AS model, json_extract(data, '$.prompt') AS prompt
-       FROM image_generations WHERE user_id = ?`,
-      userId,
+       FROM image_generations WHERE ${byWorkspace()}`,
+      ...scope,
     ),
     all<{ id: string; model: string; prompt: string | null }>(
       `SELECT id, json_extract(data, '$.endpointId') AS model, json_extract(data, '$.request.prompt') AS prompt
-       FROM fal_jobs WHERE user_id = ?`,
-      userId,
+       FROM fal_jobs WHERE ${byWorkspace()}`,
+      ...scope,
     ),
+    creatorsIn("assets", workspaceId),
   ]);
   const videos = new Map(videoGens.map((g) => [g.id, g]));
   const images = new Map(imageGens.map((g) => [g.id, g]));
@@ -375,6 +457,7 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
       peaks: a.meta?.peaks,
       hasThumb: !!a.meta?.thumb,
       createdAt: a.createdAt,
+      createdBy: (a.createdBy && creators.get(a.createdBy)) || undefined,
     };
     if (a.key.startsWith("uploads/")) return [{ ...base, source: "upload", name: a.name ?? a.key.split("/").pop()! }];
     if (a.key.startsWith("fal/")) {
@@ -406,9 +489,9 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
 }
 
 /** A signed URL for the browser to PUT a thumbnail it made for a generated image or video. */
-export async function createThumbUpload(userId: string, asset: Asset) {
+export async function createThumbUpload(workspaceId: string, asset: Asset) {
   const cfg = r2();
-  await ensureCors(userId, asset.bucket);
+  await ensureCors(workspaceId, asset.bucket);
   return presign(cfg, "PUT", asset.bucket, thumbKeyFor(asset.key), UPLOAD_URL_TTL_S);
 }
 
@@ -426,13 +509,13 @@ export async function attachThumb(asset: Asset) {
   return true;
 }
 
-export async function renameAsset(userId: string, key: string, name: string) {
-  await run("UPDATE assets SET name = ? WHERE user_id = ? AND key = ?", name, userId, key);
+export async function renameAsset(workspaceId: string, key: string, name: string) {
+  await run(`UPDATE assets SET name = ? WHERE key = ? AND ${byWorkspace()}`, name, key, ...wsArgs(workspaceId));
 }
 
 /** Removes an uploaded object that never got indexed (e.g. it failed validation). */
-export async function discardUpload(userId: string, key: string) {
-  const bucket = await getBucket(userId);
+export async function discardUpload(workspaceId: string, key: string) {
+  const bucket = await getBucket(workspaceId);
   if (bucket) await deleteObject(r2(), bucket, key);
 }
 
@@ -440,20 +523,27 @@ export async function discardUpload(userId: string, key: string) {
  * Keys stored on this page of users' generations. Other users are irrelevant: an asset
  * row is only protected by a generation with the same user_id.
  */
-async function referencedByUsers(userIds: string[]) {
-  if (!userIds.length) return new Set<string>();
-  const marks = userIds.map(() => "?").join(", ");
+async function referencedByRows(rows: { user_id: string; workspace_id: string | null }[]) {
+  const userIds = candidateUserIds(rows);
+  const workspaceIds = [...new Set(rows.map((r) => r.workspace_id).filter((id): id is string => !!id))];
+  if (!userIds.length && !workspaceIds.length) return new Set<string>();
+  const userMarks = userIds.map(() => "?").join(", ") || "NULL";
+  const wsMarks = workspaceIds.map(() => "?").join(", ") || "NULL";
+  const where = `(user_id IN (${userMarks}) OR workspace_id IN (${wsMarks}))`;
+  const params = [...userIds, ...workspaceIds];
   const [videos, images] = await Promise.all([
-    all<{ user_id: string; data: string }>(
-      `SELECT user_id, data FROM generations WHERE user_id IN (${marks})`,
-      ...userIds,
+    all<{ user_id: string; workspace_id: string | null; data: string }>(
+      `SELECT user_id, workspace_id, data FROM generations WHERE ${where}`,
+      ...params,
     ),
-    all<{ user_id: string; data: string }>(
-      `SELECT user_id, data FROM image_generations WHERE user_id IN (${marks})`,
-      ...userIds,
+    all<{ user_id: string; workspace_id: string | null; data: string }>(
+      `SELECT user_id, workspace_id, data FROM image_generations WHERE ${where}`,
+      ...params,
     ),
   ]);
-  return referencedKeySet([...videos, ...images].map((r) => ({ userId: r.user_id, data: r.data })));
+  return referencedKeySet(
+    [...videos, ...images].map((r) => ({ userId: r.user_id, workspaceId: r.workspace_id, data: r.data })),
+  );
 }
 
 /**
@@ -478,7 +568,7 @@ export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
     if (!rows.length) break;
     offset += rows.length;
     // Only the users on this page. A sweep must not read every generation in the database.
-    const referenced = await referencedByUsers(candidateUserIds(rows));
+    const referenced = await referencedByRows(rows);
     for (const row of withoutReferenced(rows, referenced)) {
       doomed.push(row);
       if (doomed.length === 50) break;
@@ -493,18 +583,19 @@ export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
 
 const GB = 1024 ** 3;
 
-export async function storageUsage(userId: string) {
+export async function storageUsage(workspaceId: string) {
   const row = await first<{ objects: number; bytes: number }>(
-    "SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE user_id = ?",
-    userId,
+    `SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE ${byWorkspace()}`,
+    ...wsArgs(workspaceId),
   );
+  // A team gets the same allowance as a person. Files count only against that workspace.
   const quotaGb = Number(env().STORAGE_QUOTA_GB) || 2;
   return { objects: row?.objects ?? 0, bytes: row?.bytes ?? 0, quotaBytes: Math.round(quotaGb * GB) };
 }
 
-/** Thrown before a generation or upload that would go over the user's quota. */
-export async function assertStorageAvailable(userId: string, extraBytes = 0) {
-  const { bytes, quotaBytes } = await storageUsage(userId);
+/** Thrown before a generation or upload that would go over the workspace's quota. */
+export async function assertStorageAvailable(workspaceId: string, extraBytes = 0) {
+  const { bytes, quotaBytes } = await storageUsage(workspaceId);
   if (bytes + extraBytes > quotaBytes || bytes >= quotaBytes) {
     const gb = +(quotaBytes / GB).toFixed(1);
     throw new StorageError(`Your storage is full (${gb} GB). Delete some videos to keep generating.`, 403);
@@ -538,6 +629,36 @@ export const providerUrl = (asset: Asset) => presign(r2(), "GET", asset.bucket, 
  * Redirects to a short-lived signed URL, so the bytes (and the player's Range
  * requests) go straight from R2 to the browser. R2 doesn't charge for egress.
  */
+/** Empties and deletes the workspace's R2 bucket, then drops the index row. No bucket is a no-op. */
+export async function deleteBucketContents(workspaceId: string) {
+  const name = await getBucket(workspaceId);
+  if (!name) return;
+  const cfg = r2();
+  let token: string | undefined;
+  for (;;) {
+    const url = new URL(objectUrl(cfg, name));
+    url.searchParams.set("list-type", "2");
+    if (token) url.searchParams.set("continuation-token", token);
+    const res = await s3(cfg, url.toString(), { method: "GET" });
+    const xml = await res.text();
+    const keys = [...xml.matchAll(/<Key>([^<]*)<\/Key>/g)].map((m) =>
+      m[1].replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">"),
+    );
+    for (const key of keys) await deleteObject(cfg, name, key);
+    const next = xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/)?.[1];
+    if (!next || !xml.includes("<IsTruncated>true")) break;
+    token = next;
+  }
+  await s3(cfg, objectUrl(cfg, name), { method: "DELETE" }).catch((e) => {
+    if ((e as { upstreamStatus?: number }).upstreamStatus !== 404) throw e;
+  });
+  await run(
+    "DELETE FROM buckets WHERE workspace_id = ? OR (user_id = ? AND workspace_id IS NULL)",
+    workspaceId,
+    workspaceId,
+  );
+}
+
 export async function serveAsset(asset: Asset, opts: { downloadName?: string; thumb?: boolean } = {}) {
   const query: Record<string, string> = opts.downloadName
     ? { "response-content-disposition": `attachment; filename="${opts.downloadName}"` }

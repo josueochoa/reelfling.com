@@ -7,7 +7,9 @@ import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_IN
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
-import { api, apiJson, type Me } from "./api";
+import { api, apiJson, withWorkspace, type KeySource, type Me } from "./api";
+import { Avatar } from "./Teams";
+import { KeyChoice } from "./Teams";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
 import { UploadsPanel } from "./UploadsPanel";
@@ -15,7 +17,7 @@ import { UploadsPanel } from "./UploadsPanel";
 const POLL_MS = 4000;
 const pending = (g: ImageGeneration) => g.status === "queued" || g.status === "running";
 const imageUrl = (g: ImageGeneration, i: number, download = false) =>
-  `/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`;
+  withWorkspace(`/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`);
 const aspectStyle = (ratio?: string) => ({ aspectRatio: (ratio ?? "1:1").replace(":", " / ") });
 
 /** Re-renders every second while something is generating, for the elapsed timers. */
@@ -74,7 +76,15 @@ export function ImageStudio({
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const references = refIds.flatMap((id) => byId.get(id) ?? []);
-  const imageProvider = me ? imageProviderFor(me.user.activeProvider, me.keys.map((key) => key.provider)) : undefined;
+  const [keySource, setKeySource] = useState<KeySource>("team");
+  const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
+  const usingOwn = !!ownKeys && keySource === "member";
+  const imageProvider = me
+    ? imageProviderFor(
+        usingOwn ? me.user.activeProvider : me.workspace.activeProvider,
+        (usingOwn ? me.personalKeys : me.keys).map((key) => key.provider),
+      )
+    : undefined;
   const needsKey = !!me && !imageProvider;
   const now = useNow(gens.some(pending));
 
@@ -170,6 +180,7 @@ export function ImageStudio({
             quality: model.capabilities.qualities ? state.quality : undefined,
             count: state.count,
             references: references.map((r) => r.key),
+            ...(ownKeys ? { keySource } : {}),
           }),
         }),
       );
@@ -273,6 +284,11 @@ export function ImageStudio({
                 key={`${gen.id}-${i}`}
                 className="group relative mb-3 break-inside-avoid overflow-hidden rounded-xl bg-white/[0.04]"
               >
+                {me?.workspace.kind === "team" && gen.creator && (
+                  <span className="absolute top-2 left-2 z-10">
+                    <Avatar person={gen.creator} size="size-6" />
+                  </span>
+                )}
                 {gen.status === "succeeded" ? (
                   <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -348,7 +364,12 @@ export function ImageStudio({
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
-        <div className="pointer-events-auto mx-auto max-w-4xl">
+                <div className="pointer-events-auto mx-auto max-w-4xl">
+          {ownKeys && (
+            <div className="mb-2 flex justify-end">
+              <KeyChoice value={keySource} onChange={setKeySource} />
+            </div>
+          )}
           <ImageComposer
             state={state}
             onChange={(patch) => setState((s) => ({ ...s, ...patch }))}

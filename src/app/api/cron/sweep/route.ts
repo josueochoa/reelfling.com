@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   for (let i = 0; i < pending.length; i += CONCURRENCY) {
     await Promise.all(
       pending.slice(i, i + CONCURRENCY).map((g) =>
-        syncGeneration(g.user_id, g.id).catch((e) => {
+        syncGeneration(g.workspace_id, g.id).catch((e) => {
           failed++;
           console.error(`[sweep ${g.id}]`, e);
         }),
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   for (let i = 0; i < falPending.length; i += CONCURRENCY) {
     await Promise.all(
       falPending.slice(i, i + CONCURRENCY).map((job) =>
-        syncFalJob(job.user_id, job.id).catch((e) => {
+        syncFalJob(job.workspace_id, job.id).catch((e) => {
           falFailed++;
           console.error(`[sweep fal ${job.id}]`, (e as Error).message);
         }),

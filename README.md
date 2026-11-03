@@ -38,12 +38,29 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 
   ArgoLink's images API is synchronous and can take minutes, so each generation is a background job: `POST /api/images` records it and sends it to the `reelfling-image-jobs` queue; the Worker's queue consumer (`worker.ts`, 15-minute limit) calls ArgoLink, copies the images into the user's bucket (`images/<id>/…`) and updates the record; the page polls. Closing the tab doesn't lose anything. Jobs are claimed atomically, so a redelivered message can't bill twice, and the cron job fails any that died. Under `npm run dev` jobs run inline (there's no queue consumer).
 
+## Teams
+
+A team is a shared workspace. Any signed-in user can create one and becomes its owner. The switcher sits next to the logo; each browser tab remembers its workspace.
+
+| | Owner | Admin | Member |
+|---|---|---|---|
+| Generate, upload, use shared assets; edit or delete their own items | ✓ | ✓ | ✓ |
+| Invite, remove members, change roles (not the owner's) | ✓ | ✓ | |
+| Team API keys, monthly caps, ownership, deleting the team | ✓ | keys only if the owner allows it | |
+
+- **Invites**: by email (a banner after sign-in) or by link (`/invite/<token>`, 14 days; only a hash is stored). Work stays in the team when someone leaves. No email is sent.
+- **Keys**: the owner keeps one team key per provider, encrypted the same way as a personal key. Members see provider and last 4 characters. The owner can let members generate with their own personal key instead; each generation records `key_source` (`team` or `member`).
+- **Spend**: team-key generations store a catalog estimate, replaced by a provider-reported cost when one comes back. The owner can set an optional monthly USD cap per member. Own-key generations do not count. Owners and admins can open Usage (7 and 30 days) and export CSV. This is a limit in the app, not billing.
+- **Storage**: each team has its own private R2 bucket with the same `STORAGE_QUOTA_GB` as a person (default 2 GB). Team files count only against that bucket.
+- **Who gets in**: Cloudflare Access. Set `INVITE_ONLY=true` to also require a team invite before a new account is created.
+
 ## Accounts & keys (BYOK)
 
 - **Sign-in** (`AUTH_MODE`): `access` (default) puts Cloudflare Access in front of the app. Access decides who gets in, and the app verifies the JWT it adds to every request (signature, issuer, audience, expiry) before trusting the email in it. `google` switches to built-in Google sign-in with cookie sessions; set `GOOGLE_CLIENT_ID` (var) and `GOOGLE_CLIENT_SECRET` (secret), with redirect URI `https://<domain>/api/auth/google/callback`.
 - Accounts are keyed by email, so switching sign-in methods keeps everyone's keys and videos.
-- Each user adds their own ArgoLink and/or ModelArk key under **API keys** in the account menu. A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The server never uses keys of its own.
-- Generations and videos belong to the user who made them; every query is scoped by user.
+- Each workspace has its own keys under **API keys**. A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The browser only ever receives the provider and the last 4 characters. The server never uses keys of its own.
+- The active provider is stored on the workspace, so a team's choice does not change a member's personal one.
+- Personal generations stay on that person's workspace. Team generations are shared with the team and record who made them.
 - D1 has point-in-time restore (Time Travel) for the last 30 days: `npx wrangler d1 time-travel`.
 
 | | ModelArk | ArgoLink |

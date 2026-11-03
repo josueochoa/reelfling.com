@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Me } from "./api";
+import { apiJson, type Me } from "./api";
 
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
@@ -94,10 +94,34 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
           >
             API keys
           </MenuItem>
+          {auth.dev && <DevSwitch />}
           <MenuItem onClick={signOut}>Sign out</MenuItem>
         </div>
       )}
     </div>
+  );
+}
+
+function DevSwitch() {
+  const [email, setEmail] = useState("");
+  return (
+    <form
+      className="px-2.5 py-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void apiJson("/api/dev/user", { method: "POST", body: JSON.stringify({ email }) }).then(() => {
+          window.location.reload();
+        });
+      }}
+    >
+      <p className="mb-1 text-[10px] tracking-wide text-zinc-500 uppercase">Dev user</p>
+      <input
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="email"
+        className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1 text-xs outline-none"
+      />
+    </form>
   );
 }
 

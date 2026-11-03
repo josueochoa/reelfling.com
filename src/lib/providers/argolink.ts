@@ -3,6 +3,7 @@
 
 import type { ProviderCredentials } from "../keys";
 import type { GenerateRequest } from "../types";
+import { reportedUsd } from "../reportedCost";
 import { ProviderError, type ProviderFactory, type TaskSnapshot } from "./types";
 
 const DEFAULT_BASE_URL = "https://argolink.io";
@@ -103,6 +104,7 @@ export const argoLink: ProviderFactory = (creds) => ({
       progress: t.status === "done" ? 100 : t.progress,
       videoUrl: t.video?.url,
       billedSeconds: t.usage?.billed_seconds,
+      costUsd: reportedUsd(t),
     };
     if (t.error) snap.error = typeof t.error === "string" ? t.error : (t.error.message ?? t.error.code);
     return snap;

@@ -88,4 +88,19 @@ export interface Generation {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  /** team = the workspace key, member = the person's own key. */
+  keySource?: "team" | "member";
+  /** Provider this generation ran on (the workspace route at submit time). */
+  route?: string;
+  /** Catalog endpoint id that was called. */
+  routeEndpoint?: string;
+  /** Catalog estimate, USD. */
+  estimatedCost?: number;
+  /** Provider-reported USD, when the provider sends one. Wins over the estimate. */
+  reportedCost?: number;
+  /** Workspace whose api_keys row was used. */
+  keyWorkspaceId?: string;
+  /** From the created_by column, not the JSON. */
+  createdBy?: string | null;
+  creator?: import("./uploads").Creator;
 }

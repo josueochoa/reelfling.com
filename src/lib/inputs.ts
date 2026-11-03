@@ -92,6 +92,8 @@ export function restoreInputs(
 
 export interface StoredRecord {
   userId: string;
+  /** Set when the generation lives in a shared workspace. Protects that workspace's copy of the key. */
+  workspaceId?: string | null;
   data: string;
 }
 
@@ -133,14 +135,24 @@ export function candidateUserIds(rows: { user_id: string }[]): string[] {
 /** `${userId}\\0${key}` for every file a saved generation still points at. */
 export function referencedKeySet(records: StoredRecord[]): Set<string> {
   const set = new Set<string>();
-  for (const rec of records) for (const key of keysInRecord(rec.data)) set.add(`${rec.userId}\0${key}`);
+  for (const rec of records) {
+    for (const key of keysInRecord(rec.data)) {
+      set.add(`${rec.userId}\0${key}`);
+      // A teammate's generation protects the file even when user ids differ.
+      if (rec.workspaceId) set.add(`\u0001${rec.workspaceId}\0${key}`);
+    }
+  }
   return set;
 }
 
-/** Drops assets whose key is stored on one of that user's generations. */
-export function withoutReferenced<T extends { user_id: string; key: string }>(
+/** Drops assets whose key is stored on one of that user's (or that workspace's) generations. */
+export function withoutReferenced<T extends { user_id: string; key: string; workspace_id?: string | null }>(
   rows: T[],
   referenced: Set<string>,
 ): T[] {
-  return rows.filter((row) => !referenced.has(`${row.user_id}\0${row.key}`));
+  return rows.filter((row) => {
+    if (referenced.has(`${row.user_id}\0${row.key}`)) return false;
+    if (row.workspace_id && referenced.has(`\u0001${row.workspace_id}\0${row.key}`)) return false;
+    return true;
+  });
 }

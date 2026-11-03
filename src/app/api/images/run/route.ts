@@ -11,7 +11,7 @@ declare global {
 export async function POST(request: Request) {
   const token = request.headers.get("x-job-token");
   if (!token || !globalThis.__jobTokens?.has(token)) return new Response("Not found", { status: 404 });
-  const { userId, id } = (await request.json()) as { userId: string; id: string };
-  await runImageJob(userId, id);
+  const body = (await request.json()) as { userId?: string; workspaceId?: string; id: string };
+  await runImageJob(body.workspaceId || body.userId || "", body.id);
   return new Response(null, { status: 204 });
 }

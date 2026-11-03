@@ -13,6 +13,8 @@ export interface TaskSnapshot {
   progress?: number;
   tokens?: number;
   billedSeconds?: number;
+  /** USD the provider reported on this poll, when it sends one. */
+  costUsd?: number;
 }
 
 /** A provider client bound to one user's credentials. */

@@ -257,7 +257,7 @@ describe("openrouter images", () => {
       assert.equal(call.authorization, `Bearer ${KEY}`);
       return json(200, { data: [{ b64_json: "aGVsbG8=", media_type: "image/png" }] });
     });
-    const items = await generateOpenRouterImages(KEY, google);
+    const { items } = await generateOpenRouterImages(KEY, google);
     assert.equal(calls.length, 2);
     assert.equal(items.length, 2);
     const file = await openRouterImageFile(KEY, items[0]);

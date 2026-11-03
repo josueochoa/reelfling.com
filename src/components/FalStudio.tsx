@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
 import { assetFileUrl } from "@/lib/uploads";
-import { api, type Me } from "./api";
+import { api, withWorkspace, type KeySource, type Me } from "./api";
+import { KeyChoice } from "./Teams";
 
 export interface FalTabHandle {
   reload: () => void;
@@ -37,7 +38,7 @@ function FieldErrors({ fields }: { fields?: FalFieldError[] }) {
 }
 
 function OutputPreview({ output }: { output: FalJobView["outputs"][number] }) {
-  const src = assetFileUrl(output.key);
+  const src = withWorkspace(assetFileUrl(output.key));
   if (output.contentType.startsWith("video/"))
     return <video src={src} controls playsInline className="max-h-80 w-full rounded-lg bg-black" />;
   if (output.contentType.startsWith("audio/")) return <audio src={src} controls className="w-full" />;
@@ -47,7 +48,7 @@ function OutputPreview({ output }: { output: FalJobView["outputs"][number] }) {
       <img src={src} alt="" className="max-h-80 w-full rounded-lg object-contain bg-black" />
     );
   return (
-    <a href={assetFileUrl(output.key, { download: true })} className="text-xs text-zinc-300 underline">
+    <a href={withWorkspace(assetFileUrl(output.key, { download: true }))} className="text-xs text-zinc-300 underline">
       Download
     </a>
   );
@@ -74,7 +75,11 @@ export function FalStudio({
     jobsRef.current = jobs;
   }, [jobs]);
 
-  const needsKey = !!me && !me.keys.some((key) => key.provider === "fal");
+  const [keySource, setKeySource] = useState<KeySource>("team");
+  const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
+  const usingOwn = !!ownKeys && keySource === "member";
+  const falKeys = usingOwn ? me?.personalKeys : me?.keys;
+  const needsKey = !!me && !falKeys?.some((key) => key.provider === "fal");
 
   const upsert = useCallback((job: FalJobView) => {
     setJobs((prev) => {
@@ -137,7 +142,7 @@ export function FalStudio({
       const res = await api("/api/fal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpointId, input: parsed }),
+        body: JSON.stringify({ endpointId, input: parsed, ...(ownKeys ? { keySource } : {}) }),
       });
       const body = (await res.json()) as FalJobView & { error?: string; fields?: FalFieldError[] };
       if (res.status === 422) {
@@ -230,6 +235,11 @@ export function FalStudio({
             void submit();
           }}
         >
+          {ownKeys && (
+            <div className="flex justify-end">
+              <KeyChoice value={keySource} onChange={setKeySource} />
+            </div>
+          )}
           {needsKey && (
             <div className="flex items-center gap-3 rounded-xl bg-accent/10 px-3 py-2 text-sm">
               <span className="flex-1 text-zinc-200">Add your fal API key to run an endpoint.</span>

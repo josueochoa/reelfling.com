@@ -48,4 +48,6 @@ export interface FalJobView {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  keySource?: "team" | "member";
+  creator?: { id: string; email: string; name: string | null; avatarUrl: string | null };
 }

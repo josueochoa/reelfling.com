@@ -1,7 +1,9 @@
-import { errorResponse, requireUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/auth";
+import { openGenerationKey, runWithCap } from "@/lib/generationKey";
 import { enqueueImageJob, insertImageGeneration, listImageGenerations, type ImageGeneration } from "@/lib/images";
 import { listKeys } from "@/lib/keys";
 import { invalidMentions } from "@/lib/mentions";
+import type { KeySource } from "@/lib/scope";
 import {
   estimateCost,
   getImageModel,
@@ -15,11 +17,12 @@ import {
 } from "@/lib/registry";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
+import { requireWorkspace } from "@/lib/workspaces";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const user = await requireUser();
-    return Response.json(await listImageGenerations(user.id));
+    const { workspace } = await requireWorkspace(request);
+    return Response.json(await listImageGenerations(workspace.id));
   } catch (e) {
     return errorResponse(e);
   }
@@ -43,8 +46,8 @@ const bad = (error: string) => Response.json({ error }, { status: 400 });
 /** Validates and queues an image generation; the page polls GET /api/images/:id. */
 export async function POST(request: Request) {
   try {
-    const user = await requireUser();
-    const req = (await request.json()) as ImageRequest;
+    const { user, workspace } = await requireWorkspace(request);
+    const req = (await request.json()) as ImageRequest & { keySource?: KeySource };
     const model = getImageModel(req.model);
     if (!model) return bad(`Unknown model "${req.model}"`);
     const prompt = req.prompt?.trim();
@@ -53,21 +56,32 @@ export async function POST(request: Request) {
     if (invalid || !prompt) return bad(invalid ?? "Write a prompt");
     for (const key of refs) {
       // Uploads or generated images.
-      const asset = isAssetKey(key) ? await getAsset(user.id, key) : undefined;
+      const asset = isAssetKey(key) ? await getAsset(workspace.id, key) : undefined;
       if (!asset || !(uploadKindOf(asset.contentType) === "image" || asset.contentType.startsWith("image/")))
         return bad("A reference isn't an image in your uploads. Remove it and add it again.");
     }
     const mentions = invalidMentions(prompt, { Image: refs.length, Video: 0, Audio: 0 });
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
-    const imageProvider = imageProviderFor(
-      user.activeProvider,
-      (await listKeys(user.id)).map((key) => key.provider),
-    );
+    const own = workspace.kind === "team" && req.keySource === "member";
+    const active = own ? user.activeProvider : workspace.activeProvider;
+    const keyWorkspaceId = own ? user.id : workspace.id;
+    const imageProvider = imageProviderFor(active, (await listKeys(keyWorkspaceId)).map((key) => key.provider));
     if (!imageProvider)
       return bad("The Image tab needs an OpenRouter or ArgoLink key. Add one under API keys.");
     if (!routeFor(model, imageProvider))
       return bad(`${model.name} isn't available on ${PROVIDER_INFO[imageProvider].label}.`);
-    await assertStorageAvailable(user.id);
+    await assertStorageAvailable(workspace.id);
+    const estimate = estimateCost(model, { resolution: req.resolution, count: req.count }) ?? 0;
+    const opened = await openGenerationKey({
+      workspace,
+      userId: user.id,
+      provider: imageProvider,
+      requested: own ? "member" : workspace.kind === "team" ? "team" : "member",
+      estimate,
+    });
+    // Cap is checked before the job is queued. The queue is not the provider, but a
+    // rejected job must not be stored or run.
+    await runWithCap(opened, async () => undefined);
 
     // "auto": the reference's shape if there is one; otherwise the model's own fallback.
     let aspect: string | undefined = req.ratio;
@@ -91,12 +105,17 @@ export async function POST(request: Request) {
       count: req.count,
       references: refs,
       images: [],
-      cost: estimateCost(model, { resolution: req.resolution, count: req.count }) ?? 0,
+      cost: estimate,
+      keySource: opened.source,
+      route: imageProvider,
+      routeEndpoint: routeFor(model, imageProvider)?.endpoint,
+      estimatedCost: estimate,
+      keyWorkspaceId: opened.keyWorkspaceId,
       createdAt: now,
       updatedAt: now,
     };
-    await insertImageGeneration(user.id, gen);
-    await enqueueImageJob(user.id, gen.id);
+    await insertImageGeneration(workspace.id, gen, user.id);
+    await enqueueImageJob(workspace.id, user.id, gen.id);
     return Response.json(gen, { status: 201 });
   } catch (e) {
     return errorResponse(e);
