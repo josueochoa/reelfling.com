@@ -2,6 +2,7 @@
 
 import { cameraSummary, estimateCost } from "@/lib/registry";
 import { lookupModel, lookupModelName } from "@/lib/registry/lookup";
+import { getTemplate } from "@/lib/templates/templates";
 import type { Generation } from "@/lib/types";
 import { detailRoute, formatCreated, type ViewerDetail } from "./model";
 
@@ -21,6 +22,8 @@ export function videoDetails(gen: Generation): ViewerDetail[] {
     });
   const cost = gen.estimatedCost ?? computed;
   const rows: ViewerDetail[] = [{ label: "Model", value: model?.name ?? gen.model }];
+  const template = getTemplate(gen.templateId);
+  if (template) rows.push({ label: "Template", value: template.name });
   if (route) rows.push({ label: "Route", value: route });
   rows.push(
     { label: "Resolution", value: gen.resolution },

@@ -1,0 +1,274 @@
+{
+  "categories": [
+    { "id": "effects", "label": "Effects" },
+    { "id": "product", "label": "Product" },
+    { "id": "ugc", "label": "UGC" }
+  ],
+  "templates": [
+    {
+      "id": "paper-peel",
+      "name": "Paper peel",
+      "category": "effects",
+      "summary": "A sheet of blank paper splits and peels away from a person.",
+      "model": "fal:kling/v4/reference-to-video",
+      "route": "fal",
+      "duration": 5,
+      "ratio": "9:16",
+      "resolution": "720p",
+      "prompt": "The person in {{character}} faces the lens. A sheet of unprinted cream paper covers the view, then splits from the middle and peels away in two rough halves. The person is unchanged when the paper is gone. Side light shows the torn fibers. No words, no logos, no second person.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "A clear photo of one person, facing the camera."
+        }
+      ]
+    },
+    {
+      "id": "crossing-beam",
+      "name": "Crossing beam",
+      "category": "effects",
+      "summary": "A single beam of light crosses a still person and fades.",
+      "model": "openrouter:bytedance/seedance-2.5",
+      "route": "openrouter",
+      "duration": 5,
+      "ratio": "9:16",
+      "resolution": "720p",
+      "prompt": "The person in {{character}} holds a neutral pose. One narrow beam of light travels from the left edge to the right edge across their face and shoulders, then the beam is gone. {{line}} The camera stays locked. No captions and no logos.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "A clear photo of one person."
+        },
+        {
+          "id": "line",
+          "kind": "text",
+          "label": "Light note",
+          "required": false,
+          "maxLength": 80,
+          "hint": "Optional. A short note about the light, or leave this blank."
+        }
+      ]
+    },
+    {
+      "id": "beaded-glass",
+      "name": "Beaded glass",
+      "category": "effects",
+      "summary": "Water beads on glass ripple once, then the pane clears.",
+      "model": "dreamina-seedance-2-0-260128",
+      "route": "modelark",
+      "duration": 5,
+      "ratio": "9:16",
+      "resolution": "720p",
+      "prompt": "The person in {{character}} is seen through a pane of glass covered in still water beads. One ripple crosses the pane from the upper left, the beads shift, and the glass clears. The person does not move. Cool, even light. No text and no logos.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "A clear photo of one person."
+        }
+      ]
+    },
+    {
+      "id": "short-drop",
+      "name": "Short drop",
+      "category": "product",
+      "summary": "A product drops onto a surface, bounces once, and rests.",
+      "model": "openrouter:bytedance/seedance-2.5",
+      "route": "openrouter",
+      "duration": 5,
+      "ratio": "16:9",
+      "resolution": "720p",
+      "prompt": "The object in {{product}} falls a short distance onto the surface in {{location}} and stops. One bounce, then rest. The camera is fixed just above the surface. Daylight, a soft contact shadow, no hands, no text, and no logos.",
+      "slots": [
+        {
+          "id": "product",
+          "kind": "product",
+          "label": "Product",
+          "required": true,
+          "hint": "The object on its own, with the edges visible."
+        },
+        {
+          "id": "location",
+          "kind": "location",
+          "label": "Surface",
+          "required": true,
+          "hint": "The table or counter it should land on."
+        }
+      ]
+    },
+    {
+      "id": "quarter-turn",
+      "name": "Quarter turn",
+      "category": "product",
+      "summary": "Two hands turn a product a quarter turn toward the lens.",
+      "model": "dreamina-seedance-2-0-260128",
+      "route": "modelark",
+      "duration": 5,
+      "ratio": "1:1",
+      "resolution": "720p",
+      "prompt": "Only the hands of the person in {{character}} are in frame. They rotate the object in {{product}} a quarter turn toward the lens and then hold it still. The background is a plain warm gray. Even light, no extra objects, no text, and no logos.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "A photo that shows their hands clearly."
+        },
+        {
+          "id": "product",
+          "kind": "product",
+          "label": "Product",
+          "required": true,
+          "hint": "The object they will turn."
+        }
+      ]
+    },
+    {
+      "id": "shelf-approach",
+      "name": "Shelf approach",
+      "category": "product",
+      "summary": "The camera moves in slowly on a product sitting on a shelf.",
+      "model": "fal:kling/v4/reference-to-video",
+      "route": "fal",
+      "duration": 5,
+      "ratio": "16:9",
+      "resolution": "720p",
+      "prompt": "The object in {{product}} rests on the shelf shown in {{location}}. The shot starts wide enough to see the shelf and moves slowly closer until the object fills the center. Fine dust in the light. No people, no text, and no logos.",
+      "slots": [
+        {
+          "id": "product",
+          "kind": "product",
+          "label": "Product",
+          "required": true,
+          "hint": "The object that should end up in the center."
+        },
+        {
+          "id": "location",
+          "kind": "location",
+          "label": "Shelf",
+          "required": true,
+          "hint": "The shelf or ledge it sits on."
+        }
+      ]
+    },
+    {
+      "id": "kitchen-aside",
+      "name": "Kitchen aside",
+      "category": "ugc",
+      "summary": "Someone in a kitchen talks to the camera as if they just remembered something.",
+      "model": "openrouter:bytedance/seedance-2.5",
+      "route": "openrouter",
+      "duration": 5,
+      "ratio": "9:16",
+      "resolution": "720p",
+      "audio": true,
+      "prompt": "The person in {{character}} stands in the kitchen from {{location}} and talks to the camera as if they just remembered something: \"{{line}}\" One handheld take at eye height. They do not look at a script. Natural room light. No captions and no logos.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "The person who will speak."
+        },
+        {
+          "id": "location",
+          "kind": "location",
+          "label": "Kitchen",
+          "required": true,
+          "hint": "The room they are standing in."
+        },
+        {
+          "id": "line",
+          "kind": "text",
+          "label": "Line",
+          "required": true,
+          "maxLength": 120,
+          "hint": "What they say, in their own words."
+        }
+      ]
+    },
+    {
+      "id": "held-up",
+      "name": "Held up",
+      "category": "ugc",
+      "summary": "Someone holds a product at chest height and says one line to the camera.",
+      "model": "dreamina-seedance-2-0-260128",
+      "route": "modelark",
+      "duration": 5,
+      "ratio": "9:16",
+      "resolution": "720p",
+      "audio": true,
+      "prompt": "The person in {{character}} holds the object in {{product}} near their chest and says, in a normal voice, \"{{line}}\" They look at the object once and then back at the camera. Soft indoor light. No captions and no logos.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "The person holding the product."
+        },
+        {
+          "id": "product",
+          "kind": "product",
+          "label": "Product",
+          "required": true,
+          "hint": "The object in their hands."
+        },
+        {
+          "id": "line",
+          "kind": "text",
+          "label": "Line",
+          "required": true,
+          "maxLength": 120,
+          "hint": "The one sentence they say."
+        }
+      ]
+    },
+    {
+      "id": "street-answer",
+      "name": "Street answer",
+      "category": "ugc",
+      "summary": "Someone on a street answers the camera in a single breath.",
+      "model": "fal:kling/v4/reference-to-video",
+      "route": "fal",
+      "duration": 5,
+      "ratio": "9:16",
+      "resolution": "720p",
+      "prompt": "The person in {{character}} stands on the street in {{location}} and answers the camera in one breath: \"{{line}}\" Their clothes move a little in the wind. People behind them stay out of focus. No captions and no logos.",
+      "slots": [
+        {
+          "id": "character",
+          "kind": "character",
+          "label": "Person",
+          "required": true,
+          "hint": "The person answering."
+        },
+        {
+          "id": "location",
+          "kind": "location",
+          "label": "Street",
+          "required": true,
+          "hint": "The street or sidewalk behind them."
+        },
+        {
+          "id": "line",
+          "kind": "text",
+          "label": "Line",
+          "required": true,
+          "maxLength": 120,
+          "hint": "What they answer, in one short line."
+        }
+      ]
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cameraSummary } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
+import { getTemplate } from "@/lib/templates/templates";
 import { Download, RotateCcw, X } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
@@ -38,25 +39,28 @@ export function GenerationCard({
   gen,
   onOpen,
   onReuse,
+  onUseTemplate,
   onUseAsReference,
   onDelete,
 }: {
   gen: Generation;
   onOpen: () => void;
   onReuse: () => void;
+  onUseTemplate?: () => void;
   onUseAsReference: () => void;
   onDelete: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
   const model = lookupModel(gen.model);
+  const template = getTemplate(gen.templateId);
   const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
   const ready = gen.status === "succeeded";
   // The output is a video, so it can be a reference only once it's stored.
   const canReference = ready && !!gen.stored;
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
+    <article data-testid="generation-card" className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
       <div
         className={`relative w-full cursor-pointer bg-black ${ratioClass[gen.ratio] ?? "aspect-video"} max-h-[70vh]`}
         onClick={onOpen}
@@ -91,14 +95,21 @@ export function GenerationCard({
         <p className="line-clamp-2 text-sm text-zinc-300" title={gen.prompt}>
           {gen.prompt || <span className="text-zinc-500 italic">No prompt</span>}
         </p>
-        {canReference && (
+        {(canReference || onUseTemplate) && (
           <div className="flex flex-wrap gap-1.5">
-            <TextAction onClick={onUseAsReference}>Use as reference</TextAction>
+            {canReference && <TextAction onClick={onUseAsReference}>Use as reference</TextAction>}
+            {onUseTemplate && (
+              <TextAction testId="use-template-again" onClick={onUseTemplate}>
+                Use this template again
+              </TextAction>
+            )}
           </div>
         )}
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
             <Meta>{model?.name ?? gen.model}</Meta>
+            {template && <Meta>{template.name}</Meta>}
+            {gen.estimatedCost !== undefined && <Meta testId="generation-cost">~${gen.estimatedCost.toFixed(2)}</Meta>}
             <Meta>{gen.resolution}</Meta>
             <Meta>{gen.duration}s</Meta>
             <Meta>{gen.ratio}</Meta>
@@ -161,14 +172,19 @@ export function StatusOverlay({ gen, elapsed }: { gen: Generation; elapsed: numb
   );
 }
 
-function Meta({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-md bg-white/5 px-1.5 py-0.5">{children}</span>;
+function Meta({ children, testId }: { children: React.ReactNode; testId?: string }) {
+  return (
+    <span data-testid={testId} className="rounded-md bg-white/5 px-1.5 py-0.5">
+      {children}
+    </span>
+  );
 }
 
-function TextAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function TextAction({ onClick, children, testId }: { onClick: () => void; children: React.ReactNode; testId?: string }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onClick}
       className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
     >

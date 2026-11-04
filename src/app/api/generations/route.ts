@@ -13,6 +13,7 @@ import type { FalInputMap, StudioProviderId } from "@/lib/registry/types";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
+import { templateRecord, templateRouteError } from "@/lib/templates/templates";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
@@ -139,6 +140,8 @@ export async function POST(request: Request) {
     // allowed only when its queue body was checked against that endpoint's schema.
     const run = route && videoRun(route, model.inputs);
     if (!run) return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
+    const templateError = templateRouteError(req, run.provider);
+    if (templateError) return Response.json({ error: templateError }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
@@ -262,6 +265,7 @@ export async function POST(request: Request) {
       route: run.provider,
       routeEndpoint: run.endpoint,
       estimatedCost: estimate,
+      ...templateRecord(req),
       ...(continued && {
         sequenceId: continued.sequenceId,
         part: continued.part,
