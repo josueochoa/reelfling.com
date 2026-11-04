@@ -507,7 +507,7 @@ export function ControlPanel({
     setCameraMoves([...cameraMoves, id]);
   }
 
-  const compiled = compileCamera(model, compileLook(model, prompt, look).prompt, cameraMoves);
+  const compiled = compileCamera(model, compileLook(model, prompt, look, effectiveMode).prompt, cameraMoves);
   const showSent = compiled.prompt.trim() !== prompt.trim() || !!compiled.cameraFixed;
 
   async function addKeyframeFile(file: File) {
@@ -531,11 +531,11 @@ export function ControlPanel({
     setSubmitting(true);
     try {
       const choice = keptLook(look);
-      let modeOut = effectiveMode;
       let imageRefs = effectiveMode === "references" ? refValues("image") : [];
       let order = effectiveMode === "references" ? refList.flatMap((r) => (r.item.key ? [r.item.key] : [])) : [];
       let lookSwatch: string | undefined;
-      if (paletteUsesSwatch(model, choice)) {
+      // Frames stay frames. A swatch is only attached in references mode.
+      if (effectiveMode === "references" && paletteUsesSwatch(model, choice, "references")) {
         const bare = imageRefs.flatMap((value) => (value.startsWith("upload:") ? [value.slice("upload:".length)] : []));
         const resolved = await resolvePaletteSwatch(library, choice, swatchMemory.current, bare, (key) =>
           library.items.some((item) => item.key === key && item.status === "ready"),
@@ -543,35 +543,22 @@ export function ControlPanel({
         swatchMemory.current = resolved.memory;
         lookSwatch = resolved.memory?.key;
         const swatchId = resolved.added?.id ?? library.items.find((item) => item.key === lookSwatch)?.id;
-        if (swatchId) {
-          setRefIds((ids) => (ids.includes(swatchId) ? ids : [...ids, swatchId]));
-          if (effectiveMode === "frames") setMode("references");
-        }
-        const swatchRef = lookSwatch ? `upload:${lookSwatch}` : undefined;
-        if (effectiveMode === "references") {
-          const urls = imageRefs.filter((value) => !value.startsWith("upload:"));
-          imageRefs = [...resolved.keys.map((key) => `upload:${key}`), ...urls];
-          if (lookSwatch && !order.includes(lookSwatch)) order = [...order, lookSwatch];
-        } else if (swatchRef) {
-          const frames = [framePayload(firstFrame), ...middleFrames.map((frame) => framePayload(frame)), framePayload(lastFrame)].flatMap(
-            (value) => (value ? [value] : []),
-          );
-          imageRefs = [...frames.filter((value) => value !== swatchRef), swatchRef];
-          order = imageRefs.flatMap((value) => (value.startsWith("upload:") ? [value.slice("upload:".length)] : []));
-          modeOut = "references";
-        }
-        const videos = modeOut === "references" && effectiveMode === "references" ? refValues("video").length : 0;
-        const audios = modeOut === "references" && effectiveMode === "references" ? refValues("audio").length : 0;
+        if (swatchId) setRefIds((ids) => (ids.includes(swatchId) ? ids : [...ids, swatchId]));
+        const urls = imageRefs.filter((value) => !value.startsWith("upload:"));
+        imageRefs = [...resolved.keys.map((key) => `upload:${key}`), ...urls];
+        if (lookSwatch && !order.includes(lookSwatch)) order = [...order, lookSwatch];
+        const videos = refValues("video").length;
+        const audios = refValues("audio").length;
         if (imageRefs.length > caps.references.image || imageRefs.length + videos + audios > caps.references.total) {
           setNotice(`${model.name} doesn't have room for the palette swatch. Remove a reference and try again.`);
           return;
         }
       }
-      const frames = modeOut === "frames";
+      const frames = effectiveMode === "frames";
       const ok = await onGenerate({
         model: model.id,
         prompt,
-        mode: modeOut,
+        mode: effectiveMode,
         ratio,
         resolution,
         duration,
@@ -605,8 +592,8 @@ export function ControlPanel({
             }
           : {
               referenceImages: imageRefs,
-              referenceVideos: effectiveMode === "references" ? refValues("video") : undefined,
-              referenceAudios: effectiveMode === "references" ? refValues("audio") : undefined,
+              referenceVideos: refValues("video"),
+              referenceAudios: refValues("audio"),
               referenceOrder: order,
             }),
       });

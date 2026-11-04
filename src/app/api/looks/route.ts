@@ -1,17 +1,8 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import { addLook, deleteLook, listLooks } from "@/lib/savedLooks";
+import { addLook, deleteLook } from "@/lib/savedLooks";
 import type { LookChoice } from "@/lib/registry/looks";
 
-export async function GET() {
-  try {
-    const user = await requireUser();
-    return Response.json(await listLooks(user.id));
-  } catch (e) {
-    return errorResponse(e);
-  }
-}
-
-/** { name, choice } — save the current chips under a name. */
+/** { name, choice } — save the current chips under a name. The list is read from /api/me. */
 export async function POST(request: Request) {
   try {
     const user = await requireUser();

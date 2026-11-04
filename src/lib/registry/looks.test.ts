@@ -4,7 +4,15 @@ import type { GenerateRequest } from "../types";
 import { applyCameraMoves } from "./camera";
 import { ALL_MODELS } from "./generated";
 import { getModel, isImage, isVideo, type ImageModel, type VideoModel } from "./index";
-import { applyLook, applySavedLook, compileLook, keptLook, paletteUsesSwatch, type LookChoice } from "./looks";
+import {
+  applyLook,
+  applySavedLook,
+  compileLook,
+  keptLook,
+  lookGroups,
+  paletteUsesSwatch,
+  type LookChoice,
+} from "./looks";
 
 function video(id: string): VideoModel {
   const model = getModel(id) ?? ALL_MODELS.find((entry) => entry.id === id);
@@ -44,23 +52,48 @@ describe("look prompt compilation", () => {
       nano: compileLook(image("nano-banana-2.1"), "Rain.", choice).prompt,
       gpt: compileLook(image("gpt-image-2.5-sunburst"), "Rain.", choice).prompt,
     };
-    assert.equal(compiled.seedance, "Rain. Look: a small pocket camera.");
-    assert.equal(compiled.kling, "Rain. Visual: a small pocket camera.");
-    assert.equal(compiled.google, "Rain. In frame, a small pocket camera.");
-    assert.equal(compiled.nano, "Rain. Make it a small pocket camera.");
-    assert.equal(compiled.gpt, "Rain. Style direction: a small pocket camera.");
+    assert.equal(compiled.seedance, "Rain. Look: tight framing, held close to the subject.");
+    assert.equal(compiled.kling, "Rain. Visual: tight framing, held close to the subject.");
+    assert.equal(compiled.google, "Rain. Style: tight framing, held close to the subject.");
+    assert.equal(compiled.nano, "Rain. Direction: tight framing, held close to the subject.");
+    assert.equal(compiled.gpt, "Rain. Style direction: tight framing, held close to the subject.");
     assert.equal(new Set(Object.values(compiled)).size, 5);
 
     const full = compileLook(seedance, "Rain", desk);
-    assert.match(full.prompt, /Look: a small pocket camera/);
-    assert.match(full.prompt, /a long reach lens/);
-    assert.match(full.prompt, /the aperture wide open/);
-    assert.match(full.prompt, /light from a side window/);
+    assert.match(full.prompt, /Look: tight framing, held close to the subject/);
+    assert.match(full.prompt, /a compressed perspective/);
+    assert.match(full.prompt, /shallow depth of field/);
+    assert.match(full.prompt, /lit from a side window/);
     assert.match(full.prompt, /black ink with a single lime accent/);
-    assert.match(full.prompt, /the home-tape decade/);
-    const pocket = full.prompt.indexOf("pocket camera");
+    assert.match(full.prompt, /set in the home-tape decade/);
+    const framing = full.prompt.indexOf("tight framing");
     const era = full.prompt.indexOf("home-tape");
-    assert.ok(pocket !== -1 && pocket < era);
+    assert.ok(framing !== -1 && framing < era);
+  });
+
+  it("describes framing, perspective, and focus instead of naming hardware", () => {
+    const models = [
+      video("seedance-2.5"),
+      video("openrouter:kwaivgi/kling-v3.0-pro"),
+      video("openrouter:google/veo-3.1-fast"),
+      image("nano-banana-2.1"),
+      image("gpt-image-2.5-sunburst"),
+    ];
+    const hardware = /\b(cameras?|lenses|lens|apertures?|glass|rigs?|viewfinders?|tripods?)\b/i;
+    const imperative = /^(Make it|Show |In frame,)/;
+    const shot = /framing|perspective|depth of field|focus|view|edges|falloff|move|steady/;
+    for (const group of lookGroups) {
+      if (group.id !== "camera" && group.id !== "lens" && group.id !== "aperture") continue;
+      for (const option of group.options) {
+        if (option.id === "auto") continue;
+        for (const model of models) {
+          const line = compileLook(model, "Rain.", { [group.id]: option.id }).prompt.slice("Rain. ".length);
+          assert.equal(hardware.test(line), false, `${model.family} ${option.id}: ${line}`);
+          assert.equal(imperative.test(line), false, line);
+          assert.match(line, shot, line);
+        }
+      }
+    }
   });
 
   it("keeps the user's prompt and sends the compiled copy to the provider", () => {
@@ -77,9 +110,9 @@ describe("look prompt compilation", () => {
     };
     const looked = applyLook(model, req);
     assert.equal("look" in looked, false);
-    assert.match(looked.prompt, /Look: a soft diffused lens/);
+    assert.match(looked.prompt, /Look: soft edges and a gentle falloff/);
     const sent = applyCameraMoves(model, looked);
-    assert.match(sent.prompt, /soft diffused lens/);
+    assert.match(sent.prompt, /soft edges and a gentle falloff/);
     assert.match(sent.prompt, /pushes in/);
     assert.equal(req.prompt, "a paper boat");
   });
@@ -105,7 +138,7 @@ describe("custom palette", () => {
 
     const nanoSwatch = compileLook(nano, "Rain.", choice);
     assert.equal(nanoSwatch.swatch, true);
-    assert.match(nanoSwatch.prompt, /Make it match the attached color swatch/);
+    assert.match(nanoSwatch.prompt, /Direction: match the attached color swatch/);
     assert.equal(nanoSwatch.prompt.includes("#c6f432"), false);
 
     const written = compileLook(text, "Rain.", choice);
@@ -116,6 +149,44 @@ describe("custom palette", () => {
     const kling = compileLook(video("openrouter:kwaivgi/kling-v3.0-pro"), "Rain.", { palette: "custom", colors: ["#112233"] });
     assert.match(kling.prompt, /Visual: palette colors #112233/);
     assert.notEqual(kling.prompt, written.prompt);
+  });
+
+  it("keeps start, middle, and end frames and writes the palette as text", () => {
+    const model = video("dreamina-seedance-2-0-260128");
+    assert.equal(model.capabilities.frames.start, true);
+    assert.equal(model.capabilities.frames.middle, false);
+    assert.equal(model.capabilities.frames.end, true);
+    assert.ok(model.capabilities.references.image > 0);
+    const choice: LookChoice = { palette: "custom", colors: five };
+    assert.equal(paletteUsesSwatch(model, choice, "frames"), false);
+    assert.equal(paletteUsesSwatch(model, choice, "references"), true);
+
+    const req: GenerateRequest & { look?: LookChoice } = {
+      model: model.id,
+      prompt: "Rain.",
+      mode: "frames",
+      ratio: "16:9",
+      resolution: "720p",
+      duration: 5,
+      look: choice,
+      firstFrame: "upload:uploads/start.jpg",
+      middleFrames: ["upload:uploads/mid.jpg"],
+      lastFrame: "upload:uploads/end.jpg",
+      continueFrom: "gen-1",
+    };
+    const sent = applyLook(model, req);
+    assert.equal(sent.mode, "frames");
+    assert.equal(sent.firstFrame, req.firstFrame);
+    assert.deepEqual(sent.middleFrames, req.middleFrames);
+    assert.equal(sent.lastFrame, req.lastFrame);
+    assert.equal(sent.continueFrom, req.continueFrom);
+    assert.equal("look" in sent, false);
+    assert.match(sent.prompt, /palette colors #112233, #c6f432, #abcdef, #010203, #ff00aa/);
+    assert.equal(sent.prompt.includes("color swatch"), false);
+
+    const asRefs = compileLook(model, "Rain.", choice, "references");
+    assert.equal(asRefs.swatch, true);
+    assert.equal(asRefs.prompt.includes("#112233"), false);
   });
 
   it("drops a custom palette that has no colors", () => {
@@ -143,7 +214,7 @@ describe("saved look Reuse", () => {
       lookSwatch: "uploads/palette-swatch.jpg",
       references: ["uploads/palette-swatch.jpg"],
     };
-    assert.equal(stored.prompt.includes("pocket"), false);
+    assert.equal(stored.prompt.includes("tight framing"), false);
     assert.equal(stored.references.includes(stored.lookSwatch), true);
 
     const restored = keptLook(stored.look);

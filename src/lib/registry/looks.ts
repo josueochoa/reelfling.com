@@ -1,6 +1,8 @@
 // Look chips. Options and the per-family prompt templates live in looks.json.
 // Auto is the default and adds nothing. A custom palette is a swatch reference
-// when the model accepts image references, and a color list in the prompt otherwise.
+// when the request is in references mode and the model accepts image references.
+// Frames mode always describes the colors in the prompt, so start, middle, and
+// end frames stay frames.
 
 import file from "./looks.json" with { type: "json" };
 
@@ -125,12 +127,23 @@ export function applySavedLook(look: SavedLook): LookChoice {
 
 type LookModel = { family: string; capabilities: { references: { image: number } } };
 
+export type LookMode = "frames" | "references";
+
 export function modelTakesImageRefs(model: { capabilities: { references: { image: number } } }): boolean {
   return model.capabilities.references.image > 0;
 }
 
-/** Custom palette rides along as an image when this model can take one. */
-export function paletteUsesSwatch(model: { capabilities: { references: { image: number } } }, choice: LookChoice | undefined): boolean {
+/**
+ * Custom palette rides along as an image only in references mode, on a model
+ * that accepts image references. Frames mode is always text, so keyframes are
+ * not turned into references.
+ */
+export function paletteUsesSwatch(
+  model: { capabilities: { references: { image: number } } },
+  choice: LookChoice | undefined,
+  mode?: LookMode,
+): boolean {
+  if (mode === "frames") return false;
   const kept = keptLook(choice);
   return kept.palette === PALETTE_CUSTOM && !!kept.colors?.length && modelTakesImageRefs(model);
 }
@@ -156,20 +169,22 @@ export interface CompiledLook {
   prompt: string;
   /** The custom palette is attached as an image reference, not written as hex. */
   swatch: boolean;
-  applied: string[];
 }
 
 /** Appends each chosen chip's family line. Auto and unknown ids add nothing. */
-export function compileLook(model: LookModel, prompt: string, choice: LookChoice | undefined): CompiledLook {
+export function compileLook(
+  model: LookModel,
+  prompt: string,
+  choice: LookChoice | undefined,
+  mode?: LookMode,
+): CompiledLook {
   const kept = keptLook(choice);
   let text = prompt;
-  const applied: string[] = [];
-  const swatch = paletteUsesSwatch(model, kept);
+  const swatch = paletteUsesSwatch(model, kept, mode);
   for (const group of LOOK_GROUPS) {
     const id = kept[group];
     if (!id) continue;
     if (group === "palette" && id === PALETTE_CUSTOM) {
-      applied.push(id);
       text = appendFragment(
         text,
         swatch
@@ -180,15 +195,21 @@ export function compileLook(model: LookModel, prompt: string, choice: LookChoice
     }
     const option = lookOption(group, id);
     if (!option?.line) continue;
-    applied.push(id);
     text = appendFragment(text, fill(familyLine(data.line, model.family), { line: option.line }));
   }
-  return { prompt: text.trim(), swatch, applied };
+  return { prompt: text.trim(), swatch };
 }
 
-/** Provider copy: chip ids stay on the record, the prompt gains the lines. */
-export function applyLook<T extends { prompt: string; look?: LookChoice }>(model: LookModel, req: T): Omit<T, "look"> {
-  const compiled = compileLook(model, req.prompt, req.look);
+function lookMode(mode: string | undefined): LookMode | undefined {
+  return mode === "frames" || mode === "references" ? mode : undefined;
+}
+
+/** Provider copy: chip ids stay on the record, the prompt gains the lines. Frames are left as frames. */
+export function applyLook<T extends { prompt: string; look?: LookChoice; mode?: string }>(
+  model: LookModel,
+  req: T,
+): Omit<T, "look"> {
+  const compiled = compileLook(model, req.prompt, req.look, lookMode(req.mode));
   const next = { ...req, prompt: compiled.prompt };
   delete next.look;
   return next;

@@ -57,8 +57,3 @@ export async function resolvePaletteSwatch(
   const next = keys.includes(key) ? [...keys] : [...keys, key];
   return { memory: { key, colors }, keys: next, added };
 }
-
-export function swatchItem(items: readonly LibraryItem[], key: string | undefined): LibraryItem | undefined {
-  if (!key) return undefined;
-  return items.find((item) => item.key === key && item.status === "ready");
-}

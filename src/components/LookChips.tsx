@@ -219,7 +219,7 @@ export function LookChips({
       {choice.palette === PALETTE_CUSTOM && (
         <div>
           <p className="mb-1.5 text-label text-fg-muted">
-            Up to {PALETTE_COLOR_MAX} colors. Models that take image references get a swatch. Others get the colors in the prompt.
+            Up to {PALETTE_COLOR_MAX} colors. In references mode, models that take images get a swatch. Frames mode, and models without image references, put the colors in the prompt.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {colors.map((color, index) => (
