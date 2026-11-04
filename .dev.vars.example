@@ -5,12 +5,12 @@
 # Changing it makes every saved key unreadable (users would re-enter them).
 AUTH_SECRET=
 
-# Cloudflare R2 S3 credentials: R2 → Manage API tokens → Create Account API token
-# with "Admin Read & Write" (it creates a bucket per user). Set R2_ACCOUNT_ID in wrangler.jsonc.
+# Cloudflare R2 S3 credentials: an API token with object read and write on the
+# shared bucket (R2_BUCKET in wrangler.jsonc). It does not create buckets or set CORS.
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
-# Keeps local test buckets apart from production ones (overrides wrangler.jsonc).
-R2_BUCKET_PREFIX=dev
+# Optional override of the S3 endpoint. Leave unset for https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com.
+# R2_ENDPOINT=
 
 # Local dev only (ignored in production): who you're signed in as, since there's
 # no Cloudflare Access on localhost.

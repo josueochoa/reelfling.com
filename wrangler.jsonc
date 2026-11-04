@@ -42,6 +42,9 @@
     // The Access application's AUD tag.
     "ACCESS_AUD": "eccac565bac5751109918539fd189d9cceeb3c34b67e80edc3b4b4dbc060770b",
     "R2_ACCOUNT_ID": "fca019314f738e7878872679ea3604c6",
+    // One bucket. Objects are "<user id>/<key>" (a personal workspace id is the user id).
+    "R2_BUCKET": "reelfling-media",
+    // Unused. Per-user bucket names are no longer created.
     "R2_BUCKET_PREFIX": "reelfling",
     "STORAGE_QUOTA_GB": "2"
   }
