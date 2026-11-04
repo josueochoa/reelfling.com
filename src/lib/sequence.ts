@@ -1,5 +1,5 @@
 // Sequence grouping for extended clips. Pure: no catalog, no database, no secrets.
-// A part number is assigned when a clip is continued. The feed groups parts that share a sequence id.
+// The feed groups parts that share a sequence id.
 
 export interface SequenceItem {
   id: string;
@@ -12,27 +12,6 @@ export interface SequencePlan {
   sequenceId: string;
   /** Part number for the new clip. */
   part: number;
-  /** Written onto the source when it is not in a sequence yet. */
-  sourcePatch?: { sequenceId: string; part: number };
-}
-
-/**
- * The next part in the source clip's sequence. The source becomes part 1 the
- * first time something continues it. Later parts append after the highest number.
- */
-export function nextSequencePart(
-  source: { id: string; sequenceId?: string; part?: number },
-  usedParts: readonly (number | undefined)[],
-): SequencePlan {
-  const sequenceId = source.sequenceId || source.id;
-  const sourcePart = source.part ?? 1;
-  const known = usedParts.filter(
-    (part): part is number => typeof part === "number" && Number.isInteger(part) && part >= 1,
-  );
-  const part = Math.max(sourcePart, ...known, 0) + 1;
-  const sourcePatch =
-    source.sequenceId !== sequenceId || source.part == null ? { sequenceId, part: sourcePart } : undefined;
-  return { sequenceId, part, sourcePatch };
 }
 
 /**

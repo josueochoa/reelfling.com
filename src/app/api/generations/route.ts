@@ -193,6 +193,10 @@ export async function POST(request: Request) {
       referenceVideos: referenceVideos?.map((media) => media.url),
       referenceAudios: referenceAudios?.map((media) => media.url),
     });
+    // A missing fal key would 400 after the part was claimed. Check it first.
+    const falCreds = run.provider === "fal" ? await getCredentials(user.id, "fal") : undefined;
+    if (run.provider === "fal" && !falCreds)
+      return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
     // Before any provider call. A missing source 400s here, so a paid task is never started.
     const continued =
       typeof req.continueFrom === "string" && req.continueFrom
@@ -203,10 +207,9 @@ export async function POST(request: Request) {
     let taskId: string;
     let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
     if (run.provider === "fal") {
-      const creds = await getCredentials(user.id, "fal");
-      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
+      if (!falCreds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
       const submission = await submitFal(
-        creds.apiKey,
+        falCreds.apiKey,
         run.endpoint,
         applyNativeExpansion(falQueueInput(providerReq, run.inputs), model, run, nativeOn),
       );
