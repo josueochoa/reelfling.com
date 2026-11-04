@@ -3,11 +3,13 @@
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { invalidMentions, mentionToken, remapMentions, type RefCounts, type RefKind } from "@/lib/mentions";
 import {
+  CAMERA_MOVE_MAX,
   cameraMoveLabel,
   cameraMovesFor,
+  cameraPresets,
+  compileCamera,
   estimateCost,
-  keptCameraMove,
-  type CameraMove,
+  keptCameraMoves,
   type VideoModel,
 } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
@@ -40,7 +42,9 @@ export interface Preset {
   referenceKeys?: string[];
   /** Inline note, for a Reuse that couldn't find every file. */
   notice?: string;
-  /** Camera preset to restore. A move this model ignores is dropped. */
+  /** Camera chips to restore, in order. */
+  cameraMoves?: string[];
+  /** One preset from a generation saved before chips. */
   cameraMove?: string;
 }
 
@@ -159,8 +163,8 @@ export function ControlPanel({
   // Latest list for handlers that run after an await.
   const refsNow = useRef(refIds);
   const [seed, setSeed] = useState("");
-  const [cameraMove, setCameraMove] = useState<CameraMove | undefined>(() =>
-    keptCameraMove(initialModel, preset.cameraMove),
+  const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
+    keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
   );
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
@@ -382,7 +386,7 @@ export function ControlPanel({
     setDuration((d) => clampDuration(d, m));
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
-    setCameraMove((move) => keptCameraMove(m, move));
+    setCameraMoves((moves) => keptCameraMoves(m, moves));
   }
 
   const uploading =
@@ -400,6 +404,21 @@ export function ControlPanel({
   const refValues = (kind: UploadKind) =>
     refList.filter((r) => r.item.kind === kind).map((r) => `upload:${r.item.key}`);
 
+  function changeCamera(id: string, toggle: boolean) {
+    if (!moves.includes(id)) return;
+    if (cameraMoves.includes(id)) {
+      if (toggle) setCameraMoves(cameraMoves.filter((move) => move !== id));
+      return;
+    }
+    if (cameraMoves.length >= CAMERA_MOVE_MAX) {
+      setNotice(`Up to ${CAMERA_MOVE_MAX} camera moves.`);
+      return;
+    }
+    setCameraMoves([...cameraMoves, id]);
+  }
+
+  const compiled = moves.length ? compileCamera(model, prompt, cameraMoves) : undefined;
+
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -413,7 +432,7 @@ export function ControlPanel({
       duration,
       generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
-      cameraMove: moves.length && cameraMove ? cameraMove : undefined,
+      cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
       cameraFixed: showFixed ? cameraFixed : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
@@ -527,10 +546,50 @@ export function ControlPanel({
             counts={counts}
             placeholder={
               refs
-                ? "The cat from @Image 1 dances on the rooftop from @Image 2… (type @ to reference)"
-                : "A slow dolly-in on a neon-lit ramen stall at night, rain on the window, steam rising…"
+                ? "The cat from @Image 1 dances on the rooftop from @Image 2… (type @ to reference, # for a camera move)"
+                : "A paper boat in the rain… (type # for a camera move)"
             }
+            cameras={
+              moves.length
+                ? cameraPresets
+                    .filter((preset) => moves.includes(preset.id))
+                    .map((preset) => ({
+                      id: preset.id,
+                      name: preset.name,
+                      description: preset.description,
+                      category: preset.category,
+                    }))
+                : undefined
+            }
+            onAddCamera={(id) => changeCamera(id, false)}
           />
+          {cameraMoves.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {cameraMoves.map((id, index) => (
+                <span
+                  key={`${id}-${index}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-0.5 pr-1 pl-2 text-xs text-accent"
+                >
+                  {cameraMoveLabel(id) ?? id}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${cameraMoveLabel(id) ?? "camera move"}`}
+                    onClick={() => setCameraMoves((cur) => cur.filter((_, at) => at !== index))}
+                    className="grid size-4 place-items-center rounded-full text-accent/80 hover:bg-accent/20 hover:text-accent"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {compiled && cameraMoves.length > 0 && (
+            <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-zinc-300">
+              <p className="mb-1 text-[10px] font-medium tracking-wide text-zinc-500 uppercase">Prompt sent</p>
+              <p>{compiled.prompt || "—"}</p>
+              {compiled.cameraFixed && <p className="mt-1 text-zinc-500">Static is sent as a fixed camera.</p>}
+            </div>
+          )}
           {badMentions.length > 0 && (
             <p className="mt-1.5 text-xs text-red-300">
               {refs
@@ -541,8 +600,8 @@ export function ControlPanel({
         </Section>
 
         {moves.length > 0 && (
-          <Section label="Camera" aside={cameraMoveLabel(cameraMove) ?? "None"}>
-            <CameraMoves value={cameraMove} onChange={setCameraMove} />
+          <Section label="Camera" aside={cameraMoves.length ? `${cameraMoves.length}/${CAMERA_MOVE_MAX}` : "Type #"}>
+            <CameraMoves value={cameraMoves} onToggle={(id) => changeCamera(id, true)} />
           </Section>
         )}
 

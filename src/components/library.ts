@@ -344,7 +344,7 @@ export function useLibrary(): Library {
   const thumbQueue = useRef<LibraryItem[]>([]);
   const thumbsRunning = useRef(0);
   function ensureThumb(item: LibraryItem) {
-    if (item.source !== "generated" || item.hasThumb || !item.key || thumbTried.current.has(item.key)) return;
+    if ((item.source !== "generated" && item.source !== "processed") || item.hasThumb || !item.key || thumbTried.current.has(item.key)) return;
     if (item.kind !== "image" && item.kind !== "video") return;
     thumbTried.current.add(item.key);
     thumbQueue.current.push(item);

@@ -30,6 +30,13 @@ export interface PromptEditorHandle {
   insert: (token: string) => void;
 }
 
+export interface CameraPick {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+}
+
 interface Props {
   ref?: React.Ref<PromptEditorHandle>;
   value: string;
@@ -40,6 +47,9 @@ interface Props {
   placeholder: string;
   mentions: MentionItem[];
   counts: RefCounts;
+  /** Shown when the user types #. Choosing one calls onAddCamera and removes the # query. */
+  cameras?: CameraPick[];
+  onAddCamera?: (id: string) => void;
 }
 
 const ALIASES: Record<RefKind, string[]> = {
@@ -56,10 +66,22 @@ function matches(item: MentionItem, query: string) {
 // Shared box metrics so the highlight layer lines up with the textarea text.
 const BOX = "px-3.5 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words";
 
-export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, placeholder, mentions, counts }: Props) {
+export function PromptEditor({
+  ref,
+  value,
+  onChange,
+  onSubmit,
+  onPasteFiles,
+  placeholder,
+  mentions,
+  counts,
+  cameras,
+  onAddCamera,
+}: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const [popup, setPopup] = useState<{ start: number; query: string; active: number } | null>(null);
+  const [hash, setHash] = useState<{ start: number; query: string; active: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [hover, setHover] = useState<Hover | null>(null);
 
@@ -142,6 +164,19 @@ export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, pla
 
   const options = popup ? mentions.filter((m) => matches(m, popup.query)) : [];
   const showPopup = popup !== null && options.length > 0;
+  const cameraOptions = hash
+    ? (cameras ?? []).filter((preset) => {
+        const q = hash.query.toLowerCase();
+        if (!q) return true;
+        return (
+          preset.name.toLowerCase().includes(q) ||
+          preset.category.toLowerCase().includes(q) ||
+          preset.description.toLowerCase().includes(q) ||
+          preset.id.includes(q)
+        );
+      })
+    : [];
+  const showCameras = hash !== null && cameraOptions.length > 0;
 
   function setCaret(pos: number) {
     requestAnimationFrame(() => {
@@ -151,8 +186,28 @@ export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, pla
   }
 
   function detect(text: string, caret: number) {
-    const m = text.slice(0, caret).match(/(^|[\s([{"'])@(\w*)$/);
+    const before = text.slice(0, caret);
+    const typed = cameras?.length ? before.match(/(^|\s)#([^\s#]*)$/) : null;
+    if (typed) {
+      setHash({ start: caret - typed[2].length - 1, query: typed[2], active: 0 });
+      setPopup(null);
+      return;
+    }
+    setHash(null);
+    const m = before.match(/(^|[\s([{"'])@(\w*)$/);
     setPopup(m ? { start: caret - m[2].length - 1, query: m[2], active: 0 } : null);
+  }
+
+  function chooseCamera(id: string) {
+    if (!hash) return;
+    const caret = taRef.current?.selectionStart ?? value.length;
+    const left = value.slice(0, hash.start).replace(/[^\S\n]+$/, "");
+    const right = value.slice(caret).replace(/^[^\S\n]+/, "");
+    const next = left && right ? `${left} ${right}` : left || right;
+    onChange(next);
+    setHash(null);
+    onAddCamera?.(id);
+    setCaret(left.length);
   }
 
   function choose(item: MentionItem) {
@@ -179,6 +234,24 @@ export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, pla
   }));
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (showCameras && hash) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const d = e.key === "ArrowDown" ? 1 : -1;
+        setHash((p) => p && { ...p, active: (p.active + d + cameraOptions.length) % cameraOptions.length });
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        chooseCamera(cameraOptions[Math.min(hash.active, cameraOptions.length - 1)].id);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setHash(null);
+        return;
+      }
+    }
     if (showPopup) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -234,7 +307,10 @@ export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, pla
           }}
           onKeyDown={onKeyDown}
           onClick={(e) => detect(value, e.currentTarget.selectionStart)}
-          onBlur={() => setPopup(null)}
+          onBlur={() => {
+            setPopup(null);
+            setHash(null);
+          }}
           onPaste={onPaste}
           onScroll={() => {
             syncBackdrop();
@@ -280,6 +356,31 @@ export function PromptEditor({ ref, value, onChange, onSubmit, onPasteFiles, pla
         <p role="status" className="mt-1.5 text-xs text-accent">
           {notice}
         </p>
+      )}
+
+      {showCameras && hash && (
+        <ul className="absolute inset-x-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-white/10 bg-panel p-1 shadow-2xl shadow-black/60">
+          {cameraOptions.map((preset, i) => (
+            <li key={preset.id}>
+              <button
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  chooseCamera(preset.id);
+                }}
+                onMouseEnter={() => setHash((p) => p && { ...p, active: i })}
+                className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left ${
+                  i === hash.active ? "bg-white/10" : ""
+                }`}
+              >
+                <span className="text-sm text-zinc-100">
+                  {preset.name}
+                  <span className="ml-2 text-[10px] tracking-wide text-zinc-500 uppercase">{preset.category}</span>
+                </span>
+                <span className="truncate text-xs text-zinc-500">{preset.description}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
 
       {showPopup && (

@@ -3,7 +3,7 @@ import { listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
 import { availabilityError, availabilityFor, availableRoute, routeProviders } from "@/lib/registry/availability";
-import { applyCameraMove } from "@/lib/registry/camera-apply";
+import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel } from "@/lib/registry/generated";
 import { isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
@@ -134,10 +134,14 @@ export async function POST(request: Request) {
           ["audio", referenceAudios],
         ]);
 
-    // The record keeps the prompt as written. applyCameraMove may append a camera
-    // sentence, or set camera_fixed, only on the copy the provider receives.
+    // The record keeps the prompt as written and the chip ids. applyCameraMoves
+    // appends each chip's line, or sets a native field, only on the provider copy.
+    const cameraMoves = (req.cameraMoves?.length ? req.cameraMoves : req.cameraMove ? [req.cameraMove] : []).slice(
+      0,
+      CAMERA_MOVE_MAX,
+    );
     const { taskId } = await provider.createTask(
-      applyCameraMove(model, {
+      applyCameraMoves(model, {
         ...req,
         model: route.endpoint,
         prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
@@ -172,7 +176,7 @@ export async function POST(request: Request) {
       duration: req.duration,
       generateAudio: !!req.generateAudio,
       seed: req.seed,
-      ...(req.cameraMove ? { cameraMove: req.cameraMove } : {}),
+      ...(cameraMoves.length ? { cameraMoves } : {}),
       inputs,
       createdAt: now,
       updatedAt: now,

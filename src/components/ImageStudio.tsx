@@ -4,12 +4,14 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
+import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
 import { api, apiJson, type Me } from "./api";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
+import { ToolsMenu } from "./ToolsMenu";
 import { UploadsPanel } from "./UploadsPanel";
 
 const POLL_MS = 4000;
@@ -44,6 +46,8 @@ export function ImageStudio({
   library,
   onOpenKeys,
   onUseAsStartFrame,
+  tools,
+  onToolJob,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -51,6 +55,8 @@ export function ImageStudio({
   onOpenKeys: () => void;
   /** Send a generated image to the Video tab as its start frame. */
   onUseAsStartFrame: (item: LibraryItem) => void;
+  tools: readonly ToolView[];
+  onToolJob: () => void;
 }) {
   const [gens, setGens] = useState<ImageGeneration[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -381,6 +387,8 @@ export function ImageStudio({
           onUseAsStartFrame={() => void applyGenerated(openTile, open.i, "start")}
           onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
           onDelete={() => remove(openTile)}
+          tools={tools}
+          onToolJob={onToolJob}
         />
       )}
     </div>
@@ -396,6 +404,8 @@ function ImageLightbox({
   onUseAsStartFrame,
   onUseAsReference,
   onDelete,
+  tools,
+  onToolJob,
 }: {
   gen: ImageGeneration;
   index: number;
@@ -405,6 +415,8 @@ function ImageLightbox({
   onUseAsStartFrame: () => void;
   onUseAsReference: () => void;
   onDelete: () => void;
+  tools: readonly ToolView[];
+  onToolJob: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -467,6 +479,7 @@ function ImageLightbox({
             ))}
           </dl>
           <div className="mt-auto grid gap-2 text-sm">
+            <ToolsMenu kind="image" assetKey={gen.images[index]?.key} tools={tools} onStarted={onToolJob} />
             <a href={imageUrl(gen, index, true)} className="rounded-xl bg-accent py-2 text-center font-medium text-ink">
               Download
             </a>

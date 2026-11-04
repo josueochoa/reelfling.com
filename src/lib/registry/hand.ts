@@ -27,7 +27,7 @@ const modelarkCaps = {
 const seedance10Camera: CameraCapabilities = {
   fixed: true,
   prompt: true,
-  native: { static: { param: "camera_fixed", value: true } },
+  params: ["camera_fixed"],
 };
 
 // No camera parameter: ArgoLink doesn't expose one, and BytePlus doesn't list

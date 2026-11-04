@@ -1,5 +1,5 @@
 import type { GenerateRequest } from "../types";
-import { cameraMovesFor, isCameraMove } from "./camera";
+import { CAMERA_MOVE_MAX, cameraMovesFor, isCameraMove } from "./camera";
 import { ratioAllowed } from "./price";
 import type { ImageModel, ImageQuality, VideoModel } from "./types";
 
@@ -45,8 +45,12 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
   if (req.generateAudio && caps.audio === false) return `${label} doesn't generate audio`;
   if (req.seed !== undefined && !caps.seed) return `${label} doesn't take a seed`;
   if (req.cameraFixed && !(caps.camera && caps.camera.fixed)) return `${label} doesn't take camera settings`;
-  if (req.cameraMove && (!isCameraMove(req.cameraMove) || !cameraMovesFor(model).includes(req.cameraMove)))
-    return `${label} doesn't take camera moves`;
+  const moves = req.cameraMoves?.length ? req.cameraMoves : req.cameraMove ? [req.cameraMove] : [];
+  if (moves.length > CAMERA_MOVE_MAX) return `${label} takes up to ${CAMERA_MOVE_MAX} camera moves`;
+  const offered = cameraMovesFor(model);
+  for (const move of moves) {
+    if (!isCameraMove(move) || !offered.includes(move)) return `${label} doesn't take camera moves`;
+  }
   if (req.watermark && !caps.watermark) return `${label} doesn't take a watermark`;
   return null;
 }

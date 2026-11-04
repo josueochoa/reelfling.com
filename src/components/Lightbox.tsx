@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { cameraMoveLabel, estimateCost } from "@/lib/registry";
+import { cameraSummary, estimateCost } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
+import type { ToolView } from "@/lib/toolTypes";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
+import { ToolsMenu } from "./ToolsMenu";
 
 export function Lightbox({
   gen,
@@ -13,6 +15,8 @@ export function Lightbox({
   onUseAsReference,
   onExtend,
   onDelete,
+  tools,
+  onToolJob,
 }: {
   gen: Generation;
   onClose: () => void;
@@ -20,6 +24,8 @@ export function Lightbox({
   onUseAsReference: () => void;
   onExtend?: () => void;
   onDelete: () => void;
+  tools: readonly ToolView[];
+  onToolJob: () => void;
 }) {
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
@@ -32,7 +38,7 @@ export function Lightbox({
   }, [onClose]);
 
   const model = lookupModel(gen.model);
-  const camera = cameraMoveLabel(gen.cameraMove);
+  const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
   const cost =
     model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
   const details: [string, React.ReactNode][] = [
@@ -87,6 +93,12 @@ export function Lightbox({
           </dl>
           {gen.error && <p className="rounded-lg bg-red-500/10 p-2.5 text-xs text-red-300">{gen.error}</p>}
           <div className="mt-auto grid gap-2">
+            <ToolsMenu
+              kind="video"
+              assetKey={gen.stored ? `videos/${gen.id}.mp4` : undefined}
+              tools={tools}
+              onStarted={onToolJob}
+            />
             {ready && (
               <a
                 href={`${videoSrc(gen)}?download`}

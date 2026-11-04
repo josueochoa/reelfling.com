@@ -195,11 +195,7 @@ export function openRouterModel(model) {
 export function openRouterCamera(pass) {
   const names = Array.isArray(pass) ? pass.map((name) => String(name)) : [];
   if (!names.includes("camera_fixed")) return false;
-  return {
-    fixed: true,
-    prompt: true,
-    native: { static: { param: "camera_fixed", value: true } },
-  };
+  return { fixed: true, prompt: true, params: ["camera_fixed"] };
 }
 
 function openRouterTasks(id, frames) {
@@ -380,10 +376,10 @@ export function falModel(spec, raw, unit) {
   const resolutions = resolutionsFrom(props);
   const ratios = ratiosFrom(props);
   const promptExpansion = hasKey(props, /prompt_expansion|prompt_optimizer|enhance_prompt/) ? "optional" : false;
-  // Only `camera_fixed` is a verified camera parameter. A property whose name
-  // merely contains "camera" is left off until its schema is checked.
+  // Only `camera_fixed` is wired through to a provider body. Other camera-like
+  // fields stay off until a builder actually sends them.
   const camera = hasKey(props, /^camera_fixed$/)
-    ? { fixed: true, prompt: true, native: { static: { param: "camera_fixed", value: true } } }
+    ? { fixed: true, prompt: true, params: ["camera_fixed"] }
     : false;
   const price = priceFromUnit(unit?.unit_price, unit?.unit);
   const display = (meta.display_name || spec.endpoint).trim();
@@ -423,9 +419,16 @@ export function falModel(spec, raw, unit) {
     });
   }
   if (group === "tool") {
+    // One media kind per tool. image_url and video_url come from the live input schema.
+    const video = hasKey(props, /video_url/);
+    const image = hasKey(props, /image_url/);
+    const accepts = video && !image ? "video" : image ? "image" : undefined;
     return compact({
       ...base,
-      capabilities: compact({ resolutions: resolutions.length ? resolutions : undefined }),
+      capabilities: compact({
+        accepts,
+        resolutions: resolutions.length ? resolutions : undefined,
+      }),
     });
   }
   return compact({

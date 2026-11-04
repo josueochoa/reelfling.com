@@ -11,6 +11,7 @@ import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
+import type { ToolView } from "@/lib/toolTypes";
 import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
 
@@ -32,6 +33,8 @@ export function VideoStudio({
   library,
   onOpenKeys,
   openRouterModels,
+  tools,
+  onToolJob,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -39,6 +42,8 @@ export function VideoStudio({
   onOpenKeys: () => void;
   /** Null until /api/models returns. Empty when that request failed. */
   openRouterModels: VideoModel[] | null;
+  tools: readonly ToolView[];
+  onToolJob: () => void;
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -131,6 +136,7 @@ export function VideoStudio({
       resolution: gen.resolution,
       duration: gen.duration,
       generateAudio: gen.generateAudio,
+      cameraMoves: gen.cameraMoves,
       cameraMove: gen.cameraMove,
       mode: asFirstFrame ? "frames" : (restored?.mode ?? gen.mode),
       firstFrame: asFirstFrame,
@@ -271,6 +277,8 @@ export function VideoStudio({
           onUseAsReference={() => void referenceStoredVideo(open)}
           onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
           onDelete={() => remove(open)}
+          tools={tools}
+          onToolJob={onToolJob}
         />
       )}
     </div>
