@@ -1,7 +1,7 @@
 import { failAbandonedFalCopies, syncFalJob, unfinishedFalJobs } from "@/lib/falJobs";
 import { failStaleImageJobs } from "@/lib/images";
 import { deleteOrphanUploads } from "@/lib/storage";
-import { syncGeneration, unfinishedGenerations } from "@/lib/store";
+import { failStaleGenerations, syncGeneration, unfinishedGenerations } from "@/lib/store";
 
 const BATCH = 25;
 const CONCURRENCY = 5;
@@ -37,6 +37,12 @@ export async function POST(request: Request) {
       ),
     );
   }
+  // After the sync, so a job the provider just finished is not timed out. Anything
+  // still queued or running 2 hours after it was created is failed for every provider.
+  const staleVideos = await failStaleGenerations().catch((e) => {
+    console.error("[sweep video timeout]", e);
+    return 0;
+  });
   const orphansDeleted = await deleteOrphanUploads("refs/", ORPHAN_UPLOAD_AGE_MS).catch((e) => {
     console.error("[sweep orphans]", e);
     return 0;
@@ -64,6 +70,7 @@ export async function POST(request: Request) {
   return Response.json({
     checked: pending.length,
     failed,
+    staleVideos,
     orphansDeleted,
     staleImageJobs,
     falChecked: falPending.length,
