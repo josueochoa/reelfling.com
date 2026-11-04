@@ -162,23 +162,8 @@ const locate = (cfg: R2Config, asset: Asset, key = asset.key): Location =>
 
 const urlOf = (cfg: R2Config, loc: Location) => objectUrl(cfg, loc.bucket, loc.path);
 
-/**
- * The shared bucket name. Does not read `buckets` or create anything: per-user
- * buckets are gone, and the token can only read and write objects.
- */
-export async function getBucket(userId: string): Promise<string | undefined> {
-  void userId;
-  try {
-    return r2().bucket;
-  } catch (e) {
-    if (e instanceof StorageError) return undefined;
-    throw e;
-  }
-}
-
-/** Same name as getBucket. Sign-in still calls this; it must not create a bucket. */
-export async function ensureBucket(userId: string): Promise<string> {
-  void userId;
+/** The shared bucket name. Throws if R2 isn't configured. Does not create a bucket. */
+export async function ensureBucket(): Promise<string> {
   return r2().bucket;
 }
 
@@ -444,9 +429,9 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
 }
 
 /** A signed URL for the browser to PUT a thumbnail it made for a generated image or video. */
-export async function createThumbUpload(userId: string, asset: Asset) {
+export async function createThumbUpload(asset: Asset) {
   const cfg = r2();
-  return presign(cfg, "PUT", locate(cfg, { ...asset, userId: asset.userId || userId }, thumbKeyFor(asset.key)), UPLOAD_URL_TTL_S);
+  return presign(cfg, "PUT", locate(cfg, asset, thumbKeyFor(asset.key)), UPLOAD_URL_TTL_S);
 }
 
 /** Records a thumbnail the browser uploaded, if it's there and small. */

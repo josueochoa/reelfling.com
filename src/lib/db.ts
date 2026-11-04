@@ -23,7 +23,6 @@ export interface AppEnv {
   R2_ENDPOINT?: string;
   /** Shared bucket. Objects are stored at `<user id>/<key>` inside it. */
   R2_BUCKET?: string;
-  R2_BUCKET_PREFIX?: string;
   STORAGE_QUOTA_GB?: string;
 }
 

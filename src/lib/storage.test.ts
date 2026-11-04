@@ -61,7 +61,6 @@ const {
   discardUpload,
   ensureBucket,
   getAsset,
-  getBucket,
   openAsset,
   providerUrl,
   putAsset,
@@ -197,7 +196,7 @@ describe("shared bucket layout", () => {
     );
 
     calls.length = 0;
-    const thumbUrl = await createThumbUpload(UID, shared);
+    const thumbUrl = await createThumbUpload(shared);
     assert.equal(pathOf(thumbUrl), `/${BUCKET}/${UID}/images/x.thumb.jpg`);
 
     calls.length = 0;
@@ -228,8 +227,7 @@ describe("shared bucket layout", () => {
     );
 
     calls.length = 0;
-    assert.equal(await ensureBucket(UID), BUCKET);
-    assert.equal(await getBucket(UID), BUCKET);
+    assert.equal(await ensureBucket(), BUCKET);
     assert.equal(calls.length, 0);
     assertNoBucketAdmin();
   });

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const user = await upsertUser({ email: profile.email, name: profile.name, avatarUrl: profile.picture });
     await createSession(user.id);
     // Confirms R2 is configured. Does not create a bucket: objects share R2_BUCKET.
-    await ensureBucket(user.id).catch((e) => console.error("Storage setup failed:", e));
+    await ensureBucket().catch((e) => console.error("Storage setup failed:", e));
   } catch (e) {
     console.error("Google sign-in failed:", e);
     return fail("google_error");

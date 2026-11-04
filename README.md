@@ -11,7 +11,7 @@ npm run dev                      # http://localhost:3000, signed in as DEV_USER_
 npm run preview                  # the real Workers runtime, locally (http://localhost:8787)
 ```
 
-`npm run dev` applies D1 migrations to a local database (`.wrangler/state`) first. Finished videos go to real R2, so `.dev.vars` needs R2 credentials; local buckets use the `dev` prefix.
+`npm run dev` applies D1 migrations to a local database (`.wrangler/state`) first. Finished videos go to R2, so `.dev.vars` needs object read/write credentials for the `R2_BUCKET` in `wrangler.jsonc`.
 
 **Config never goes in `.env*` files**: OpenNext bundles them into the deployed Worker. Non-secret settings are `vars` in `wrangler.jsonc`; secrets go in `.dev.vars` locally and `wrangler secret put` in production.
 
