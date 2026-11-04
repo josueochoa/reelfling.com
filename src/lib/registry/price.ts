@@ -33,20 +33,27 @@ const IMAGE_PRESET: Record<string, { width: number; height: number }> = {
   "21:9": { width: 1024, height: 440 },
 };
 
-/** Output megapixels for the resolution and aspect we actually send. */
-export function outputMegapixels(resolution?: string, ratio?: string): number {
-  const [aspectWidth, aspectHeight] = aspectParts(ratio);
+/**
+ * Output megapixels for the resolution and aspect we actually send.
+ * `auto` and `adaptive` use the input image's shape. With no input they use the
+ * model's default square (`square_hd` / a 1:1 frame at that tier).
+ */
+export function outputMegapixels(
+  resolution?: string,
+  ratio?: string,
+  input?: { width: number; height: number } | null,
+): number {
   const tier = longSide(resolution);
-  const width = tier
-    ? aspectWidth >= aspectHeight
-      ? tier
-      : Math.max(1, Math.round((tier * aspectWidth) / aspectHeight))
-    : (IMAGE_PRESET[ratio ?? ""]?.width ?? 1024);
-  const height = tier
-    ? aspectHeight >= aspectWidth
-      ? tier
-      : Math.max(1, Math.round((tier * aspectHeight) / aspectWidth))
-    : (IMAGE_PRESET[ratio ?? ""]?.height ?? 1024);
+  const auto = ratio === "auto" || ratio === "adaptive";
+  const box = input && input.width > 0 && input.height > 0 ? input : undefined;
+  if (!tier && !auto) {
+    const preset = IMAGE_PRESET[ratio ?? ""];
+    if (preset) return (preset.width * preset.height) / (1024 * 1024);
+  }
+  const [aspectWidth, aspectHeight] = auto && box ? [box.width, box.height] : aspectParts(auto ? "1:1" : ratio);
+  const long = tier ?? 1024;
+  const width = aspectWidth >= aspectHeight ? long : Math.max(1, Math.round((long * aspectWidth) / aspectHeight));
+  const height = aspectHeight >= aspectWidth ? long : Math.max(1, Math.round((long * aspectHeight) / aspectWidth));
   return (width * height) / (1024 * 1024);
 }
 

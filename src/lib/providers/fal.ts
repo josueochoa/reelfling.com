@@ -370,17 +370,6 @@ export async function fetchFalOutput(url: string): Promise<Response> {
   return res;
 }
 
-/**
- * Seedance on fal is one product with a text, image, and reference endpoint.
- * Other fal models keep the catalog endpoint.
- */
-export function falVideoEndpoint(endpoint: string, mode: "frames" | "references", hasStart: boolean): string {
-  if (!endpoint.startsWith("bytedance/seedance-") || !endpoint.endsWith("/text-to-video")) return endpoint;
-  if (mode === "references") return endpoint.replace(/\/text-to-video$/, "/reference-to-video");
-  if (hasStart) return endpoint.replace(/\/text-to-video$/, "/image-to-video");
-  return endpoint;
-}
-
 /** Seedance on fal. Other models pass the map built from their queue schema. */
 const SEEDANCE_INPUTS: FalInputMap = {
   start: "image_url",

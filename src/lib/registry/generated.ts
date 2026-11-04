@@ -56,15 +56,16 @@ export function openRouterPickerModels(): VideoModel[] {
 }
 
 /**
- * fal endpoints whose queue body was checked against the published OpenAPI schema
- * (no key, 4 Nov 2026). Anything else stays out of the picker.
+ * fal video endpoints whose queue body was checked against the published OpenAPI
+ * schema (no key, 4 Nov 2026). Every other fal video route is refused before
+ * storage, key lookup, or a provider call.
  * These still do not match a checked body and stay out:
  * fal-ai/kling-video/v3/pro/text-to-video, fal-ai/wan/v2.2-a14b/text-to-video,
  * fal-ai/minimax/video-01/image-to-video.
  * alibaba/wan-3.0/reference-to-video is included: its body uses reference_image_urls,
  * reference_video_urls, and reference_audio_urls, which is what that schema publishes.
  */
-const FAL_PICKER_ENDPOINTS = new Set<string>([
+export const FAL_VIDEO_ENDPOINTS = new Set<string>([
   "kling/v4/text-to-video",
   "kling/v4/image-to-video",
   "kling/v4/reference-to-video",
@@ -81,6 +82,10 @@ const FAL_PICKER_ENDPOINTS = new Set<string>([
   "google/gemini-omni-flash/v1.1/reference-to-video",
   "xai/grok-imagine-video/v1.5/image-to-video",
   "luma/agent/ray/v3.2/image-to-video",
+]);
+
+/** fal image endpoints whose input mapping was checked the same way. */
+export const FAL_IMAGE_ENDPOINTS = new Set<string>([
   "bytedance/seedream/v5/pro/text-to-image",
   "bytedance/seedream/v5/pro/edit",
   "fal-ai/flux-2-pro",
@@ -94,16 +99,14 @@ const FAL_PICKER_ENDPOINTS = new Set<string>([
 /** fal image models whose input mapping was checked. The catalog JSON stays on the server. */
 export function catalogImageModels(): ImageModel[] {
   return ALL_MODELS.filter(isImage)
-    .filter((model) =>
-      model.routes.some((route) => route.provider === "fal" && FAL_PICKER_ENDPOINTS.has(route.endpoint)),
-    )
+    .filter((model) => model.routes.some((route) => route.provider === "fal" && FAL_IMAGE_ENDPOINTS.has(route.endpoint)))
     .map(slimImage);
 }
 
-/** OpenRouter videos, plus fal models whose input mapping was checked. */
+/** OpenRouter videos, plus fal videos whose input mapping was checked. */
 export function catalogPickerModels(): VideoModel[] {
   const fal = ALL_MODELS.filter(isVideo).filter((model) =>
-    model.routes.some((route) => route.provider === "fal" && FAL_PICKER_ENDPOINTS.has(route.endpoint)),
+    model.routes.some((route) => route.provider === "fal" && FAL_VIDEO_ENDPOINTS.has(route.endpoint)),
   );
   return [...openRouterPickerModels(), ...fal.map((model) => slimVideo(model))];
 }

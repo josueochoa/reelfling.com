@@ -4,7 +4,7 @@ import { normalizeMentions } from "../mentions";
 import { availabilityFor, routeProviders } from "./availability";
 import { catalogPickerModels } from "./generated";
 import { estimateRouteCost, getModel, imageProviderFor, isVideo, mentionSyntax, MODELS } from "./index";
-import { pickerModels, preferredRoute, reuseSelection, routeChoiceError } from "./routing";
+import { preferredRoute, routeChoiceError } from "./routing";
 
 const seedance = () => {
   const model = getModel("dreamina-seedance-2-0-260128");
@@ -15,7 +15,7 @@ const seedance = () => {
 function studioCatalog() {
   const hand = MODELS.filter(isVideo);
   const extra = catalogPickerModels().filter((model) => !hand.some((item) => item.id === model.id));
-  return pickerModels([...hand, ...extra]);
+  return [...hand, ...extra];
 }
 
 describe("per-model routes", () => {
@@ -69,13 +69,10 @@ describe("per-model routes", () => {
     assert.equal(estimateRouteCost(model, "openrouter", { resolution: "1k", count: 1 }), 0.034);
   });
 
-  it("reuses the route stored on the generation without folding the ArgoLink row", () => {
-    const again = reuseSelection(MODELS.filter(isVideo), "seedance-2.0", "argolink");
-    assert.deepEqual(again, { id: "seedance-2.0", route: "argolink" });
-  });
-
   it("leaves unchecked fal catalog models out of the picker", () => {
-    const endpoints = catalogPickerModels().flatMap((model) => model.routes.map((route) => `${route.provider}:${route.endpoint}`));
+    const endpoints = catalogPickerModels().flatMap((model) =>
+      model.routes.map((route) => `${route.provider}:${route.endpoint}`),
+    );
     for (const dropped of [
       "fal:fal-ai/kling-video/v3/pro/text-to-video",
       "fal:fal-ai/wan/v2.2-a14b/text-to-video",

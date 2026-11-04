@@ -13,7 +13,7 @@ import {
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
-import { catalogModel } from "@/lib/registry/generated";
+import { catalogModel, FAL_IMAGE_ENDPOINTS } from "@/lib/registry/generated";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
@@ -71,7 +71,11 @@ export async function POST(request: Request) {
     const saved = await getRoutePreference(user.id, model.id);
     const explicit = typeof req.route === "string" ? req.route : null;
     const route = preferredRoute(model, keyed, [explicit, saved, imageProviderFor(user.activeProvider, [...keyed])]);
-    if (!route || (route.provider !== "argolink" && route.provider !== "openrouter" && route.provider !== "fal"))
+    const falImage = route?.provider === "fal" && FAL_IMAGE_ENDPOINTS.has(route.endpoint) && !!model.inputs;
+    if (
+      !route ||
+      !(route.provider === "argolink" || route.provider === "openrouter" || (route.provider === "fal" && falImage))
+    )
       return bad("This model isn't available on the image tab.");
     const imageProvider = route.provider;
     await assertStorageAvailable(user.id);

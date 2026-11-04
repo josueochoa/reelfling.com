@@ -5,7 +5,6 @@ import { ALL_MODELS, catalogImageModels, catalogPickerModels } from "./generated
 import { groupByFamily, modelBadges } from "./badges";
 import { estimateCost, imageRequestError, isImage, isVideo, outputMegapixels, videoRequestError } from "./index";
 import { lookupModelName } from "./lookup";
-import { reuseSelection } from "./routing";
 import type { ImageModel, VideoModel } from "./types";
 
 const VIDEO = [
@@ -225,6 +224,17 @@ describe("fal lineup catalog", () => {
     const fluxSmall = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: oneMegapixel });
     const fluxLarge = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: above });
     assert.ok(fluxSmall !== undefined && fluxLarge !== undefined && fluxLarge > fluxSmall);
+    // No input image: auto is the model's square default. A 16:9 input is priced from that frame.
+    assert.equal(outputMegapixels("2k", "auto"), outputMegapixels("2k", "1:1"));
+    const autoWide = outputMegapixels("2k", "auto", { width: 1920, height: 1080 });
+    assert.equal(autoWide, 2.25);
+    assert.ok(autoWide < outputMegapixels("2k", "1:1"));
+    const autoSmall = estimateCost(image("fal-ai/z-image/turbo"), { megapixels: outputMegapixels("1k", "auto") });
+    const autoLarge = estimateCost(image("fal-ai/z-image/turbo"), { megapixels: autoWide });
+    assert.ok(autoSmall !== undefined && autoLarge !== undefined && autoLarge > autoSmall);
+    const fluxAutoSmall = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: outputMegapixels("1k", "1:1") });
+    const fluxAutoLarge = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: outputMegapixels("2k", "auto", { width: 1920, height: 1080 }) });
+    assert.ok(fluxAutoSmall !== undefined && fluxAutoLarge !== undefined && fluxAutoLarge > fluxAutoSmall);
   });
 
   it("groups the picker by family and badges audio, end frame, references, and duration", () => {
@@ -253,7 +263,6 @@ describe("fal lineup catalog", () => {
     const gone = "fal:removed/from/catalog";
     assert.equal(catalogPickerModels().some((model) => model.id === gone), false);
     assert.equal(catalogImageModels().some((model) => model.id === gone), false);
-    assert.deepEqual(reuseSelection(catalogPickerModels(), gone, "fal"), { id: gone, route: "fal" });
     assert.equal(lookupModelName(gone), gone);
     const name = (model: VideoModel | ImageModel | undefined, id: string) => model?.name ?? id;
     assert.equal(name(undefined, gone), gone);

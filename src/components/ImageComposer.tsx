@@ -2,7 +2,7 @@
 
 // The Image tab's prompt bar: reference images, prompt, model and settings, Generate.
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   estimateRouteCost,
   imageModels,
@@ -37,6 +37,25 @@ export interface ComposerState {
 
 const QUALITY_LABEL: Record<ImageQuality, string> = { auto: "Auto", low: "Low", medium: "Medium", high: "High" };
 const HAND_MODELS = imageModels();
+
+/** Pixel size of a reference, so aspect "auto" is priced from that image. */
+function useImageBox(src: string | undefined) {
+  const [box, setBox] = useState<{ src: string; width: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!src) return;
+    let gone = false;
+    const img = new Image();
+    img.onload = () => {
+      if (!gone && img.naturalWidth > 0 && img.naturalHeight > 0)
+        setBox({ src, width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = src;
+    return () => {
+      gone = true;
+    };
+  }, [src]);
+  return src && box?.src === src ? { width: box.width, height: box.height } : null;
+}
 
 function Mark({ mark }: { mark?: string }) {
   if (!mark) return null;
@@ -92,7 +111,10 @@ export function ImageComposer({
   const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
-  const megapixels = outputMegapixels(caps.resolutions.includes(resolution) ? resolution : undefined, ratio);
+  const autoSrc = ratio === "auto" && references[0] ? thumbSrc(references[0]) : undefined;
+  const autoBox = useImageBox(autoSrc);
+  const sized = caps.resolutions.includes(resolution) ? resolution : undefined;
+  const megapixels = outputMegapixels(sized, ratio, ratio === "auto" ? autoBox : null);
   const cost =
     estimateRouteCost(model, route, { resolution, count, quality, referenceImages: references.length, megapixels }) ?? 0;
   const counts = { Image: references.length, Video: 0, Audio: 0 };
@@ -296,7 +318,7 @@ export function ImageComposer({
                 options={caps.resolutions.map((r) => ({
                   value: r,
                   label: r.toUpperCase(),
-                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: outputMegapixels(r, ratio) }) ?? 0).toFixed(3)} per image`,
+                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: outputMegapixels(r, ratio, ratio === "auto" ? autoBox : null) }) ?? 0).toFixed(3)} per image`,
                 }))}
                 onChange={(r) =>
                   onChange({
