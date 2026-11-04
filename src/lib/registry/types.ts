@@ -94,6 +94,8 @@ export interface Route {
   /** Provider model id or fal endpoint id. */
   endpoint: string;
   mapper: MapperId;
+  /** This provider's price, when it differs from the model price. */
+  price?: PriceFormula;
 }
 
 /** How the provider wants @-mentions rewritten. */

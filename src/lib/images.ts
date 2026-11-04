@@ -45,6 +45,9 @@ export interface ImageGeneration {
   error?: string;
   /** Estimated USD. */
   cost: number;
+  /** Provider route used. */
+  route?: string;
+  routeEndpoint?: string;
   createdAt: number;
   updatedAt: number;
   startedAt?: number;
@@ -69,11 +72,12 @@ export async function getImageGeneration(userId: string, id: string) {
 
 export async function insertImageGeneration(userId: string, gen: ImageGeneration) {
   await run(
-    "INSERT INTO image_generations (id, user_id, created_at, data) VALUES (?, ?, ?, ?)",
+    "INSERT INTO image_generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)",
     gen.id,
     userId,
     gen.createdAt,
     JSON.stringify(gen),
+    gen.route ?? null,
   );
 }
 

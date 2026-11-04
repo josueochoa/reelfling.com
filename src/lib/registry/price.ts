@@ -1,4 +1,4 @@
-import type { EstimateInput, ModelEntry, PriceFormula } from "./types";
+import type { EstimateInput, ModelEntry, PriceFormula, Route } from "./types";
 
 function rate(table: Readonly<Record<string, number>> | undefined, resolution: string | undefined) {
   if (!table) return undefined;
@@ -6,6 +6,24 @@ function rate(table: Readonly<Record<string, number>> | undefined, resolution: s
   if (table["*"] !== undefined) return table["*"];
   const values = Object.values(table);
   return values.length === 1 ? values[0] : undefined;
+}
+
+/** The route's formula when it has one, otherwise the model's. */
+export function priceFor(
+  model: { price?: PriceFormula; routes?: readonly Pick<Route, "provider" | "price">[] },
+  provider?: string | null,
+): PriceFormula | undefined {
+  const route = provider ? model.routes?.find((item) => item.provider === provider) : undefined;
+  return route?.price ?? model.price;
+}
+
+/** Estimate for one route. Uses that route's price when the catalog gives it one. */
+export function estimateRouteCost(
+  model: { price?: PriceFormula; routes?: readonly Pick<Route, "provider" | "price">[] },
+  provider: string | null | undefined,
+  input: EstimateInput = {},
+): number | undefined {
+  return estimateCost({ price: priceFor(model, provider) }, input);
 }
 
 /** USD the user's provider is expected to bill. Undefined when the entry has no formula. */

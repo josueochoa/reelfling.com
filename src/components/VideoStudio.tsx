@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { restoreInputs } from "@/lib/inputs";
-import { isVideo, MODELS, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
+import { isVideo, MODELS, type VideoModel } from "@/lib/registry";
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { api, apiJson, type Me } from "./api";
@@ -53,7 +53,8 @@ export function VideoStudio({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
-  const provider = me?.user.activeProvider ?? null;
+  const defaultProvider = me?.user.activeProvider ?? null;
+  const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
   useEffect(() => {
     gensRef.current = generations;
@@ -122,6 +123,17 @@ export function VideoStudio({
     await api(`/api/generations/${gen.id}`, { method: "DELETE" });
   }
 
+  function saveRoute(modelId: string, provider: string) {
+    setRoutePreferences((prev) => ({ ...prev, [modelId]: provider }));
+    void apiJson("/api/me", { method: "PATCH", body: JSON.stringify({ modelId, provider }) }).catch(() => {});
+  }
+
+  function catalog() {
+    const hand = MODELS.filter(isVideo);
+    const extra = (openRouterModels ?? []).filter((model) => !hand.some((item) => item.id === model.id));
+    return [...hand, ...extra];
+  }
+
   function reuse(gen: Generation, asFirstFrame?: string) {
     setOpen(null);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
@@ -131,6 +143,7 @@ export function VideoStudio({
     setPreset((p) => ({
       key: p.key + 1,
       model: gen.model,
+      route: gen.route,
       prompt: restored?.prompt ?? gen.prompt,
       ratio: gen.ratio,
       resolution: gen.resolution,
@@ -176,12 +189,7 @@ export function VideoStudio({
   }
 
   const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
-  const byId = new Map<string, VideoModel>();
-  for (const model of MODELS.filter(isVideo)) byId.set(model.id, model);
-  for (const model of openRouterModels ?? []) byId.set(model.id, model);
-  const models = sortByAvailability([...byId.values()], (model) =>
-    availabilityFor(routeProviders(model.routes), keyed).available,
-  );
+  const models = sortByAvailability(catalog(), (model) => availabilityFor(routeProviders(model.routes), keyed).available);
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
@@ -189,11 +197,7 @@ export function VideoStudio({
       <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
           <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
-            {provider
-              ? provider === "openrouter"
-                ? "OpenRouter"
-                : `Seedance via ${PROVIDER_INFO[provider].label}`
-              : "API keys"}
+            API keys
           </button>
           {active > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-zinc-400">
@@ -211,6 +215,9 @@ export function VideoStudio({
             onReferencesChange={setRefLabels}
             models={models}
             keyed={keyed}
+            routePreferences={routePreferences}
+            defaultProvider={defaultProvider}
+            onSaveRoute={saveRoute}
             preset={preset}
             onGenerate={generate}
             error={error}
@@ -247,7 +254,7 @@ export function VideoStudio({
                 <div>
                   <p className="text-lg font-medium text-zinc-300">No videos yet</p>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {provider ? "Write a prompt and hit Generate to start." : "Add an API key to start generating."}
+                    {keyed.size ? "Write a prompt and hit Generate to start." : "Add an API key to start generating."}
                   </p>
                 </div>
               </div>

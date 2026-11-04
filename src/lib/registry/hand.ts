@@ -235,8 +235,15 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     task: "image",
     tasks: ["image", "image-edit"],
     routes: [
-      { provider: "argolink", endpoint: "nano-banana-2.1", mapper: "argolink.image.google" },
-      { provider: "openrouter", endpoint: "google/gemini-nano-banana-2.1", mapper: "openrouter.image" },
+      { provider: "argolink", endpoint: "nano-banana-2.1", mapper: "argolink.image.google", price: perImage({ "1k": 0.02, "2k": 0.02, "4k": 0.025 }) },
+      {
+        // Live OpenRouter endpoint: $0.00003 per output-image token.
+        // Counts per resolution are the existing estimate (~1120 / 1680 / 2520).
+        provider: "openrouter",
+        endpoint: "google/gemini-nano-banana-2.1",
+        mapper: "openrouter.image",
+        price: perImage({ "1k": 0.034, "2k": 0.05, "4k": 0.076 }),
+      },
     ],
     promptRequired: true,
     refSyntax: "plain",
@@ -279,8 +286,13 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     task: "image",
     tasks: ["image", "image-edit"],
     routes: [
-      { provider: "argolink", endpoint: "gpt-image-2.5-sunburst", mapper: "argolink.image.openai" },
-      { provider: "openrouter", endpoint: "openai/gpt-image-2.5-sunburst", mapper: "openrouter.image" },
+      { provider: "argolink", endpoint: "gpt-image-2.5-sunburst", mapper: "argolink.image.openai", price: perImage({ "1k": 0.015, "2k": 0.015, "4k": 0.02 }) },
+      {
+        provider: "openrouter",
+        endpoint: "openai/gpt-image-2.5-sunburst",
+        mapper: "openrouter.image",
+        price: perImage({ "1k": 0.04, "2k": 0.08, "4k": 0.16 }),
+      },
     ],
     promptRequired: true,
     refSyntax: "plain",

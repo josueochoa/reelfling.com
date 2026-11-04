@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
+import { preferredRoute } from "@/lib/registry/routing";
 import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
@@ -81,7 +82,19 @@ export function ImageStudio({
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const references = refIds.flatMap((id) => byId.get(id) ?? []);
   const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
-  const imageProvider = me ? imageProviderFor(me.user.activeProvider, [...keyed]) : undefined;
+  const defaultProvider = me?.user.activeProvider ?? null;
+  const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
+  const imageRoute = preferredRoute(state.model, keyed, [
+    state.route,
+    routePreferences[state.model.id],
+    imageProviderFor(defaultProvider, [...keyed]),
+  ])?.provider;
+  const imageProvider = imageRoute === "argolink" || imageRoute === "openrouter" ? imageRoute : undefined;
+
+  function saveRoute(modelId: string, provider: string) {
+    setRoutePreferences((prev) => ({ ...prev, [modelId]: provider }));
+    void apiJson("/api/me", { method: "PATCH", body: JSON.stringify({ modelId, provider }) }).catch(() => {});
+  }
   const now = useNow(gens.some(pending));
 
   const upsert = useCallback((gen: ImageGeneration) => {
@@ -176,6 +189,7 @@ export function ImageStudio({
             quality: model.capabilities.qualities ? state.quality : undefined,
             count: state.count,
             references: references.map((r) => r.key),
+            ...(imageRoute ? { route: imageRoute } : {}),
           }),
         }),
       );
@@ -226,6 +240,7 @@ export function ImageStudio({
       resolution: gen.resolution,
       quality: gen.quality ?? state.quality,
       count: gen.count,
+      route: gen.route,
     });
     setRefIds(gen.references.filter((k) => byId.has(k)));
     setOpen(null);
@@ -351,6 +366,9 @@ export function ImageStudio({
             submitting={submitting}
             error={error}
             keyed={keyed}
+            routePreferences={routePreferences}
+            defaultProvider={defaultProvider}
+            onSaveRoute={saveRoute}
             onOpenKeys={onOpenKeys}
           />
         </div>

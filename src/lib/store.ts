@@ -23,11 +23,12 @@ export async function getGeneration(userId: string, id: string): Promise<Generat
 
 export async function insertGeneration(userId: string, gen: Generation) {
   await run(
-    "INSERT INTO generations (id, user_id, created_at, data) VALUES (?, ?, ?, ?)",
+    "INSERT INTO generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)",
     gen.id,
     userId,
     gen.createdAt,
     JSON.stringify(gen),
+    gen.route ?? null,
   );
 }
 

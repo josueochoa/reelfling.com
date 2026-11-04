@@ -8,11 +8,13 @@ import {
   cameraMovesFor,
   cameraPresets,
   compileCamera,
-  estimateCost,
+  estimateRouteCost,
   keptCameraMoves,
+  type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
+import { preferredRoute } from "@/lib/registry/routing";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { CameraMoves } from "./CameraMoves";
 import { ModelMenu } from "./ModelMenu";
@@ -46,6 +48,8 @@ export interface Preset {
   cameraMoves?: string[];
   /** One preset from a generation saved before chips. */
   cameraMove?: string;
+  /** Provider this generation ran on. Reuse sends it again. */
+  route?: string;
 }
 
 /** A frame is a library item, or a one-off URL that isn't in the library. */
@@ -93,6 +97,10 @@ interface Props {
   models: VideoModel[];
   /** Providers this user has a key for. Names only. */
   keyed: ReadonlySet<string>;
+  routePreferences?: Readonly<Record<string, string>>;
+  /** users.active_provider, used only when this model has no saved route. */
+  defaultProvider?: string | null;
+  onSaveRoute?: (modelId: string, provider: string) => void;
   preset: Preset;
   onGenerate: (req: GenerateRequest) => Promise<boolean>;
   error: string | null;
@@ -131,6 +139,9 @@ export function ControlPanel({
   ref,
   models,
   keyed,
+  routePreferences,
+  defaultProvider,
+  onSaveRoute,
   preset,
   onGenerate,
   error,
@@ -166,6 +177,7 @@ export function ControlPanel({
   const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
     keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
   );
+  const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -222,7 +234,9 @@ export function ControlPanel({
   const referenceVideoSeconds = referenceVideos.length
     ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
     : undefined;
-  const cost = estimateCost(model, { resolution, duration, audio: audioOn, referenceVideoSeconds });
+  const routeProvider = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider])?.provider;
+  const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds };
+  const cost = estimateRouteCost(model, routeProvider, estimateInput);
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
   const badMentions = invalidMentions(prompt, counts);
   const mentionItems: MentionItem[] = !refs
@@ -392,6 +406,14 @@ export function ControlPanel({
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
     setCameraMoves((moves) => keptCameraMoves(m, moves));
+    setRouteChoice(undefined);
+  }
+
+  function changeRoute(provider: RouteProvider) {
+    if (!availabilityFor([provider], keyed).available) return;
+    if (!model.routes.some((item) => item.provider === provider)) return;
+    setRouteChoice(provider);
+    onSaveRoute?.(model.id, provider);
   }
 
   const uploading =
@@ -435,6 +457,7 @@ export function ControlPanel({
       ratio,
       resolution,
       duration,
+      route: routeProvider,
       generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
@@ -460,7 +483,16 @@ export function ControlPanel({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5">
         {notice && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{notice}</p>}
         <Section label="Model">
-          <ModelMenu models={models} value={model.id} keyed={keyed} onChange={changeModel} onOpenKeys={onOpenKeys} />
+          <ModelMenu
+            models={models}
+            value={model.id}
+            route={routeProvider}
+            estimate={estimateInput}
+            keyed={keyed}
+            onChange={changeModel}
+            onRoute={changeRoute}
+            onOpenKeys={onOpenKeys}
+          />
           <p className="mt-1.5 text-xs text-zinc-500">{model.description}</p>
         </Section>
 

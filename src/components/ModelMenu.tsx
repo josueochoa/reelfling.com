@@ -1,22 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import { PROVIDER_INFO, type VideoModel } from "@/lib/registry";
+import { estimateRouteCost, PROVIDER_INFO, type EstimateInput, type RouteProvider, type VideoModel } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { UnlockHint } from "./UnlockHint";
+
+function providerLabel(id: string | undefined) {
+  if (id === "modelark" || id === "argolink" || id === "fal" || id === "openrouter") return PROVIDER_INFO[id].label;
+  return "";
+}
+
+function money(amount: number | undefined) {
+  if (amount === undefined) return "";
+  return `~$${amount < 0.1 ? amount.toFixed(3) : amount.toFixed(2)}`;
+}
 
 /** Every video model. Unavailable ones stay in the list, grayed, and can't be chosen. */
 export function ModelMenu({
   models,
   value,
+  route,
+  estimate,
   keyed,
   onChange,
+  onRoute,
   onOpenKeys,
 }: {
   models: readonly VideoModel[];
   value: string;
+  route?: string;
+  estimate?: EstimateInput;
   keyed: ReadonlySet<string>;
   onChange: (id: string) => void;
+  onRoute: (provider: RouteProvider) => void;
   onOpenKeys: () => void;
 }) {
   const [hover, setHover] = useState<string | null>(null);
@@ -63,15 +79,55 @@ export function ModelMenu({
             >
               <span className="min-w-0 flex-1 truncate">{model.name}</span>
               <span className={`shrink-0 text-[10px] ${locked ? "text-zinc-600" : "text-zinc-500"}`}>
-                {routeProviders(model.routes)
-                  .map((provider) => PROVIDER_INFO[provider].label)
-                  .join(" · ")}
+                {selected && route && !locked
+                  ? providerLabel(route)
+                  : model.routes.length > 1
+                    ? `${model.routes.length} routes`
+                    : providerLabel(routeProviders(model.routes)[0])}
               </span>
               {selected && !locked && <span className="text-accent">✓</span>}
             </button>
             {locked && hover === model.id && hint && (
               <div className="px-2.5 pb-1">
                 <UnlockHint hint={hint} onOpen={onOpenKeys} />
+              </div>
+            )}
+            {selected && !locked && model.routes.length > 1 && (
+              <div data-testid="route-picker" className="space-y-0.5 px-2 pb-1.5">
+                {model.routes.map((item) => {
+                  const choice = availabilityFor([item.provider], keyed);
+                  const blocked = !choice.available;
+                  const picked = item.provider === route;
+                  const cost = estimateRouteCost(model, item.provider, estimate);
+                  return (
+                    <button
+                      key={item.provider}
+                      type="button"
+                      data-testid="route-option"
+                      data-provider={item.provider}
+                      data-available={blocked ? "false" : "true"}
+                      aria-pressed={picked && !blocked}
+                      onClick={() => {
+                        if (blocked) {
+                          onOpenKeys();
+                          return;
+                        }
+                        onRoute(item.provider);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs ${
+                        blocked
+                          ? "cursor-not-allowed text-zinc-600"
+                          : picked
+                            ? "bg-white/10 text-white"
+                            : "text-zinc-300 hover:bg-white/5"
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{PROVIDER_INFO[item.provider].label}</span>
+                      <span className="shrink-0 tabular-nums text-zinc-500">{money(cost)}</span>
+                      {picked && !blocked && <span className="text-accent">✓</span>}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

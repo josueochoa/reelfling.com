@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
+import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { apiJson, type Me } from "./api";
 
 const ORDER: ProviderId[] = ["argolink", "openrouter", "modelark", "fal"];
@@ -39,7 +39,6 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
               key={p}
               provider={p}
               saved={me.keys.find((k) => k.provider === p)}
-              active={me.user.activeProvider === p}
               onChanged={onChanged}
             />
           ))}
@@ -52,12 +51,10 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
 function ProviderRow({
   provider,
   saved,
-  active,
   onChanged,
 }: {
   provider: ProviderId;
   saved?: Me["keys"][number];
-  active: boolean;
   onChanged: () => void;
 }) {
   const info = PROVIDER_INFO[provider];
@@ -99,34 +96,17 @@ function ProviderRow({
       setEditing(true);
     });
 
-  const activate = () =>
-    run(async () => {
-      await apiJson("/api/me", { method: "PATCH", body: JSON.stringify({ activeProvider: provider }) });
-    });
-
   return (
-    <section className={`rounded-xl border p-4 ${active ? "border-accent/50 bg-accent/[0.04]" : "border-white/10"}`}>
+    <section className="rounded-xl border border-white/10 p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-medium">{info.label}</h3>
-            {active && (
-              <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-ink">In use</span>
-            )}
           </div>
           <p className="mt-0.5 text-xs text-zinc-500">{saved ? `Key ••••${saved.last4}` : info.blurb}</p>
         </div>
         {saved && (
           <div className="flex shrink-0 gap-1.5 text-xs">
-            {isStudioProvider(provider) && !active && (
-              <button
-                onClick={activate}
-                disabled={busy}
-                className="rounded-lg bg-white/10 px-2.5 py-1.5 hover:bg-white/15"
-              >
-                Use
-              </button>
-            )}
             <button
               onClick={() => setEditing((e) => !e)}
               disabled={busy}
