@@ -12,8 +12,11 @@ import {
   keptCameraMoves,
   type VideoModel,
 } from "@/lib/registry";
+import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { CameraMoves } from "./CameraMoves";
+import { ModelMenu } from "./ModelMenu";
+import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
@@ -88,11 +91,14 @@ export interface ControlPanelHandle {
 interface Props {
   ref?: React.Ref<ControlPanelHandle>;
   models: VideoModel[];
+  /** Providers this user has a key for. Names only. */
+  keyed: ReadonlySet<string>;
   preset: Preset;
   onGenerate: (req: GenerateRequest) => Promise<boolean>;
   error: string | null;
   library: Library;
   onOpenLibrary: () => void;
+  onOpenKeys: () => void;
   /** Library item id → its mention ("@Image 2"), for showing selection in the Uploads panel. */
   onReferencesChange: (labels: Map<string, string>) => void;
 }
@@ -124,11 +130,13 @@ const pickRatio = (model: VideoModel, prefer?: string, hasFrame?: boolean) => {
 export function ControlPanel({
   ref,
   models,
+  keyed,
   preset,
   onGenerate,
   error,
   library,
   onOpenLibrary,
+  onOpenKeys,
   onReferencesChange,
 }: Props) {
   const initialModel = models.find((m) => m.id === preset.model) ?? models[0];
@@ -162,6 +170,7 @@ export function ControlPanel({
   const [watermark, setWatermark] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [modeHover, setModeHover] = useState<GenerationMode | null>(null);
   const editor = useRef<PromptEditorHandle>(null);
 
   const caps = model.capabilities;
@@ -169,7 +178,8 @@ export function ControlPanel({
   const showFixed = moves.length === 0 && !!(caps.camera && caps.camera.fixed);
   const durations = caps.durations;
   const hasRefs = caps.references.total > 0;
-  const effectiveMode: GenerationMode = hasRefs ? mode : "frames";
+  const routesOpen = availabilityFor(routeProviders(model.routes), keyed).available;
+  const effectiveMode: GenerationMode = hasRefs && mode === "references" && routesOpen ? "references" : "frames";
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
   const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
@@ -367,12 +377,14 @@ export function ControlPanel({
   }));
 
   function changeMode(m: GenerationMode) {
+    if (!routesOpen) return;
     setMode(m);
     if (m === "references" && ratio === "adaptive") setRatio("16:9");
   }
 
   function changeModel(id: string) {
-    const m = models.find((x) => x.id === id)!;
+    const m = models.find((x) => x.id === id);
+    if (!m || !availabilityFor(routeProviders(m.routes), keyed).available) return;
     setModel(m);
     if (!m.capabilities.ratios.includes(ratio)) setRatio(pickRatio(m));
     setResolution(pickResolution(m, resolution));
@@ -385,7 +397,9 @@ export function ControlPanel({
   const uploading =
     (refs && refList.some((r) => r.item.status !== "ready")) ||
     (effectiveMode === "frames" && (framePending(firstFrame) || framePending(lastFrame)));
+  const gate = availabilityFor(routeProviders(model.routes), keyed);
   const canSubmit =
+    gate.available &&
     !submitting &&
     !uploading &&
     badMentions.length === 0 &&
@@ -446,33 +460,49 @@ export function ControlPanel({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5">
         {notice && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{notice}</p>}
         <Section label="Model">
-          <select
-            value={model.id}
-            onChange={(e) => changeModel(e.target.value)}
-            className="w-full appearance-none rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm outline-none focus:border-accent/60"
-          >
-            {models.map((m) => (
-              <option key={m.id} value={m.id} className="bg-panel">
-                {m.name}
-              </option>
-            ))}
-          </select>
+          <ModelMenu models={models} value={model.id} keyed={keyed} onChange={changeModel} onOpenKeys={onOpenKeys} />
           <p className="mt-1.5 text-xs text-zinc-500">{model.description}</p>
         </Section>
 
         {hasRefs && (
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
-            {(["frames", "references"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => changeMode(m)}
-                className={`rounded-lg py-1.5 capitalize transition ${
-                  effectiveMode === m ? "bg-white/10 text-white" : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
+          <div onMouseLeave={() => setModeHover(null)}>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
+              {(["frames", "references"] as const).map((m) => {
+                const active = effectiveMode === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    data-testid={`mode-${m}`}
+                    data-available={routesOpen ? "true" : "false"}
+                    aria-disabled={!routesOpen}
+                    aria-pressed={active && routesOpen}
+                    onMouseEnter={() => setModeHover(m)}
+                    onClick={() => {
+                      if (!routesOpen) {
+                        setModeHover(m);
+                        return;
+                      }
+                      changeMode(m);
+                    }}
+                    className={`rounded-lg py-1.5 capitalize transition ${
+                      !routesOpen
+                        ? "cursor-not-allowed text-zinc-600"
+                        : active
+                          ? "bg-white/10 text-white"
+                          : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
+            </div>
+            {modeHover && !routesOpen && (
+              <div className="mt-2">
+                <UnlockHint hint={availabilityHint(gate.needs)} onOpen={onOpenKeys} />
+              </div>
+            )}
           </div>
         )}
 
@@ -668,12 +698,23 @@ export function ControlPanel({
         )}
       </div>
 
-      <div className="border-t border-white/5 p-5">
+      <div data-testid="generate-bar" className="border-t border-white/5 p-5">
         {error && <p className="mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>}
+        {!gate.available && (
+          <div className="mb-3">
+            <UnlockHint hint={availabilityHint(gate.needs)} onOpen={onOpenKeys} />
+          </div>
+        )}
         <button
+          type="button"
+          data-testid="generate"
           onClick={submit}
           disabled={!canSubmit}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-3 text-sm font-semibold text-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
+            gate.available
+              ? "bg-accent text-ink hover:brightness-110 disabled:opacity-40"
+              : "cursor-not-allowed bg-white/10 text-zinc-500"
+          }`}
         >
           {submitting ? (
             <span className="size-4 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />

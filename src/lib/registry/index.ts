@@ -5,6 +5,7 @@ import {
   isVideo,
   type ImageModel,
   type ModelEntry,
+  type Route,
   type StudioProviderId,
   type VideoModel,
 } from "./types";
@@ -42,7 +43,8 @@ export function imageModels(): ImageModel[] {
   );
 }
 
-export function routeFor<T extends ModelEntry>(model: T, provider: string) {
+/** The route a model takes on one provider, if it has one. */
+export function routeFor<T extends { routes: readonly Route[] }>(model: T, provider: string) {
   return model.routes.find((route) => route.provider === provider);
 }
 

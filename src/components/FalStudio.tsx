@@ -4,8 +4,10 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { shouldCancelFal, shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
+import { availabilityFor, availabilityHint } from "@/lib/registry/availability";
 import { assetFileUrl } from "@/lib/uploads";
 import { api, type Me } from "./api";
+import { UnlockHint } from "./UnlockHint";
 
 export interface FalTabHandle {
   reload: () => void;
@@ -83,7 +85,9 @@ export function FalStudio({
     jobsRef.current = jobs;
   }, [jobs]);
 
-  const needsKey = !!me && !me.keys.some((key) => key.provider === "fal");
+  const falAvail = me ? availabilityFor(["fal"], new Set(me.keys.map((key) => key.provider))) : null;
+  const needsKey = !!falAvail && !falAvail.available;
+  const falHint = falAvail ? availabilityHint(falAvail.needs) : "";
 
   const upsert = useCallback((job: FalJobView) => {
     setJobs((prev) => {
@@ -128,6 +132,7 @@ export function FalStudio({
   }, [upsert]);
 
   async function submit() {
+    if (needsKey) return;
     setError(null);
     setFields([]);
     let parsed: unknown;
@@ -255,11 +260,8 @@ export function FalStudio({
           }}
         >
           {needsKey && (
-            <div className="flex items-center gap-3 rounded-xl bg-accent/10 px-3 py-2 text-sm">
-              <span className="flex-1 text-zinc-200">Add your fal API key to run an endpoint.</span>
-              <button type="button" onClick={onOpenKeys} className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-ink">
-                Add key
-              </button>
+            <div className="px-1">
+              <UnlockHint hint={falHint} onOpen={onOpenKeys} />
             </div>
           )}
           <input
@@ -286,7 +288,9 @@ export function FalStudio({
             <button
               type="submit"
               disabled={submitting || needsKey || !endpointId.trim()}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+              className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed ${
+                needsKey ? "cursor-not-allowed bg-white/10 text-zinc-500" : "bg-accent text-ink disabled:opacity-40"
+              }`}
             >
               {submitting ? "Submitting…" : "Run"}
             </button>

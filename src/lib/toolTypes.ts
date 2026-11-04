@@ -27,6 +27,8 @@ export interface ToolView {
   /** Tools that share a menu name collapse into one item, with this as the label. */
   menu?: string;
   quote?: ToolQuote;
+  /** Providers that can run it. Names only, never an endpoint or a key. */
+  providers?: readonly string[];
 }
 
 /** Size the estimate and the limit check can see. No file bytes. */

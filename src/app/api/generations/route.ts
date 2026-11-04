@@ -1,9 +1,11 @@
 import { errorResponse, requireUser } from "@/lib/auth";
+import { listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
+import { availabilityError, availabilityFor, availableRoute, routeProviders } from "@/lib/registry/availability";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel } from "@/lib/registry/generated";
-import { isVideo, mentionSyntax, routeFor, videoRequestError } from "@/lib/registry";
+import { isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
@@ -94,19 +96,21 @@ function frameFields(media: ResolvedMedia | undefined, keyName: "firstFrameKey" 
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
-    const providerId = user.activeProvider;
-    if (!providerId) return Response.json({ error: "Add an API key in Settings to start generating" }, { status: 400 });
-    const provider = await providerForUser(user.id, providerId);
-
     const req = (await request.json()) as GenerateRequest;
     const model = catalogModel(req.model);
-    const route = model && routeFor(model, providerId);
-    if (!model || !isVideo(model) || !route)
-      return Response.json({ error: `Model "${req.model}" isn't available on ${provider.label}` }, { status: 400 });
+    if (!model || !isVideo(model))
+      return Response.json({ error: `Model "${req.model}" isn't available` }, { status: 400 });
+    const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
+    const gate = availabilityFor(routeProviders(model.routes), keyed);
+    if (!gate.available) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
+    const route = availableRoute(model, keyed, user.activeProvider);
+    if (!route || !isStudioProvider(route.provider))
+      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
+    const provider = await providerForUser(user.id, route.provider);
 
     const caps = model.capabilities;
     if (!caps.audio) delete req.generateAudio;
@@ -161,7 +165,7 @@ export async function POST(request: Request) {
     };
     const gen: Generation = {
       id: crypto.randomUUID(),
-      provider: providerId,
+      provider: route.provider,
       taskId,
       status: "queued",
       model: req.model,

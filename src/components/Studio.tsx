@@ -134,6 +134,7 @@ export function Studio() {
           }}
           tools={tools}
           onToolJob={showToolJob}
+          onOpenKeys={openKeys}
         />
       </div>
 

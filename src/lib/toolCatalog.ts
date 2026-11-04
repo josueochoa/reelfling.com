@@ -1,5 +1,6 @@
 // Which catalog entries can run as tools. The generated catalog is imported here, on the server.
 
+import { routeProviders } from "./registry/availability";
 import { catalogModel } from "./registry/generated";
 import { buildToolBody, formFor, TOOL_FORMS } from "./registry/tool-forms";
 import type { ModelEntry } from "./registry/types";
@@ -49,15 +50,19 @@ export function runnableTools(): RunnableTool[] {
 
 /** Slim list for the Tools menu. No endpoint ids. */
 export function publicTools(): ToolView[] {
-  return runnableTools().map(({ id, name, description, accepts, fields, menu, quote }) => ({
-    id,
-    name,
-    description,
-    accepts,
-    fields,
-    ...(menu ? { menu } : {}),
-    ...(quote ? { quote } : {}),
-  }));
+  return runnableTools().map(({ id, name, description, accepts, fields, menu, quote }) => {
+    const model = catalogModel(id);
+    return {
+      id,
+      name,
+      description,
+      accepts,
+      fields,
+      ...(menu ? { menu } : {}),
+      ...(quote ? { quote } : {}),
+      providers: model ? routeProviders(model.routes) : [],
+    };
+  });
 }
 
 export function prepareToolInput(toolId: string, assetKey: string, params: unknown) {

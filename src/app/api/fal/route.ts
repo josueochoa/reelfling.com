@@ -2,6 +2,7 @@ import { errorResponse, requireUser } from "@/lib/auth";
 import { createFalJob, createToolJob, listFalJobs, publicFalJob } from "@/lib/falJobs";
 import { getCredentials } from "@/lib/keys";
 import { FalValidationError } from "@/lib/providers/fal";
+import { availabilityError } from "@/lib/registry/availability";
 import { assertStorageAvailable } from "@/lib/storage";
 
 /** The user's fal jobs, newest first. Does not call fal — the open tab polls each one. */
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
       params?: unknown;
     };
     const creds = await getCredentials(user.id, "fal");
-    if (!creds) return Response.json({ error: "Add your fal API key under API keys." }, { status: 400 });
+    if (!creds) return Response.json({ error: availabilityError(["fal"]) }, { status: 400 });
     await assertStorageAvailable(user.id);
     if (body.toolId?.trim()) {
       const job = await createToolJob(
