@@ -11,6 +11,88 @@
           "min": 2
         },
         "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan 3.0 is the latest generation AI video model, delivering enhanced motion smoothness, superior scene fidelity, and greater visual coherence.",
+      "family": "Wan",
+      "group": "video",
+      "id": "fal:alibaba/wan-3.0/image-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": "audio",
+        "duration": "number",
+        "end": "end_image_url",
+        "resolution": "resolution",
+        "seed": true,
+        "start": "start_image_url"
+      },
+      "name": "Wan 3.0",
+      "price": {
+        "byResolution": {
+          "1080p": 0.2,
+          "480p": 0.05,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-3.0/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 2,
+          "max": 30,
+          "min": 2
+        },
+        "frames": {
           "end": false,
           "middle": false,
           "start": false
@@ -27,8 +109,8 @@
         ],
         "references": {
           "audio": 5,
-          "image": 0,
-          "total": 10,
+          "image": 10,
+          "total": 20,
           "video": 5
         },
         "resolutions": [
@@ -43,7 +125,34 @@
       "family": "Wan",
       "group": "video",
       "id": "fal:alibaba/wan-3.0/reference-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": "audio",
+        "audios": "reference_audio_urls",
+        "duration": "number",
+        "images": "reference_image_urls",
+        "resolution": "resolution",
+        "seed": true,
+        "videos": "reference_video_urls"
+      },
       "name": "Wan 3.0",
+      "price": {
+        "byResolution": {
+          "1080p": 0.2,
+          "480p": 0.05,
+          "720p": 0.1
+        },
+        "referenceBilling": "add",
+        "type": "per_second"
+      },
       "promptRequired": false,
       "refSyntax": "at",
       "routes": [
@@ -60,12 +169,301 @@
     },
     {
       "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 2,
+          "max": 30,
+          "min": 2
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "Wan 3.0 is the latest generation AI video model, delivering enhanced motion smoothness, superior scene fidelity, and greater visual coherence.",
+      "family": "Wan",
+      "group": "video",
+      "id": "fal:alibaba/wan-3.0/text-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "adaptive",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": "audio",
+        "duration": "number",
+        "resolution": "resolution",
+        "seed": true
+      },
+      "name": "Wan Text to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.2,
+          "480p": 0.05,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "alibaba/wan-3.0/text-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 20,
+          "min": 5
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "auto",
+          "21:9",
+          "2:1",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p",
+          "1440p",
+          "2160p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "FLUX 3 is Black Forest Labs' frontier video model. This endpoint animates a single still image into video, extending one frame into coherent, natural motion.",
+      "family": "Flux",
+      "group": "video",
+      "id": "fal:blackforestlabs/flux-3/image-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "auto",
+          "21:9",
+          "2:1",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": "generate_audio",
+        "duration": "number",
+        "resolution": "resolution",
+        "start": "image_url"
+      },
+      "name": "FLUX 3 Image to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.29,
+          "1440p": 0.32,
+          "2160p": 0.47,
+          "720p": 0.17
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "blackforestlabs/flux-3/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 6,
+        "promptExpansion": "optional",
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 10,
+          "total": 10,
+          "video": 0
+        },
+        "resolutions": [
+          "1k",
+          "2k"
+        ],
+        "seed": false
+      },
+      "description": "Seedream 5.0 Pro is grounded, region-precise image editing model that changes one element while keeping the rest of the frame intact with layer separation, sketch completion, and up to 10 reference images.",
+      "family": "Seedream",
+      "group": "image",
+      "id": "fal:bytedance/seedream/v5/pro/edit",
+      "inputs": {
+        "aspect": "image_size",
+        "count": "num_images",
+        "imageSizeByResolution": {
+          "1k": "auto_1K",
+          "2k": "auto_2K"
+        },
+        "images": "image_urls"
+      },
+      "name": "Seedream 5.0 Pro Image Editing",
+      "price": {
+        "byResolution": {
+          "1k": 0.0675,
+          "2k": 0.135
+        },
+        "referenceImages": {
+          "free": 1,
+          "perOutput": true,
+          "usd": 0.0045
+        },
+        "type": "per_image"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedream/v5/pro/edit",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image-edit",
+      "tasks": [
+        "image-edit"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 6,
+        "promptExpansion": "optional",
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "1k",
+          "2k"
+        ],
+        "seed": false
+      },
+      "description": "ByteDance's Seedream 5.0 Pro is flagship text-to-image model, with deep-thinking prompt understanding, native text in 14 languages, and precise control over dense layouts and structured designs.",
+      "family": "Seedream",
+      "group": "image",
+      "id": "fal:bytedance/seedream/v5/pro/text-to-image",
+      "inputs": {
+        "aspect": "image_size",
+        "count": "num_images",
+        "imageSizeByResolution": {
+          "1k": "auto_1K",
+          "2k": "auto_2K"
+        }
+      },
+      "name": "Seedream 5.0 Pro Text to Image",
+      "price": {
+        "byResolution": {
+          "1k": 0.0675,
+          "2k": 0.135
+        },
+        "type": "per_image"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "bytedance/seedream/v5/pro/text-to-image",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image",
+      "tasks": [
+        "image"
+      ]
+    },
+    {
+      "capabilities": {
         "accepts": "image"
       },
       "description": "bilateral reference framework (BiRefNet) for high-resolution dichotomous image segmentation (DIS)",
       "family": "Birefnet",
       "group": "tool",
       "id": "fal:fal-ai/birefnet/v2",
+      "inputs": {
+        "start": "image_url"
+      },
       "name": "Birefnet Background Removal V2",
       "promptRequired": false,
       "refSyntax": "at",
@@ -82,11 +480,16 @@
       ]
     },
     {
-      "capabilities": {},
+      "capabilities": {
+        "accepts": "image"
+      },
       "description": "Bria RMBG 2.0 enables seamless removal of backgrounds from images, ideal for professional editing tasks. Trained exclusively on licensed data for safe and risk-free commercial use. Model weights for commercial use are available here: https://share-eu1.hsforms.com/2GLpEVQqJTI2Lj7AMYwgfIwf4e04",
       "family": "Bria",
       "group": "tool",
       "id": "fal:fal-ai/bria/background/remove",
+      "inputs": {
+        "start": "image_url"
+      },
       "name": "Bria RMBG 2.0",
       "promptRequired": false,
       "refSyntax": "at",
@@ -100,6 +503,103 @@
       "task": "tool",
       "tasks": [
         "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 1,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true
+      },
+      "description": "Image editing with FLUX.2 [pro] from Black Forest Labs. Ideal for high-quality image manipulation, style transfer, and sequential editing workflows",
+      "family": "Flux",
+      "group": "image",
+      "id": "fal:fal-ai/flux-2-pro",
+      "inputs": {
+        "aspect": "image_size",
+        "seed": true
+      },
+      "name": "Flux 2 Pro",
+      "price": {
+        "first": 0.03,
+        "type": "per_megapixel",
+        "usd": 0.015
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/flux-2-pro",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image",
+      "tasks": [
+        "image"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 1,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 4,
+          "total": 4,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true
+      },
+      "description": "Text-to-image generation with FLUX.2 [pro] from Black Forest Labs. Optimized for maximum quality, exceptional photorealism and artistic images.",
+      "family": "Flux",
+      "group": "image",
+      "id": "fal:fal-ai/flux-2-pro/edit",
+      "inputs": {
+        "aspect": "image_size",
+        "images": "image_urls",
+        "seed": true
+      },
+      "name": "FLUX 2 Pro Edit",
+      "price": {
+        "first": 0.03,
+        "type": "per_megapixel",
+        "usd": 0.015
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/flux-2-pro/edit",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image-edit",
+      "tasks": [
+        "image-edit"
       ]
     },
     {
@@ -126,6 +626,11 @@
       "family": "FLUX.1",
       "group": "image",
       "id": "fal:fal-ai/flux/dev",
+      "inputs": {
+        "aspect": "image_size",
+        "count": "num_images",
+        "seed": true
+      },
       "name": "FLUX.1 [dev]",
       "promptRequired": true,
       "refSyntax": "at",
@@ -161,6 +666,11 @@
       "family": "FLUX.1",
       "group": "image",
       "id": "fal:fal-ai/flux/dev/image-to-image",
+      "inputs": {
+        "count": "num_images",
+        "seed": true,
+        "start": "image_url"
+      },
       "name": "FLUX.1 [dev]",
       "promptRequired": true,
       "refSyntax": "at",
@@ -189,9 +699,9 @@
         "promptExpansion": false,
         "ratios": [],
         "references": {
-          "audio": 1,
+          "audio": 0,
           "image": 0,
-          "total": 1,
+          "total": 0,
           "video": 0
         },
         "resolutions": [],
@@ -202,6 +712,9 @@
       "family": "Kling",
       "group": "video",
       "id": "fal:fal-ai/kling-video/ai-avatar/v2/standard",
+      "inputs": {
+        "start": "image_url"
+      },
       "name": "Kling AI Avatar v2 Standard",
       "promptRequired": false,
       "refSyntax": "at",
@@ -215,6 +728,68 @@
       "task": "avatar",
       "tasks": [
         "avatar"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 3
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 4,
+          "total": 4,
+          "video": 1
+        },
+        "resolutions": [],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling 3.0 Pro: Top-tier image-to-video with cinematic visuals, fluid motion, and native audio generation, with custom element support.",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:fal-ai/kling-video/v3/pro/image-to-video",
+      "inputs": {
+        "audio": "generate_audio",
+        "duration": "string",
+        "elements": "elements",
+        "end": "end_image_url",
+        "start": "start_image_url"
+      },
+      "name": "Kling Video v3 Image to Video [Pro]",
+      "price": {
+        "byResolution": {
+          "*": 0.112
+        },
+        "byResolutionWithAudio": {
+          "*": 0.168
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/kling-video/v3/pro/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
       ]
     },
     {
@@ -243,6 +818,10 @@
       "family": "Kling",
       "group": "video",
       "id": "fal:fal-ai/kling-video/v3/pro/motion-control",
+      "inputs": {
+        "elements": "elements",
+        "start": "image_url"
+      },
       "name": "Kling Video",
       "promptRequired": false,
       "refSyntax": "at",
@@ -293,6 +872,16 @@
       "family": "Kling",
       "group": "video",
       "id": "fal:fal-ai/kling-video/v3/pro/text-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "audio": "generate_audio",
+        "duration": "string"
+      },
       "name": "Kling Video v3 Text to Video [Pro]",
       "promptRequired": true,
       "refSyntax": "at",
@@ -317,6 +906,7 @@
       "family": "MiniMax",
       "group": "speech",
       "id": "fal:fal-ai/minimax/speech-2.8-hd",
+      "inputs": {},
       "name": "MiniMax Speech 2.8 [HD]",
       "promptRequired": true,
       "refSyntax": "at",
@@ -358,6 +948,9 @@
       "family": "MiniMax",
       "group": "video",
       "id": "fal:fal-ai/minimax/video-01/image-to-video",
+      "inputs": {
+        "start": "image_url"
+      },
       "name": "MiniMax (Hailuo AI) Video 01",
       "promptRequired": true,
       "refSyntax": "at",
@@ -371,6 +964,52 @@
       "task": "i2v",
       "tasks": [
         "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 1,
+        "promptExpansion": false,
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": false
+      },
+      "description": "Recraft V4.1 builds on the design-first foundation of V4 with sharper prompt control and cleaner composition. Tuned for brand systems and editorial work, it delivers production-ready raster images that hold up next to a designer's hand.",
+      "family": "Recraft",
+      "group": "image",
+      "id": "fal:fal-ai/recraft/v4.1/text-to-image",
+      "inputs": {
+        "aspect": "image_size"
+      },
+      "name": "Recraft V4.1 Text to Image",
+      "price": {
+        "type": "per_image",
+        "usd": 0.007
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/recraft/v4.1/text-to-image",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image",
+      "tasks": [
+        "image"
       ]
     },
     {
@@ -399,6 +1038,7 @@
       "family": "sync-3",
       "group": "video",
       "id": "fal:fal-ai/sync-lipsync/v3",
+      "inputs": {},
       "name": "sync-3 Lipsync",
       "promptRequired": false,
       "refSyntax": "at",
@@ -453,6 +1093,16 @@
       "family": "Wan-2.2",
       "group": "video",
       "id": "fal:fal-ai/wan/v2.2-a14b/text-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "resolution": "resolution",
+        "seed": true
+      },
       "name": "Wan-2.2 Text-to-Video A14B",
       "promptRequired": true,
       "refSyntax": "at",
@@ -466,6 +1116,629 @@
       "task": "t2v",
       "tasks": [
         "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 4,
+        "promptExpansion": "optional",
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true
+      },
+      "description": "Z-Image Turbo is a super fast text-to-image model of 6B parameters developed by Tongyi-MAI.",
+      "family": "Z-Image",
+      "group": "image",
+      "id": "fal:fal-ai/z-image/turbo",
+      "inputs": {
+        "aspect": "image_size",
+        "count": "num_images",
+        "seed": true
+      },
+      "name": "Z Image Turbo",
+      "price": {
+        "type": "per_megapixel",
+        "usd": 0.02
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/z-image/turbo",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image",
+      "tasks": [
+        "image"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 8,
+          "max": 10,
+          "min": 3
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "360p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Gemini Omni Flash 1.1 is Google's multimodal video model. This endpoint animates a still image into video with synchronized audio, extending a single frame into coherent motion that reflects the logic of the real world.",
+      "family": "Gemini",
+      "group": "video",
+      "id": "fal:google/gemini-omni-flash/v1.1/image-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "16:9",
+          "9:16"
+        ],
+        "duration": "number",
+        "end": "end_image_url",
+        "resolution": "resolution",
+        "start": "image_url"
+      },
+      "name": "Gemini Omni Flash 1.1 Image to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.15,
+          "360p": 0.03,
+          "4k": 0.3,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/gemini-omni-flash/v1.1/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 8,
+          "max": 10,
+          "min": 3
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 10,
+          "total": 13,
+          "video": 3
+        },
+        "resolutions": [
+          "360p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Gemini Omni Flash 1.1 is Google's multimodal video model. This endpoint generates video from combined multimodal references, images, videos and text together. Reasoning across all inputs to produce a single coherent result, with characters retaining their face, clothing, and voice throughout",
+      "family": "Gemini",
+      "group": "video",
+      "id": "fal:google/gemini-omni-flash/v1.1/reference-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "16:9",
+          "9:16"
+        ],
+        "duration": "number",
+        "images": "image_urls",
+        "resolution": "resolution",
+        "videos": "reference_video_urls"
+      },
+      "name": "Gemini Omni Flash 1.1 Reference to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.15,
+          "360p": 0.03,
+          "4k": 0.3,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/gemini-omni-flash/v1.1/reference-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "ref2v",
+      "tasks": [
+        "ref2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 8,
+          "max": 10,
+          "min": 3
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "360p",
+          "720p",
+          "1080p",
+          "4k"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Gemini Omni Flash 1.1 is Google's multimodal video model. This endpoint generates video with synchronized native audio from a text prompt, grounded in Gemini's real-world knowledge and physics understanding, with cinematic camera control expressed in natural language.",
+      "family": "Gemini",
+      "group": "video",
+      "id": "fal:google/gemini-omni-flash/v1.1/text-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "16:9",
+          "9:16"
+        ],
+        "duration": "number",
+        "resolution": "resolution"
+      },
+      "name": "Gemini Omni Flash 1.1 Text to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.15,
+          "360p": 0.03,
+          "4k": 0.3,
+          "720p": 0.1
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/gemini-omni-flash/v1.1/text-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 8,
+        "promptExpansion": "optional",
+        "qualities": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "ratios": [
+          "1:1",
+          "3:4",
+          "9:16",
+          "4:3",
+          "16:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [],
+        "seed": true
+      },
+      "description": "Generate high-quality images, posters, and logos with Ideogram 4.5, with accurate text rendering and low, medium, or high quality tiers.",
+      "family": "Ideogram",
+      "group": "image",
+      "id": "fal:ideogram/v4.5",
+      "inputs": {
+        "aspect": "image_size",
+        "count": "num_images",
+        "quality": "quality",
+        "seed": true
+      },
+      "name": "Ideogram V4.5 Text to Image",
+      "price": {
+        "byQuality": {
+          "high": 0.22,
+          "low": 0.03,
+          "medium": 0.06
+        },
+        "type": "per_image"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "ideogram/v4.5",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image",
+      "tasks": [
+        "image"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 3
+        },
+        "frames": {
+          "end": true,
+          "middle": true,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling 4.0 animates a starting image into a 3 to 30-second video at 720p or 1080p, with optional ending frames and per-shot prompts.",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:kling/v4/image-to-video",
+      "inputs": {
+        "duration": "number",
+        "end": "end_image_url",
+        "resolution": "resolution",
+        "start": "start_image_url"
+      },
+      "name": "Kling 4.0 Image to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.235,
+          "720p": 0.157
+        },
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "kling/v4/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 3
+        },
+        "frames": {
+          "end": true,
+          "middle": true,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "auto",
+          "16:9",
+          "9:16",
+          "1:1",
+          "21:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 10,
+          "total": 15,
+          "video": 5
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling 4.0 generates videos from text prompts and image or video references at 720p or 1080p, with durations from 3 to 30 seconds and per-shot prompts.",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:kling/v4/reference-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "auto",
+          "16:9",
+          "9:16",
+          "1:1",
+          "21:9"
+        ],
+        "duration": "number",
+        "end": "end_image_url",
+        "images": "image_urls",
+        "resolution": "resolution",
+        "start": "start_image_url",
+        "videos": "video_urls"
+      },
+      "name": "Kling 4.0 Reference to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.235,
+          "720p": 0.157
+        },
+        "byResolutionWithVideo": {
+          "1080p": 0.141,
+          "720p": 0.094
+        },
+        "referenceBilling": "double-min",
+        "type": "per_second"
+      },
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "kling/v4/reference-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "ref2v",
+      "tasks": [
+        "ref2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 30,
+          "min": 3
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "21:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Kling 4.0 generates videos from text prompts at 720p or 1080p, with durations from 3 to 30 seconds and support for per-shot prompts.",
+      "family": "Kling",
+      "group": "video",
+      "id": "fal:kling/v4/text-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "21:9"
+        ],
+        "duration": "number",
+        "resolution": "resolution"
+      },
+      "name": "Kling 4.0 Text to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.235,
+          "720p": 0.157
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "kling/v4/text-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 5,
+          "min": 5
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "3:4",
+          "4:3",
+          "1:1",
+          "9:16",
+          "16:9",
+          "21:9"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "540p",
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Luma Ray 3.2 animates a source image into cinematic motion guided by a text prompt, preserving the starting frame's look while controlling resolution, duration, and seamless looping.",
+      "family": "Luma",
+      "group": "video",
+      "id": "fal:luma/agent/ray/v3.2/image-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "3:4",
+          "4:3",
+          "1:1",
+          "9:16",
+          "16:9",
+          "21:9"
+        ],
+        "duration": "suffix",
+        "end": "end_image_url",
+        "resolution": "resolution",
+        "start": "image_url"
+      },
+      "name": "Luma Ray 3.2 Image to Video",
+      "price": {
+        "byResolution": {
+          "1080p": 0.24,
+          "540p": 0.03,
+          "720p": 0.06
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "luma/agent/ray/v3.2/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
       ]
     },
     {
@@ -512,6 +1785,22 @@
       "family": "H3",
       "group": "video",
       "id": "fal:minimax/h3-max/extend-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "auto",
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audios": "reference_audio_urls",
+        "duration": "number",
+        "resolution": "resolution",
+        "seed": true
+      },
       "name": "H3 Max Extend Video",
       "promptRequired": true,
       "refSyntax": "at",
@@ -525,6 +1814,405 @@
       "task": "extend",
       "tasks": [
         "extend"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 5
+        },
+        "frames": {
+          "end": true,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480P",
+          "768P",
+          "2K",
+          "4K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "MiniMax H3 is a frontier video model. This endpoint animates a supplied image into 2K video, using it as the opening frame or pairs a first and last frame to control a transition between two images with the aspect ratio following the input.",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "fal:minimax/h3/image-to-video",
+      "inputs": {
+        "duration": "number",
+        "end": "end_image_url",
+        "resolution": "resolution",
+        "seed": true,
+        "start": "image_url"
+      },
+      "name": "MiniMax H3 Image to Video",
+      "price": {
+        "byResolution": {
+          "2K": 0.13,
+          "480P": 0.05,
+          "4K": 0.16,
+          "768P": 0.06
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/h3/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 5
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "adaptive",
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 3,
+          "image": 9,
+          "total": 12,
+          "video": 3
+        },
+        "resolutions": [
+          "480P",
+          "768P",
+          "2K",
+          "4K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "MiniMax H3 is a frontier video model. This endpoint generates 2K video from multimodal references up to 9 images for subject and style, 3 video clips for motion, and 3 audio clips each cited in the prompt by order, keeping subjects consistent while following the referenced motion and audio.",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "fal:minimax/h3/reference-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "adaptive",
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audios": "reference_audio_urls",
+        "duration": "number",
+        "images": "reference_image_urls",
+        "resolution": "resolution",
+        "seed": true,
+        "videos": "reference_video_urls"
+      },
+      "name": "MiniMax H3 Reference to Video",
+      "price": {
+        "byResolution": {
+          "2K": 0.13,
+          "480P": 0.05,
+          "4K": 0.16,
+          "768P": 0.06
+        },
+        "referenceImages": {
+          "free": 5,
+          "usd": 0.08
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/h3/reference-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "ref2v",
+      "tasks": [
+        "ref2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 15,
+          "min": 5
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": false
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": "optional",
+        "ratios": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480P",
+          "768P",
+          "2K",
+          "4K"
+        ],
+        "seed": true,
+        "watermark": false
+      },
+      "description": "MiniMax H3 is a frontier video model. This endpoint generates video from a text prompt alone, rendering at 2K in durations from 5 to 15 seconds across seven aspect ratios.",
+      "family": "MiniMax",
+      "group": "video",
+      "id": "fal:minimax/h3/text-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "21:9",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "duration": "number",
+        "resolution": "resolution",
+        "seed": true
+      },
+      "name": "MiniMax H3 Text to Video",
+      "price": {
+        "byResolution": {
+          "2K": 0.13,
+          "480P": 0.05,
+          "4K": 0.16,
+          "768P": 0.06
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "minimax/h3/text-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "t2v",
+      "tasks": [
+        "t2v"
+      ]
+    },
+    {
+      "capabilities": {
+        "maxImages": 10,
+        "promptExpansion": false,
+        "qualities": [
+          "low",
+          "medium",
+          "auto"
+        ],
+        "ratios": [
+          "2:1",
+          "20:9",
+          "19.5:9",
+          "16:9",
+          "4:3",
+          "3:2",
+          "1:1",
+          "2:3",
+          "3:4",
+          "9:16",
+          "9:19.5",
+          "9:20",
+          "1:2",
+          "auto",
+          "21:9",
+          "5:2"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 5,
+          "total": 5,
+          "video": 0
+        },
+        "resolutions": [
+          "1k",
+          "2k"
+        ],
+        "seed": false
+      },
+      "description": "Edit images with xAi's Grok Imagine 2.0 model.",
+      "family": "Grok",
+      "group": "image",
+      "id": "fal:xai/grok-imagine-image/v2.0/edit",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "2:1",
+          "20:9",
+          "19.5:9",
+          "16:9",
+          "4:3",
+          "3:2",
+          "1:1",
+          "2:3",
+          "3:4",
+          "9:16",
+          "9:19.5",
+          "9:20",
+          "1:2",
+          "auto",
+          "21:9",
+          "5:2"
+        ],
+        "count": "num_images",
+        "images": "image_urls",
+        "quality": "quality",
+        "resolution": "resolution"
+      },
+      "name": "Grok Imagine Image 2.0",
+      "price": {
+        "byResolutionQuality": {
+          "1k/auto": 0.06,
+          "1k/low": 0.04,
+          "1k/medium": 0.06,
+          "2k/auto": 0.08,
+          "2k/low": 0.06,
+          "2k/medium": 0.08
+        },
+        "referenceImages": {
+          "free": 0,
+          "usd": 0.01
+        },
+        "type": "per_image"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "xai/grok-imagine-image/v2.0/edit",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "image-edit",
+      "tasks": [
+        "image-edit"
+      ]
+    },
+    {
+      "capabilities": {
+        "audio": false,
+        "camera": false,
+        "durations": {
+          "default": 6,
+          "max": 15,
+          "min": 1
+        },
+        "frames": {
+          "end": false,
+          "middle": false,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "480p",
+          "720p",
+          "1080p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "Generate videos from images with audio using xAI's Grok Imagine 1.5 Video model.",
+      "family": "Grok",
+      "group": "video",
+      "id": "fal:xai/grok-imagine-video/v1.5/image-to-video",
+      "inputs": {
+        "duration": "number",
+        "resolution": "resolution",
+        "start": "image_url"
+      },
+      "name": "Grok Imagine Video 1.5",
+      "price": {
+        "byResolution": {
+          "1080p": 0.25,
+          "480p": 0.08,
+          "720p": 0.14
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "xai/grok-imagine-video/v1.5/image-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
       ]
     }
   ],

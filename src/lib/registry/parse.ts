@@ -78,6 +78,7 @@ export function parseModel(value: unknown): ModelEntry {
     promptRequired: raw.promptRequired === true,
     refSyntax: raw.refSyntax === "brackets" || raw.refSyntax === "plain" ? raw.refSyntax : "at",
     ...(typeof raw.mark === "string" && { mark: raw.mark }),
+    ...(raw.inputs && typeof raw.inputs === "object" ? { inputs: raw.inputs } : {}),
     capabilities: asRecord(raw.capabilities, "capabilities"),
     price: asPrice(raw.price),
   };

@@ -1,6 +1,6 @@
-import { errorResponse, requireUser, setActiveProvider } from "@/lib/auth";
-import { deleteKey, listKeys, savedKeyBody, saveKey } from "@/lib/keys";
-import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
+import { errorResponse, requireUser } from "@/lib/auth";
+import { deleteKey, savedKeyBody, saveKey } from "@/lib/keys";
+import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { createProvider } from "@/lib/providers";
 import { verifyFalKey } from "@/lib/providers/fal";
 
@@ -29,24 +29,18 @@ export async function PUT(request: Request) {
     }
 
     await saveKey(user.id, body.provider, apiKey, baseUrl);
-    // fal isn't part of the video/image provider switch.
-    if (!user.activeProvider && isStudioProvider(body.provider)) await setActiveProvider(user.id, body.provider);
     return Response.json(savedKeyBody(apiKey, detail));
   } catch (e) {
     return errorResponse(e);
   }
 }
 
-/** ?provider=… — forget a key. Falls back to the user's other key, if any. */
+/** ?provider=… — forget a key. Later generations pick another keyed route. */
 export async function DELETE(request: Request) {
   try {
     const user = await requireUser();
     const provider = new URL(request.url).searchParams.get("provider") as ProviderId;
     await deleteKey(user.id, provider);
-    if (user.activeProvider === provider) {
-      const next = (await listKeys(user.id)).map((k) => k.provider).find(isStudioProvider) ?? null;
-      await setActiveProvider(user.id, next);
-    }
     return new Response(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

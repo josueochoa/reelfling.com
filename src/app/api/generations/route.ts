@@ -1,11 +1,15 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import { listKeys } from "@/lib/keys";
+import { getCredentials, listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
-import { availabilityError, availabilityFor, availableRoute, routeProviders } from "@/lib/registry/availability";
+import { falQueueInput, submitFal } from "@/lib/providers/fal";
+import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
-import { catalogModel } from "@/lib/registry/generated";
-import { isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
+import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
+import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
+import { preferredRoute } from "@/lib/registry/routing";
+import type { FalInputMap, StudioProviderId } from "@/lib/registry/types";
+import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
@@ -87,6 +91,30 @@ function orderedBlocks(order: string[] | undefined, groups: [UploadKind, Resolve
   return ordered;
 }
 
+/** Omit when there is no reference video. `0` still selects the with-video rate. */
+async function referenceVideoSecondsOf(userId: string, req: GenerateRequest): Promise<number | undefined> {
+  if (req.mode === "frames" || !req.referenceVideos?.length) return undefined;
+  let sum = 0;
+  for (const value of req.referenceVideos) {
+    if (!isUploadRef(value)) continue;
+    const asset = await getAsset(userId, uploadKeyOf(value));
+    sum += asset?.meta?.duration ?? 0;
+  }
+  return sum;
+}
+
+type VideoRun =
+  | { provider: "fal"; endpoint: string; inputs: FalInputMap }
+  | { provider: StudioProviderId; endpoint: string };
+
+/** Studio providers, or a fal video whose queue body was checked. */
+function videoRun(route: { provider: string; endpoint: string }, inputs: FalInputMap | undefined): VideoRun | undefined {
+  if (route.provider === "fal" && FAL_VIDEO_ENDPOINTS.has(route.endpoint) && inputs)
+    return { provider: "fal", endpoint: route.endpoint, inputs };
+  if (isStudioProvider(route.provider)) return { provider: route.provider, endpoint: route.endpoint };
+  return undefined;
+}
+
 function frameFields(media: ResolvedMedia | undefined, keyName: "firstFrameKey" | "lastFrameKey") {
   if (!media?.key) return {};
   const nameKey = keyName === "firstFrameKey" ? "firstFrameName" : "lastFrameName";
@@ -103,14 +131,25 @@ export async function POST(request: Request) {
     const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
     const gate = availabilityFor(routeProviders(model.routes), keyed);
     if (!gate.available) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
-    const route = availableRoute(model, keyed, user.activeProvider);
-    if (!route || !isStudioProvider(route.provider))
-      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
+    const saved = await getRoutePreference(user.id, model.id);
+    const explicit = typeof req.route === "string" ? req.route : null;
+    const route = preferredRoute(model, keyed, [explicit, saved, user.activeProvider]);
+    // ModelArk, ArgoLink, and OpenRouter have a studio body. A fal video route is
+    // allowed only when its queue body was checked against that endpoint's schema.
+    const run = route && videoRun(route, model.inputs);
+    if (!run) return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
-    const provider = await providerForUser(user.id, route.provider);
+    const referenceVideoSeconds = await referenceVideoSecondsOf(user.id, req);
+    const estimate =
+      estimateRouteCost(model, run.provider, {
+        resolution: req.resolution,
+        duration: req.duration,
+        audio: !!req.generateAudio,
+        referenceVideoSeconds,
+      }) ?? 0;
 
     const caps = model.capabilities;
     if (!caps.audio) delete req.generateAudio;
@@ -140,18 +179,32 @@ export async function POST(request: Request) {
       0,
       CAMERA_MOVE_MAX,
     );
-    const { taskId } = await provider.createTask(
-      applyCameraMoves(model, {
-        ...req,
-        model: route.endpoint,
-        prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
-        firstFrame: first?.url,
-        lastFrame: last?.url,
-        referenceImages: referenceImages?.map((media) => media.url),
-        referenceVideos: referenceVideos?.map((media) => media.url),
-        referenceAudios: referenceAudios?.map((media) => media.url),
-      }),
-    );
+    const providerReq = applyCameraMoves(model, {
+      ...req,
+      model: run.endpoint,
+      prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
+      firstFrame: first?.url,
+      lastFrame: last?.url,
+      referenceImages: referenceImages?.map((media) => media.url),
+      referenceVideos: referenceVideos?.map((media) => media.url),
+      referenceAudios: referenceAudios?.map((media) => media.url),
+    });
+    let taskId: string;
+    let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
+    if (run.provider === "fal") {
+      const creds = await getCredentials(user.id, "fal");
+      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
+      const submission = await submitFal(creds.apiKey, run.endpoint, falQueueInput(providerReq, run.inputs));
+      taskId = submission.requestId;
+      falUrls = {
+        falStatusUrl: submission.statusUrl,
+        falResponseUrl: submission.responseUrl,
+        falCancelUrl: submission.cancelUrl,
+      };
+    } else {
+      const provider = await providerForUser(user.id, run.provider);
+      ({ taskId } = await provider.createTask(providerReq));
+    }
     const now = Date.now();
     const inputs: GenerationInputs = {
       firstFrame: frames && !!first,
@@ -165,7 +218,7 @@ export async function POST(request: Request) {
     };
     const gen: Generation = {
       id: crypto.randomUUID(),
-      provider: route.provider,
+      provider: run.provider,
       taskId,
       status: "queued",
       model: req.model,
@@ -178,6 +231,10 @@ export async function POST(request: Request) {
       seed: req.seed,
       ...(cameraMoves.length ? { cameraMoves } : {}),
       inputs,
+      route: run.provider,
+      routeEndpoint: run.endpoint,
+      estimatedCost: estimate,
+      ...falUrls,
       createdAt: now,
       updatedAt: now,
     };

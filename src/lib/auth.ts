@@ -74,10 +74,6 @@ export async function upsertUser(profile: { email: string; name?: string; avatar
   return toUser((await first<UserRow>("SELECT * FROM users WHERE email = ?", email))!);
 }
 
-export async function setActiveProvider(userId: string, provider: StudioProviderId | null) {
-  await run("UPDATE users SET active_provider = ? WHERE id = ?", provider, userId);
-}
-
 // ---------------------------------------------------------------- Cloudflare Access
 
 /** Accepts "https://team.cloudflareaccess.com" or just "team". */
