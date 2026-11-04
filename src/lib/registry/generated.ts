@@ -1,8 +1,10 @@
-// fal and OpenRouter catalogs. Server and tests only — client components import
-// ./index, which is the hand-written ModelArk and ArgoLink entries.
+// fal and OpenRouter catalogs, plus hand-checked upscale tools (catalog/upscale.json).
+// Server and tests only — client components import ./index, which is the hand-written
+// ModelArk and ArgoLink entries. catalog:sync does not write upscale.json.
 
 import falCatalog from "./catalog/fal.json" with { type: "json" };
 import openRouterCatalog from "./catalog/openrouter.json" with { type: "json" };
+import upscaleCatalog from "./catalog/upscale.json" with { type: "json" };
 import { HAND_MODELS } from "./hand";
 import { assertRegistry, parseModel } from "./parse";
 import { isVideo, type ModelEntry, type VideoModel } from "./types";
@@ -18,6 +20,7 @@ function fromCatalog(file: CatalogFile): ModelEntry[] {
 export const GENERATED_MODELS: readonly ModelEntry[] = [
   ...fromCatalog(falCatalog as CatalogFile),
   ...fromCatalog(openRouterCatalog as CatalogFile),
+  ...fromCatalog(upscaleCatalog as CatalogFile),
 ];
 
 /** Hand-written entries plus the generated catalogs. */

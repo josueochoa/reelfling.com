@@ -4,6 +4,13 @@ import { LIBRARY_PREFIX, thumbKeyFor, UPLOAD_RULES, uploadKindOf } from "@/lib/u
 
 const KEY_RE = new RegExp(`^${LIBRARY_PREFIX}[0-9a-f-]{36}\\.[a-z0-9]+$`);
 
+function finiteDim(value: unknown, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < 1 || rounded > max) return undefined;
+  return rounded;
+}
+
 /**
  * { key, name, duration?, peaks?, thumb? } — call after the browser's PUTs succeed.
  * Checks what actually landed in the bucket (a signed URL can't limit size or type),
@@ -18,6 +25,8 @@ export async function POST(request: Request) {
       duration?: number;
       peaks?: number[];
       thumb?: boolean;
+      width?: number;
+      height?: number;
     };
     const { key } = body;
     if (!KEY_RE.test(key ?? "")) return Response.json({ error: "Invalid upload key" }, { status: 400 });
@@ -26,6 +35,8 @@ export async function POST(request: Request) {
       name: body.name?.trim().slice(0, 120) || key.split("/").pop()!,
       meta: {
         duration: Number.isFinite(body.duration) ? Math.round(body.duration! * 100) / 100 : undefined,
+        width: finiteDim(body.width, 20_000),
+        height: finiteDim(body.height, 20_000),
         // Waveform bars for audio: up to 64 values, 0–100.
         peaks: Array.isArray(body.peaks)
           ? body.peaks.slice(0, 64).map((p) => Math.max(0, Math.min(100, Math.round(Number(p) || 0))))

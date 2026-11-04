@@ -50,6 +50,7 @@ export function MediaPreview({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, onPrev, onNext]);
 
+  const size = item.resolution ?? (item.width && item.height ? `${item.width}×${item.height}` : undefined);
   const details = [
     item.source === "processed"
       ? "Processed"
@@ -57,6 +58,7 @@ export function MediaPreview({
         ? `Generated · ${modelLabel(item.generation?.model ?? "")}`
         : "Uploaded",
     item.kind === "image" ? "Image" : item.kind === "video" ? "Video" : "Audio",
+    size,
     formatDuration(item.duration),
     formatBytes(item.bytes),
   ].filter(Boolean);
