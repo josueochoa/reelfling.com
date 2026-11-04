@@ -55,23 +55,6 @@ export function openRouterPickerModels(): VideoModel[] {
     .map((model) => slimVideo(model, "openrouter"));
 }
 
-/**
- * fal endpoints whose published input schema matches falVideoInput.
- * Checked against fal's OpenAPI with no key (4 Nov 2026). These do not match,
- * so they stay out of the picker until a per-model mapper exists:
- * fal-ai/kling-video/v3/pro/text-to-video, fal-ai/wan/v2.2-a14b/text-to-video,
- * alibaba/wan-3.0/reference-to-video, fal-ai/minimax/video-01/image-to-video.
- */
-const FAL_PICKER_ENDPOINTS = new Set<string>([]);
-
-/** OpenRouter videos, plus fal models whose input mapping was checked. */
-export function catalogPickerModels(): VideoModel[] {
-  const fal = ALL_MODELS.filter(isVideo).filter((model) =>
-    model.routes.some((route) => route.provider === "fal" && FAL_PICKER_ENDPOINTS.has(route.endpoint)),
-  );
-  return [...openRouterPickerModels(), ...fal.map((model) => slimVideo(model))];
-}
-
 function slimVideo(model: VideoModel, provider?: string): VideoModel {
   const description = model.description.length > 240 ? `${model.description.slice(0, 239)}…` : model.description;
   const routes = provider ? model.routes.filter((route) => route.provider === provider) : model.routes;

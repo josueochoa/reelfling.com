@@ -1,12 +1,11 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import { getCredentials, listKeys } from "@/lib/keys";
+import { listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
-import { falVideoEndpoint, falVideoInput, submitFal } from "@/lib/providers/fal";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel } from "@/lib/registry/generated";
-import { estimateRouteCost, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
+import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
@@ -121,7 +120,10 @@ export async function POST(request: Request) {
     const saved = await getRoutePreference(user.id, model.id);
     const explicit = typeof req.route === "string" ? req.route : null;
     const route = preferredRoute(model, keyed, [explicit, saved, user.activeProvider]);
-    if (!route) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
+    // Only ModelArk, ArgoLink, and OpenRouter have a studio request body. fal queue
+    // models (Kling, Wan, MiniMax) do not, so they never leave this route.
+    if (!route || !isStudioProvider(route.provider))
+      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
@@ -163,33 +165,19 @@ export async function POST(request: Request) {
       0,
       CAMERA_MOVE_MAX,
     );
-    const providerReq = applyCameraMoves(model, {
-      ...req,
-      model: route.endpoint,
-      prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
-      firstFrame: first?.url,
-      lastFrame: last?.url,
-      referenceImages: referenceImages?.map((media) => media.url),
-      referenceVideos: referenceVideos?.map((media) => media.url),
-      referenceAudios: referenceAudios?.map((media) => media.url),
-    });
-    const endpoint = route.provider === "fal" ? falVideoEndpoint(route.endpoint, req.mode, !!first) : route.endpoint;
-    let taskId: string;
-    let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
-    if (route.provider === "fal") {
-      const creds = await getCredentials(user.id, "fal");
-      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
-      const submission = await submitFal(creds.apiKey, endpoint, falVideoInput(providerReq));
-      taskId = submission.requestId;
-      falUrls = {
-        falStatusUrl: submission.statusUrl,
-        falResponseUrl: submission.responseUrl,
-        falCancelUrl: submission.cancelUrl,
-      };
-    } else {
-      const provider = await providerForUser(user.id, route.provider);
-      ({ taskId } = await provider.createTask(providerReq));
-    }
+    const provider = await providerForUser(user.id, route.provider);
+    const { taskId } = await provider.createTask(
+      applyCameraMoves(model, {
+        ...req,
+        model: route.endpoint,
+        prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
+        firstFrame: first?.url,
+        lastFrame: last?.url,
+        referenceImages: referenceImages?.map((media) => media.url),
+        referenceVideos: referenceVideos?.map((media) => media.url),
+        referenceAudios: referenceAudios?.map((media) => media.url),
+      }),
+    );
     const now = Date.now();
     const inputs: GenerationInputs = {
       firstFrame: frames && !!first,
@@ -217,9 +205,8 @@ export async function POST(request: Request) {
       ...(cameraMoves.length ? { cameraMoves } : {}),
       inputs,
       route: route.provider,
-      routeEndpoint: endpoint,
+      routeEndpoint: route.endpoint,
       estimatedCost: estimate,
-      ...falUrls,
       createdAt: now,
       updatedAt: now,
     };

@@ -369,48 +369,6 @@ export async function fetchFalOutput(url: string): Promise<Response> {
   return res;
 }
 
-/**
- * Seedance on fal is one product with a text, image, and reference endpoint.
- * Other fal models keep the catalog endpoint.
- */
-export function falVideoEndpoint(endpoint: string, mode: "frames" | "references", hasStart: boolean): string {
-  if (!endpoint.startsWith("bytedance/seedance-") || !endpoint.endsWith("/text-to-video")) return endpoint;
-  if (mode === "references") return endpoint.replace(/\/text-to-video$/, "/reference-to-video");
-  if (hasStart) return endpoint.replace(/\/text-to-video$/, "/image-to-video");
-  return endpoint;
-}
-
-/** Shared fal video body. Field names match the published Seedance queue schema. */
-export function falVideoInput(req: {
-  prompt?: string;
-  duration?: number;
-  resolution?: string;
-  ratio?: string;
-  generateAudio?: boolean;
-  seed?: number;
-  firstFrame?: string;
-  lastFrame?: string;
-  referenceImages?: string[];
-  referenceVideos?: string[];
-  referenceAudios?: string[];
-}): Record<string, unknown> {
-  const ratio = !req.ratio || req.ratio === "adaptive" ? "16:9" : req.ratio;
-  const input: Record<string, unknown> = {
-    prompt: req.prompt ?? "",
-    ...(req.duration !== undefined ? { duration: String(req.duration) } : {}),
-    ...(req.resolution ? { resolution: req.resolution } : {}),
-    aspect_ratio: ratio,
-  };
-  if (req.generateAudio !== undefined) input.generate_audio = req.generateAudio;
-  if (req.seed !== undefined) input.seed = req.seed;
-  if (req.firstFrame) input.image_url = req.firstFrame;
-  if (req.lastFrame) input.end_image_url = req.lastFrame;
-  if (req.referenceImages?.length) input.image_urls = req.referenceImages;
-  if (req.referenceVideos?.length) input.video_urls = req.referenceVideos;
-  if (req.referenceAudios?.length) input.audio_urls = req.referenceAudios;
-  return input;
-}
-
 /** Rejects a missing or zero Content-Length. An unsized body would skip the storage cap. */
 export function outputBytes(header: string | null): number {
   const bytes = Number(header);

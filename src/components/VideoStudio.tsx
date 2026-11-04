@@ -6,7 +6,6 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "r
 import { restoreInputs } from "@/lib/inputs";
 import { isVideo, MODELS, type VideoModel } from "@/lib/registry";
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
-import { pickerModels, reuseSelection } from "@/lib/registry/routing";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
@@ -132,20 +131,19 @@ export function VideoStudio({
   function catalog() {
     const hand = MODELS.filter(isVideo);
     const extra = (openRouterModels ?? []).filter((model) => !hand.some((item) => item.id === model.id));
-    return pickerModels([...hand, ...extra]);
+    return [...hand, ...extra];
   }
 
   function reuse(gen: Generation, asFirstFrame?: string) {
     setOpen(null);
-    const picked = reuseSelection(catalog(), gen.model, gen.route);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // Don't claim files were deleted while the library is still loading.
     const restored = asFirstFrame || !library.loaded ? undefined : restoreInputs(gen, available);
     const waiting = !asFirstFrame && !library.loaded;
     setPreset((p) => ({
       key: p.key + 1,
-      model: picked.id,
-      route: picked.route,
+      model: gen.model,
+      route: gen.route,
       prompt: restored?.prompt ?? gen.prompt,
       ratio: gen.ratio,
       resolution: gen.resolution,

@@ -64,7 +64,7 @@ export const TERMINAL_STATUSES: TaskStatus[] = ["succeeded", "failed", "cancelle
 export interface Generation {
   id: string;
   /** Missing on records created before providers existed (= modelark). */
-  provider?: StudioProviderId | "fal";
+  provider?: StudioProviderId;
   taskId: string;
   status: TaskStatus;
   /** 0–100 while in flight, when the provider reports it. */
@@ -87,10 +87,6 @@ export interface Generation {
   routeEndpoint?: string;
   /** Catalog estimate, USD. */
   estimatedCost?: number;
-  /** fal queue URLs. Absent on every other provider. */
-  falStatusUrl?: string;
-  falResponseUrl?: string;
-  falCancelUrl?: string;
   /** Counts, plus the R2 keys of frames and reference blocks when they were saved. */
   inputs: GenerationInputs;
   /** Temporary signed URL from ModelArk (expires ~24h). */
