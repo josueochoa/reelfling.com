@@ -13,6 +13,7 @@ import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { assetFileUrl } from "@/lib/uploads";
 import { confirmToast, toast } from "@/components/ui/Toast";
+import type { SavedLook } from "@/lib/registry/looks";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
@@ -42,6 +43,8 @@ export function VideoStudio({
   tools,
   extendOffers,
   onToolJob,
+  savedLooks,
+  onLooks,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -52,6 +55,8 @@ export function VideoStudio({
   tools: readonly ToolView[];
   extendOffers: readonly ExtendOffer[];
   onToolJob: () => void;
+  savedLooks: readonly SavedLook[];
+  onLooks: (next: SavedLook[]) => void;
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -197,6 +202,8 @@ export function VideoStudio({
       generateAudio: gen.generateAudio,
       cameraMoves: gen.cameraMoves,
       cameraMove: gen.cameraMove,
+      look: gen.look,
+      lookSwatch: gen.lookSwatch,
       mode: extra?.frameKey ? "frames" : (restored?.mode ?? gen.mode),
       firstFrameKey: extra?.frameKey ?? restored?.firstFrameKey,
       lastFrameKey: extra?.frameKey ? undefined : restored?.lastFrameKey,
@@ -331,6 +338,8 @@ export function VideoStudio({
             onGenerate={generate}
             error={error}
             onOpenKeys={onOpenKeys}
+            savedLooks={savedLooks}
+            onLooks={onLooks}
           />
         )}
       </aside>
