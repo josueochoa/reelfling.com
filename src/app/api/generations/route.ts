@@ -4,6 +4,7 @@ import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
 import { falQueueInput, submitFal } from "@/lib/providers/fal";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
+import { applyNativeExpansion } from "@/lib/enhance";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
 import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
@@ -11,7 +12,7 @@ import { preferredRoute } from "@/lib/registry/routing";
 import type { FalInputMap, StudioProviderId } from "@/lib/registry/types";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
-import { insertGeneration, listGenerations } from "@/lib/store";
+import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
@@ -181,8 +182,11 @@ export async function POST(request: Request) {
       0,
       CAMERA_MOVE_MAX,
     );
+    const nativeOn = req.promptExpansion === true;
+    const withoutExpansion = { ...req };
+    delete withoutExpansion.promptExpansion;
     const providerReq = applyCameraMoves(model, {
-      ...req,
+      ...withoutExpansion,
       model: run.endpoint,
       prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
       firstFrame: first?.url,
@@ -192,12 +196,26 @@ export async function POST(request: Request) {
       referenceVideos: referenceVideos?.map((media) => media.url),
       referenceAudios: referenceAudios?.map((media) => media.url),
     });
+    // A missing fal key would 400 after the part was claimed. Check it first.
+    const falCreds = run.provider === "fal" ? await getCredentials(user.id, "fal") : undefined;
+    if (run.provider === "fal" && !falCreds)
+      return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
+    // Before any provider call. A missing source 400s here, so a paid task is never started.
+    const continued =
+      typeof req.continueFrom === "string" && req.continueFrom
+        ? await continueSequence(user.id, req.continueFrom)
+        : undefined;
+    if (typeof req.continueFrom === "string" && req.continueFrom && !continued)
+      return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
     let taskId: string;
     let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
     if (run.provider === "fal") {
-      const creds = await getCredentials(user.id, "fal");
-      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
-      const submission = await submitFal(creds.apiKey, run.endpoint, falQueueInput(providerReq, run.inputs));
+      if (!falCreds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
+      const submission = await submitFal(
+        falCreds.apiKey,
+        run.endpoint,
+        applyNativeExpansion(falQueueInput(providerReq, run.inputs), model, run, nativeOn),
+      );
       taskId = submission.requestId;
       falUrls = {
         falStatusUrl: submission.statusUrl,
@@ -244,6 +262,11 @@ export async function POST(request: Request) {
       route: run.provider,
       routeEndpoint: run.endpoint,
       estimatedCost: estimate,
+      ...(continued && {
+        sequenceId: continued.sequenceId,
+        part: continued.part,
+        continuedFrom: continued.sourceGenerationId,
+      }),
       ...falUrls,
       createdAt: now,
       updatedAt: now,

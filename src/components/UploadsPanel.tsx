@@ -3,10 +3,13 @@
 // Picker for references: the user's assets, uploads first (generated ones one click away).
 
 import { useRef, useState } from "react";
+import { Trash2, X } from "@/components/ui/Icon";
+import { confirmToast } from "@/components/ui/Toast";
 import type { AssetSource, UploadKind } from "@/lib/uploads";
-import { ACCEPT, type Library, type LibraryItem } from "./library";
-import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
-import { MediaPreview } from "./MediaPreview";
+import { ACCEPT, fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
+import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
+import { Viewer } from "./Viewer";
+import { formatCreated } from "./viewer/model";
 import { formatBytes } from "./UserMenu";
 
 const FILTERS: { value: UploadKind | "all"; label: string }[] = [
@@ -122,7 +125,7 @@ export function UploadsPanel({
           aria-label="Close uploads"
           className="ml-auto grid size-8 place-items-center rounded-full bg-white/5 text-zinc-300 hover:bg-white/10"
         >
-          ✕
+          <X className="size-4" aria-hidden />
         </button>
       </div>
 
@@ -134,7 +137,7 @@ export function UploadsPanel({
             ))}
           </ul>
           <button onClick={() => setErrors([])} aria-label="Dismiss" className="text-red-300/70 hover:text-red-200">
-            ✕
+            <X className="size-3.5" aria-hidden />
           </button>
         </div>
       )}
@@ -193,10 +196,14 @@ export function UploadsPanel({
                           ? "this generated video (and its generation)"
                           : "this generated image"
                         : `“${item.name}” from your uploads`;
-                    if (confirm(`Delete ${what}? This can't be undone.`)) onDelete(item);
+                    void confirmToast(`Delete ${what}? This can't be undone.`, { confirmLabel: "Delete" }).then(
+                      (ok) => {
+                        if (ok) onDelete(item);
+                      },
+                    );
                   }}
                 >
-                  🗑
+                  <Trash2 className="size-3.5" aria-hidden />
                 </IconButton>
               </div>
               {editing === item.id ? (
@@ -238,13 +245,30 @@ export function UploadsPanel({
       />
 
       {previewing && (
-        <MediaPreview
-          item={previewing}
-          label={selected.get(previewing.id)}
-          onToggle={() => onToggle(previewing)}
+        <Viewer
+          label="Preview"
+          title={previewing.name}
+          kind={previewing.kind}
+          src={fileSrc(previewing)}
+          poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
+          alt={previewing.name}
+          prompt={previewing.generation?.prompt || previewing.name}
+          details={[
+            ...(formatDuration(previewing.duration)
+              ? [{ label: "Duration", value: formatDuration(previewing.duration) }]
+              : []),
+            { label: "Created", value: formatCreated(previewing.createdAt) },
+          ]}
+          peaks={previewing.peaks}
+          onClose={() => setPreviewId(null)}
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
-          onClose={() => setPreviewId(null)}
+          onUseAsReference={() => onToggle(previewing)}
+          referenceLabel={
+            selected.get(previewing.id)
+              ? `Remove ${selected.get(previewing.id)} from references`
+              : "Add to references"
+          }
         />
       )}
     </section>

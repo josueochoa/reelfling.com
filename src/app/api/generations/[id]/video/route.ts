@@ -1,8 +1,12 @@
 import { currentUser } from "@/lib/auth";
-import { serveAsset } from "@/lib/storage";
+import { serveAsset, streamAsset } from "@/lib/storage";
 import { ensureStoredVideo, getGeneration } from "@/lib/store";
 
-/** Plays (or with ?download, saves) the stored MP4 — copying it from the provider first if needed. */
+/**
+ * Plays (or with ?download, saves) the stored MP4 — copying it from the provider first if needed.
+ * `?bytes=1` streams the file from this origin so a canvas can read the last frame.
+ * The plain URL redirects to storage, and that video would taint the canvas.
+ */
 export async function GET(request: Request, ctx: RouteContext<"/api/generations/[id]/video">) {
   const user = await currentUser();
   if (!user) return new Response("Not signed in", { status: 401 });
@@ -16,6 +20,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/generations/
   });
   if (!asset) return new Response("Video not ready", { status: 404 });
 
-  const download = new URL(request.url).searchParams.has("download");
-  return serveAsset(asset, download ? { downloadName: `seedance-${id.slice(0, 8)}.mp4` } : {});
+  const params = new URL(request.url).searchParams;
+  if (params.has("bytes")) return streamAsset(asset, request);
+  return serveAsset(asset, params.has("download") ? { downloadName: `seedance-${id.slice(0, 8)}.mp4` } : {});
 }

@@ -3,7 +3,41 @@
 @theme {
   --color-ink: #0b0b0d;
   --color-panel: #131316;
+  --color-surface-2: #1a1b1e;
+  --color-surface-3: #222428;
+  --color-line: #2a2c30;
+  --color-line-strong: #6a6f79;
+  --color-fg: #f4f4f5;
+  --color-fg-muted: #a8a8b3;
+  --color-fg-subtle: #8e8e98;
   --color-accent: #c6f432;
+  --color-accent-fg: #0b0b0d;
+  --color-accent-soft: rgb(198 244 50 / 0.12);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --text-label: 11px;
+  --text-label--line-height: 1.35;
+  --text-label--font-weight: 500;
+  --text-body: 13px;
+  --text-body--line-height: 1.5;
+  --text-title: 15px;
+  --text-title--line-height: 1.35;
+  --text-title--font-weight: 600;
+  --text-display: 28px;
+  --text-display--line-height: 1.15;
+  --text-display--font-weight: 800;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-family: var(--font-sans), system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -14,17 +48,55 @@ html {
 
 body {
   background: var(--color-ink);
-  color: #f4f4f5;
+  color: var(--color-fg);
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-.shimmer {
-  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.05) 50%, transparent 70%);
-  background-size: 200% 100%;
-  animation: shimmer 1.8s linear infinite;
+/* Keyboard focus is a lime ring on every control. Unlayered so it wins over outline-none. */
+:where(a, button, input, select, textarea, summary, video, audio, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
-@keyframes shimmer {
+.overlay-in {
+  animation: overlay-in var(--duration-base) var(--ease-out);
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.06) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: skeleton-sheen 1.6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes skeleton-sheen {
   from { background-position: 200% 0; }
   to { background-position: -200% 0; }
+}
+
+/* Blurred media behind the viewer. The blur is a static filter, not a transition. */
+.viewer-backdrop {
+  filter: blur(28px);
+  transform: scale(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay-in,
+  .skeleton::after {
+    animation: none;
+  }
+
+  .viewer-backdrop {
+    transition: none;
+    animation: none;
+    transform: none;
+  }
 }

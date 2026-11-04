@@ -44,7 +44,6 @@ export function buildModelArkVideo(req: GenerateRequest) {
     ...(req.generateAudio !== undefined && { generate_audio: req.generateAudio }),
     ...(req.seed !== undefined && { seed: req.seed }),
     ...(req.cameraFixed && { camera_fixed: true }),
-    return_last_frame: true,
   };
 }
 

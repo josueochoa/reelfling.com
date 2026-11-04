@@ -7,6 +7,7 @@ import { providerForUser, terminalPollUpdate } from "./providers";
 import { fetchFalOutput, pollFal } from "./providers/fal";
 import { staleVideoFailure } from "./staleVideo";
 import { deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
+import type { SequencePlan } from "./sequence";
 import { TERMINAL_STATUSES, type Generation } from "./types";
 
 const parse = (row: { data: string } | undefined) => (row ? (JSON.parse(row.data) as Generation) : undefined);
@@ -97,6 +98,83 @@ async function syncTask(userId: string, gen: Generation) {
   return { status: snap.status, videoUrl: snap.outputs[0]?.url, error: snap.error };
 }
 
+/**
+ * Next part in one statement: max(source part, parts already claimed or stored) + 1.
+ * sequence_parts has UNIQUE (sequence_id, part). A lost race retries once, still
+ * before the caller talks to a provider.
+ */
+const CLAIM_PART = `
+INSERT INTO sequence_parts (user_id, sequence_id, part, source_id, created_at)
+SELECT ?, ?, COALESCE(MAX(part), 0) + 1, ?, ?
+FROM (
+  SELECT part FROM sequence_parts
+  WHERE sequence_id = ? AND typeof(part) = 'integer' AND part >= 1
+  UNION ALL
+  SELECT ?
+  UNION ALL
+  SELECT json_extract(data, '$.part') AS part
+  FROM generations
+  WHERE user_id = ?
+    AND json_extract(data, '$.sequenceId') = ?
+    AND typeof(json_extract(data, '$.part')) = 'integer'
+    AND json_extract(data, '$.part') >= 1
+  UNION ALL
+  SELECT json_extract(data, '$.sequence.part') AS part
+  FROM fal_jobs
+  WHERE user_id = ?
+    AND json_extract(data, '$.sequence.sequenceId') = ?
+    AND typeof(json_extract(data, '$.sequence.part')) = 'integer'
+    AND json_extract(data, '$.sequence.part') >= 1
+) AS parts
+RETURNING part`;
+
+function uniqueConstraintFailed(e: unknown) {
+  return e instanceof Error && e.message.includes("UNIQUE constraint failed");
+}
+
+async function insertNextPart(userId: string, sequenceId: string, sourceId: string, sourcePart: number) {
+  const row = await first<{ part: number }>(
+    CLAIM_PART,
+    userId,
+    sequenceId,
+    sourceId,
+    Date.now(),
+    sequenceId,
+    sourcePart,
+    userId,
+    sequenceId,
+    userId,
+    sequenceId,
+  );
+  if (!row || !Number.isInteger(row.part)) throw new Error("Could not number this part.");
+  return row.part;
+}
+
+/**
+ * Appends a part to the source clip's sequence and numbers the source part 1
+ * the first time. Returns undefined when that generation is gone.
+ * Runs once, before any provider call, so a lost race never spends a key.
+ */
+export async function continueSequence(
+  userId: string,
+  sourceId: string,
+): Promise<(SequencePlan & { sourceGenerationId: string }) | undefined> {
+  const source = await getGeneration(userId, sourceId);
+  if (!source) return undefined;
+  const sequenceId = source.sequenceId || source.id;
+  const rawPart = source.part ?? 1;
+  let part: number;
+  try {
+    part = await insertNextPart(userId, sequenceId, source.id, rawPart);
+  } catch (e) {
+    if (!uniqueConstraintFailed(e)) throw e;
+    part = await insertNextPart(userId, sequenceId, source.id, rawPart);
+  }
+  if (source.sequenceId !== sequenceId || source.part == null)
+    await updateGeneration(userId, source.id, { sequenceId, part: rawPart });
+  return { sequenceId, part, sourceGenerationId: source.id };
+}
+
 /** Pull the latest task state from the provider and persist it. */
 export async function syncGeneration(userId: string, id: string): Promise<Generation | undefined> {
   let gen = await getGeneration(userId, id);
@@ -110,7 +188,6 @@ export async function syncGeneration(userId: string, id: string): Promise<Genera
         status: task.status,
         progress: task.progress,
         remoteVideoUrl: task.videoUrl,
-        lastFrameUrl: task.lastFrameUrl,
         error: task.error,
         seed: task.seed ?? gen.seed,
         tokens: task.tokens,

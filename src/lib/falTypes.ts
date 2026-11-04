@@ -55,6 +55,10 @@ export interface FalJobView {
   error?: string;
   fields?: FalFieldError[];
   outputs: { key: string; contentType: string }[];
+  /** Set when this job continues a generation. Part numbers group the feed. */
+  sequenceId?: string;
+  part?: number;
+  sourceGenerationId?: string;
   stored?: boolean;
   createdAt: number;
   updatedAt: number;

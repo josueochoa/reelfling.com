@@ -3,6 +3,10 @@
 // The Image tab: generated images in a grid, with the prompt bar floating over it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Download, RotateCcw, X } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { confirmToast, toast } from "@/components/ui/Toast";
 import { imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed, type ImageModel } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { ToolView } from "@/lib/toolTypes";
@@ -12,8 +16,9 @@ import { remapMentions } from "@/lib/mentions";
 import { api, apiJson, type Me } from "./api";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
-import { ToolsMenu } from "./ToolsMenu";
 import { UploadsPanel } from "./UploadsPanel";
+import { Viewer } from "./Viewer";
+import { imageDetails } from "./viewer/details";
 
 const POLL_MS = 4000;
 const pending = (g: ImageGeneration) => g.status === "queued" || g.status === "running";
@@ -151,17 +156,17 @@ export function ImageStudio({
   function addRefs(items: LibraryItem[]) {
     const images = items.filter((i) => i.kind === "image" && !refIds.includes(i.id));
     if (images.length < items.filter((i) => !refIds.includes(i.id)).length)
-      alert("Image models take images as references, not video or audio.");
+      toast("Image models take images as references, not video or audio.");
     const room = state.model.capabilities.references.image - refIds.length;
     if (images.length > room)
-      alert(`${state.model.name} takes up to ${state.model.capabilities.references.image} reference images.`);
+      toast(`${state.model.name} takes up to ${state.model.capabilities.references.image} reference images.`);
     const added = room > 0 ? images.slice(0, room) : [];
     if (added.length) setRefs([...refIds, ...added.map((i) => i.id)]);
     return added;
   }
   async function addFiles(files: File[]) {
     const { items, errors } = await library.add(files);
-    if (errors.length) alert(errors.join("\n"));
+    if (errors.length) toast(errors.join("\n"), { tone: "error" });
     return addRefs(items);
   }
   function toggleRef(item: LibraryItem) {
@@ -219,12 +224,13 @@ export function ImageStudio({
   }
 
   async function remove(gen: ImageGeneration) {
-    if (
-      !confirm(
-        gen.images.length > 1 ? `Delete all ${gen.images.length} images from this generation?` : "Delete this image?",
-      )
-    )
-      return;
+    const ok = await confirmToast(
+      gen.images.length > 1
+        ? `Delete all ${gen.images.length} images from this generation? This can't be undone.`
+        : "Delete this image? This can't be undone.",
+      { confirmLabel: "Delete" },
+    );
+    if (!ok) return;
     setGens((prev) => prev.filter((g) => g.id !== gen.id));
     setOpen(null);
     await api(`/api/images/${gen.id}`, { method: "DELETE" });
@@ -275,6 +281,7 @@ export function ImageStudio({
   );
   const openTile = open && gens.find((g) => g.id === open.id);
   const shown = tiles.filter((t) => t.gen.status === "succeeded");
+  const openAt = open ? shown.findIndex((tile) => tile.gen.id === open.id && tile.i === open.i) : -1;
 
   return (
     <div className="relative h-full">
@@ -311,8 +318,9 @@ export function ImageStudio({
                     </div>
                   </div>
                 ) : (
-                  <div style={aspectStyle(gen.aspect)} className="shimmer grid place-items-center">
-                    <span className="text-xs text-zinc-400 tabular-nums">
+                  <div style={aspectStyle(gen.aspect)} className="relative">
+                    <Skeleton fill />
+                    <span className="absolute inset-0 grid place-items-center text-xs text-zinc-400 tabular-nums">
                       {gen.status === "queued" ? "Queued" : "Generating"} ·{" "}
                       {Math.max(0, Math.floor((now - (gen.startedAt ?? gen.createdAt)) / 1000))}s
                     </span>
@@ -343,25 +351,30 @@ export function ImageStudio({
                       {i >= 0 && (
                         <a
                           href={imageUrl(gen, i, true)}
+                          aria-label="Download"
                           title="Download"
                           className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
                         >
-                          ↓
+                          <Download className="size-3.5" aria-hidden />
                         </a>
                       )}
                       <button
+                        type="button"
                         onClick={() => reuse(gen)}
+                        aria-label="Reuse prompt and settings"
                         title="Reuse prompt and settings"
                         className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
                       >
-                        ↺
+                        <RotateCcw className="size-3.5" aria-hidden />
                       </button>
                       <button
+                        type="button"
                         onClick={() => remove(gen)}
+                        aria-label="Delete"
                         title="Delete"
                         className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
                       >
-                        ✕
+                        <X className="size-3.5" aria-hidden />
                       </button>
                     </div>
                   </div>
@@ -396,164 +409,73 @@ export function ImageStudio({
       </div>
 
       {libraryOpen && (
-        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setLibraryOpen(false)}>
-          <div
-            className="absolute inset-3 overflow-y-auto rounded-2xl border border-white/10 bg-ink lg:inset-10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <UploadsPanel
-              library={library}
-              selected={new Map(references.map((r, i) => [r.id, `@Image ${i + 1}`]))}
-              onToggle={toggleRef}
-              onDelete={deleteUpload}
-              onClose={() => setLibraryOpen(false)}
-            />
-          </div>
-        </div>
+        <Modal size="full" surface="ink" onClose={() => setLibraryOpen(false)} label="Uploads" showClose={false}>
+          <UploadsPanel
+            library={library}
+            selected={new Map(references.map((r, i) => [r.id, `@Image ${i + 1}`]))}
+            onToggle={toggleRef}
+            onDelete={deleteUpload}
+            onClose={() => setLibraryOpen(false)}
+          />
+        </Modal>
       )}
 
-      {openTile && open && (
-        <ImageLightbox
-          gen={openTile}
-          index={open.i}
-          onNavigate={(d) => {
-            const at = shown.findIndex((t) => t.gen.id === open.id && t.i === open.i);
-            const next = shown[at + d];
-            if (next) setOpen({ id: next.gen.id, i: next.i });
-          }}
+      {openTile && open && open.i >= 0 && (
+        <Viewer
+          label="Image"
+          title={imageDetails(openTile).find((row) => row.label === "Model")?.value ?? "Image"}
+          kind="image"
+          src={imageUrl(openTile, open.i)}
+          alt={openTile.prompt}
+          prompt={openTile.prompt}
+          references={openTile.references.flatMap((key) => {
+            const item = library.items.find((entry) => entry.key === key);
+            const refSrc = item ? (thumbSrc(item) ?? undefined) : undefined;
+            return refSrc ? [{ src: refSrc, alt: item?.name ?? "Reference" }] : [{ src: `/api/assets/file?key=${encodeURIComponent(key)}`, alt: "Reference" }];
+          })}
+          details={imageDetails(openTile)}
+          error={openTile.error}
           onClose={() => setOpen(null)}
+          onPrev={
+            openAt > 0
+              ? () => {
+                  const prev = shown[openAt - 1];
+                  if (prev) setOpen({ id: prev.gen.id, i: prev.i });
+                }
+              : undefined
+          }
+          onNext={
+            openAt >= 0 && openAt < shown.length - 1
+              ? () => {
+                  const next = shown[openAt + 1];
+                  if (next) setOpen({ id: next.gen.id, i: next.i });
+                }
+              : undefined
+          }
           onReuse={() => reuse(openTile)}
-          onUseAsStartFrame={() => void applyGenerated(openTile, open.i, "start")}
           onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
           onDelete={() => remove(openTile)}
+          downloadHref={imageUrl(openTile, open.i, true)}
           tools={tools}
+          toolKind="image"
+          assetKey={openTile.images[open.i]?.key}
           keyed={keyed}
           onOpenKeys={onOpenKeys}
-          onToolJob={onToolJob}
-          modelName={models.find((model) => model.id === openTile.model)?.name}
-        />
-      )}
-    </div>
-  );
-}
-
-function ImageLightbox({
-  gen,
-  index,
-  onNavigate,
-  onClose,
-  onReuse,
-  onUseAsStartFrame,
-  onUseAsReference,
-  onDelete,
-  tools,
-  keyed,
-  onOpenKeys,
-  onToolJob,
-  modelName,
-}: {
-  gen: ImageGeneration;
-  index: number;
-  onNavigate: (delta: number) => void;
-  onClose: () => void;
-  onReuse: () => void;
-  onUseAsStartFrame: () => void;
-  onDelete: () => void;
-  onUseAsReference: () => void;
-  tools: readonly ToolView[];
-  keyed: ReadonlySet<string>;
-  onOpenKeys: () => void;
-  onToolJob: () => void;
-  modelName?: string;
-}) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "ArrowLeft") onNavigate(-1);
-      if (e.key === "ArrowRight") onNavigate(1);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, onNavigate]);
-
-  const details: [string, string][] = [
-    ["Model", modelName ?? gen.model],
-    ["Ratio", gen.aspect ?? "Auto"],
-    ["Resolution", gen.resolution.toUpperCase()],
-    ...(gen.quality ? [["Quality", gen.quality] as [string, string]] : []),
-    ["Images", String(gen.count)],
-    ["References", String(gen.references.length)],
-    ["Est. cost", `$${gen.cost.toFixed(3)}`],
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex bg-black/85 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="m-auto flex max-h-[92dvh] w-[min(1300px,94vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel lg:flex-row"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative grid min-h-[300px] flex-1 place-items-center bg-black">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageUrl(gen, index)} alt={gen.prompt} className="max-h-[92dvh] w-full object-contain" />
-          {[-1, 1].map((d) => (
+          onToolJob={() => {
+            setOpen(null);
+            onToolJob();
+          }}
+          extra={
             <button
-              key={d}
-              onClick={() => onNavigate(d)}
-              aria-label={d < 0 ? "Previous" : "Next"}
-              className={`absolute top-1/2 ${d < 0 ? "left-3" : "right-3"} grid size-10 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-2xl text-white hover:bg-black/80`}
+              type="button"
+              onClick={() => void applyGenerated(openTile, open.i, "start")}
+              className="mt-3 w-full rounded-md border border-line py-2 text-body text-fg"
             >
-              {d < 0 ? "‹" : "›"}
-            </button>
-          ))}
-        </div>
-        <aside className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto p-5 lg:w-80">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-sm whitespace-pre-wrap text-zinc-200">{gen.prompt}</p>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="grid size-8 shrink-0 place-items-center rounded-full bg-white/5 hover:bg-white/10"
-            >
-              ✕
-            </button>
-          </div>
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-            {details.map(([k, v]) => (
-              <div key={k} className="contents">
-                <dt className="text-zinc-500">{k}</dt>
-                <dd className="text-zinc-200 capitalize">{v}</dd>
-              </div>
-            ))}
-          </dl>
-          <div className="mt-auto grid gap-2 text-sm">
-            <ToolsMenu
-              kind="image"
-              assetKey={gen.images[index]?.key}
-              tools={tools}
-              keyed={keyed}
-              onOpenKeys={onOpenKeys}
-              onStarted={onToolJob}
-            />
-            <a href={imageUrl(gen, index, true)} className="rounded-xl bg-accent py-2 text-center font-medium text-ink">
-              Download
-            </a>
-            <button onClick={onUseAsStartFrame} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
               Use as start frame
             </button>
-            <button onClick={onUseAsReference} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
-              Use as reference
-            </button>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={onReuse} className="rounded-xl border border-white/10 py-2 hover:bg-white/5">
-                Reuse
-              </button>
-              <button onClick={onDelete} className="rounded-xl border border-white/10 py-2 text-red-300 hover:bg-white/5">
-                Delete
-              </button>
-            </div>
-          </div>
-        </aside>
-      </div>
+          }
+        />
+      )}
     </div>
   );
 }

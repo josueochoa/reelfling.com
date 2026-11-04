@@ -418,6 +418,130 @@ describe("tool jobs", () => {
     assert.equal(parentRow().tool, null);
     assertKeyStayedOnFal();
   });
+
+  it("extends a stored generation and sends the source video", async () => {
+    const genId = "gen-ext";
+    const key = `videos/${genId}.mp4`;
+    database
+      .prepare("INSERT INTO generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)")
+      .run(
+        genId,
+        USER,
+        4,
+        JSON.stringify({
+          id: genId,
+          status: "succeeded",
+          model: "fal:xai/grok-imagine-video/v1.5/image-to-video",
+          prompt: "a cat",
+          mode: "frames",
+          ratio: "16:9",
+          resolution: "720p",
+          duration: 5,
+          generateAudio: false,
+          inputs: { firstFrame: false, lastFrame: false, images: 0, videos: 0, audios: 0 },
+          taskId: "task-ext",
+          stored: true,
+          createdAt: 4,
+          updatedAt: 4,
+        }),
+        "fal",
+      );
+    database
+      .prepare(
+        "INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(USER, key, "dev-user-1", 4000, "video/mp4", genId, 4, "clip.mp4");
+
+    install(() => {
+      throw new Error("fal was called");
+    });
+    await assert.rejects(
+      () => createToolJob(USER, { toolId: "fal:xai/grok-imagine-video/extend-video", assetIds: [key], params: { prompt: " " } }, KEY),
+      /what happens next/,
+    );
+
+    database.prepare("UPDATE assets SET meta = ? WHERE user_id = ? AND key = ?").run(JSON.stringify({ duration: 16 }), USER, key);
+    await assert.rejects(
+      () =>
+        createToolJob(
+          USER,
+          { toolId: "fal:xai/grok-imagine-video/extend-video", assetIds: [key], params: { prompt: "The cat looks up." } },
+          KEY,
+        ),
+      /16s/,
+    );
+    database.prepare("UPDATE assets SET meta = NULL WHERE user_id = ? AND key = ?").run(USER, key);
+    assert.equal(calls.length, 0);
+
+    install((call) => (call.method === "POST" ? submitResponse() : new Response(null, { status: 200 })));
+    const created = await createToolJob(
+      USER,
+      { toolId: "fal:xai/grok-imagine-video/extend-video", assetIds: [key], params: { prompt: "The cat looks up." } },
+      KEY,
+    );
+    assert.equal(created.endpointId, "xai/grok-imagine-video/extend-video");
+    assert.equal(created.sequence?.sequenceId, genId);
+    assert.equal(created.sequence?.part, 2);
+    assert.equal(created.sequence?.sourceGenerationId, genId);
+    assert.deepEqual(created.tool?.inputAssetIds, [key]);
+    assert.equal(calls[0].url, "https://queue.fal.run/xai/grok-imagine-video/extend-video");
+    const posted = JSON.parse(calls[0].body!) as { prompt: string; video_url: string };
+    assert.equal(posted.prompt, "The cat looks up.");
+    assert.equal(posted.video_url.includes(key), true);
+    assert.deepEqual(Object.keys(posted).sort(), ["prompt", "video_url"]);
+    const source = JSON.parse(
+      (database.prepare("SELECT data FROM generations WHERE id = ?").get(genId) as { data: string }).data,
+    ) as { sequenceId: string; part: number };
+    assert.equal(source.sequenceId, genId);
+    assert.equal(source.part, 1);
+    assert.equal(JSON.stringify(created).includes(KEY), false);
+    assertKeyStayedOnFal();
+    await removeFalJob(USER, created.id);
+  });
+
+  it("numbers the next part when extending an extend output", async () => {
+    const genId = "gen-chain";
+    const prior = "job-prior";
+    const output = `fal/${prior}/0.mp4`;
+    database.prepare("INSERT INTO generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)").run(
+      genId,
+      USER,
+      6,
+      JSON.stringify({ id: genId, sequenceId: genId, part: 1, status: "succeeded", createdAt: 6, updatedAt: 6 }),
+      "fal",
+    );
+    database.prepare("INSERT INTO fal_jobs (id, user_id, created_at, data) VALUES (?, ?, ?, ?)").run(
+      prior,
+      USER,
+      7,
+      JSON.stringify({
+        id: prior,
+        sequence: { sequenceId: genId, part: 2, sourceGenerationId: genId },
+      }),
+    );
+    database
+      .prepare(
+        "INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(USER, output, "dev-user-1", 4000, "video/mp4", prior, 7, "part-2.mp4");
+    install((call) => (call.method === "POST" ? submitResponse() : new Response(null, { status: 200 })));
+    const created = await createToolJob(
+      USER,
+      { toolId: "fal:xai/grok-imagine-video/extend-video", assetIds: [output], params: { prompt: "Further on." } },
+      KEY,
+    );
+    assert.equal(created.sequence?.sequenceId, genId);
+    assert.equal(created.sequence?.part, 3);
+    assert.equal(created.sequence?.sourceGenerationId, genId);
+    const posted = JSON.parse(calls[0].body!) as { video_url: string };
+    assert.equal(posted.video_url.includes(output), true);
+    assert.equal(JSON.stringify(created).includes(KEY), false);
+    assertKeyStayedOnFal();
+    await removeFalJob(USER, created.id);
+    database.prepare("DELETE FROM fal_jobs WHERE id = ?").run(prior);
+    database.prepare("DELETE FROM generations WHERE id = ?").run(genId);
+    database.prepare("DELETE FROM assets WHERE user_id = ? AND key = ?").run(USER, output);
+  });
 });
 
 function walk(dir: string): string[] {

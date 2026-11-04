@@ -2,21 +2,25 @@
 
 // The Assets tab: everything in the user's bucket, generated and uploaded, in one place.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
+import { Play } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
+import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
-import type { Library, LibraryItem } from "./library";
-import { BulkUpscale, ToolsMenu } from "./ToolsMenu";
-import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
-import { MediaPreview } from "./MediaPreview";
+import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
+import { BulkUpscale } from "./ToolsMenu";
+import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
+import { Viewer } from "./Viewer";
+import { formatCreated, type ViewerDetail } from "./viewer/model";
 import { formatBytes } from "./UserMenu";
 
-const KINDS: { value: UploadKind | "all"; label: string; icon: string }[] = [
+const KINDS: { value: UploadKind | "all"; label: string; icon: ReactNode }[] = [
   { value: "all", label: "All assets", icon: "▦" },
   { value: "image", label: "Images", icon: "▣" },
-  { value: "video", label: "Videos", icon: "▶" },
+  { value: "video", label: "Videos", icon: <Play className="size-3.5" aria-hidden /> },
   { value: "audio", label: "Audio", icon: "♪" },
 ];
 const SOURCES: { value: AssetSource | "all"; label: string }[] = [
@@ -136,10 +140,11 @@ export function AssetsStudio({
       (videos
         ? `\n${videos === 1 ? "The generated video's" : `${videos} generated videos'`} generation goes too.`
         : "");
-    if (!confirm(msg)) return;
+    const ok = await confirmToast(msg, { confirmLabel: "Delete" });
+    if (!ok) return;
     setSelected(new Set());
     setPreviewId(null);
-    await library.removeMany(ids).catch((e) => alert((e as Error).message));
+    await library.removeMany(ids).catch((e) => toast((e as Error).message, { tone: "error" }));
     if (list.some((i) => i.source === "generated")) onDeleted();
   }
 
@@ -247,21 +252,15 @@ export function AssetsStudio({
                 ))}
               </div>
               {models.length > 0 && (
-                <select
+                <Select
+                  label="Model"
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  aria-label="Model"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs outline-none"
-                >
-                  <option value="" className="bg-panel">
-                    All models
-                  </option>
-                  {models.map((m) => (
-                    <option key={m} value={m} className="bg-panel">
-                      {modelLabel(m)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setModel}
+                  options={[
+                    { value: "", label: "All models" },
+                    ...models.map((m) => ({ value: m, label: modelLabel(m) })),
+                  ]}
+                />
               )}
               <input
                 value={query}
@@ -353,53 +352,50 @@ export function AssetsStudio({
       </main>
 
       {previewing && (
-        <MediaPreview
-          item={previewing}
+        <Viewer
+          label="Preview"
+          title={previewing.name}
+          kind={previewing.kind}
+          src={fileSrc(previewing)}
+          poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
+          alt={previewing.name}
+          prompt={previewing.generation?.prompt || previewing.name}
+          details={libraryDetails(previewing)}
+          peaks={previewing.peaks}
+          onClose={() => setPreviewId(null)}
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
-          onClose={() => setPreviewId(null)}
+          onUseAsReference={() => {
+            setPreviewId(null);
+            onUseInVideo(previewing);
+          }}
+          referenceLabel="Use in Video"
+          onDownload={() => download(previewing)}
+          onDelete={() => void remove([previewing.id])}
+          tools={tools}
+          toolKind={previewing.kind === "image" || previewing.kind === "video" ? previewing.kind : undefined}
+          assetKey={previewing.key}
+          toolAsset={{ width: previewing.width, height: previewing.height, duration: previewing.duration }}
+          keyed={keyed}
+          onOpenKeys={onOpenKeys}
+          onToolJob={() => {
+            setPreviewId(null);
+            onToolJob();
+          }}
           lineage={lineageFor(previewing, library.items, tools, setPreviewId)}
-          actions={
-            <>
-              <ToolsMenu
-                kind={previewing.kind}
-                assetKey={previewing.key}
-                asset={{
-                  width: previewing.width,
-                  height: previewing.height,
-                  duration: previewing.duration,
-                }}
-                tools={tools}
-                keyed={keyed}
-                onOpenKeys={onOpenKeys}
-                onStarted={() => {
-                  setPreviewId(null);
-                  onToolJob();
-                }}
-              />
-              <ActionButton onClick={() => download(previewing)}>Download</ActionButton>
-              {previewing.kind === "image" && (
-                <ActionButton
-                  onClick={() => {
-                    setPreviewId(null);
-                    onUseInImage(previewing);
-                  }}
-                >
-                  Use in Image
-                </ActionButton>
-              )}
-              <ActionButton
+          extra={
+            previewing.kind === "image" ? (
+              <button
+                type="button"
                 onClick={() => {
                   setPreviewId(null);
-                  onUseInVideo(previewing);
+                  onUseInImage(previewing);
                 }}
+                className="mt-3 w-full rounded-md border border-line py-2 text-body text-fg"
               >
-                Use in Video
-              </ActionButton>
-              <ActionButton danger onClick={() => void remove([previewing.id])}>
-                Delete
-              </ActionButton>
-            </>
+                Use in Image
+              </button>
+            ) : undefined
           }
         />
       )}
@@ -425,23 +421,13 @@ function lineageFor(
   };
 }
 
-function ActionButton({
-  onClick,
-  danger,
-  children,
-}: {
-  onClick: () => void;
-  danger?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-xl border border-white/10 px-3 py-2 text-sm whitespace-nowrap hover:bg-white/5 ${
-        danger ? "text-red-300" : "text-zinc-200"
-      }`}
-    >
-      {children}
-    </button>
-  );
+function libraryDetails(item: LibraryItem): ViewerDetail[] {
+  const rows: ViewerDetail[] = [];
+  if (item.generation?.model) rows.push({ label: "Model", value: lookupModelName(item.generation.model) });
+  const size = item.resolution ?? (item.width && item.height ? `${item.width}×${item.height}` : undefined);
+  if (size) rows.push({ label: "Resolution", value: size });
+  const duration = formatDuration(item.duration);
+  if (duration) rows.push({ label: "Duration", value: duration });
+  rows.push({ label: "Created", value: formatCreated(item.createdAt) });
+  return rows;
 }

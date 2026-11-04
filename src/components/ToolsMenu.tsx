@@ -89,6 +89,8 @@ export function ToolsMenu({
   placement = "up",
   label = "Tools",
   compact = false,
+  inline = false,
+  entry = undefined,
 }: {
   kind: string;
   /** Library key. Absent until the file is stored. */
@@ -106,13 +108,18 @@ export function ToolsMenu({
   placement?: "up" | "down";
   label?: string;
   compact?: boolean;
+  /** Draw the menu in the inspector instead of a floating panel. */
+  inline?: boolean;
+  /** Open this menu name (`Upscale`). Null shows the list. A new key remounts it. */
+  entry?: string | null;
 }) {
   const available = toolsForKind(tools, kind);
   const entries = menuEntries(available);
-  const [open, setOpen] = useState(false);
-  const [choices, setChoices] = useState<ToolView[] | null>(null);
-  const [tool, setTool] = useState<ToolView | null>(null);
-  const [values, setValues] = useState<Record<string, string | boolean>>({});
+  const initial = entry ? entries.find((item) => item.id === entry || item.name === entry) : undefined;
+  const [open, setOpen] = useState(inline || !!initial);
+  const [choices, setChoices] = useState<ToolView[] | null>(initial && initial.tools.length > 1 ? initial.tools : null);
+  const [tool, setTool] = useState<ToolView | null>(initial?.tools[0] ?? null);
+  const [values, setValues] = useState<Record<string, string | boolean>>(initial?.tools[0] ? defaults(initial.tools[0]) : {});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -177,42 +184,17 @@ export function ToolsMenu({
 
   const kindWord = kind === "image" ? (count === 1 ? "image" : "images") : count === 1 ? "video" : "videos";
 
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => {
-          if (open) {
-            setOpen(false);
-            setTool(null);
-            setChoices(null);
-            setError(null);
-            return;
-          }
-          setOpen(true);
-          if (assets && entries.length === 1) openEntry(entries[0]);
-          else {
-            setTool(null);
-            setChoices(null);
-          }
-        }}
-        className={
-          compact
-            ? "rounded-full bg-white/10 px-3 py-1.5 text-xs hover:bg-white/15"
-            : "rounded-xl border border-white/10 px-3 py-2 text-sm whitespace-nowrap text-zinc-200 hover:bg-white/5"
-        }
-      >
-        {label}
-      </button>
-      {open && (
+  const menu = open && (
         <div
           role="menu"
           aria-label={label}
-          className={`absolute z-20 w-80 rounded-xl border border-white/10 bg-panel p-2 text-left shadow-2xl shadow-black/50 ${
-            placement === "down" ? "top-full left-0 mt-2" : "right-0 bottom-full mb-2"
-          }`}
+          className={
+            inline
+              ? "w-full rounded-lg border border-line bg-surface-2 p-2 text-left"
+              : `absolute z-20 w-80 rounded-xl border border-white/10 bg-panel p-2 text-left shadow-2xl shadow-black/50 ${
+                  placement === "down" ? "top-full left-0 mt-2" : "right-0 bottom-full mb-2"
+                }`
+          }
         >
           {!assetKey && !assets ? (
             <p className="px-2 py-1.5 text-xs text-zinc-500">Save the file before running a tool.</p>
@@ -334,7 +316,40 @@ export function ToolsMenu({
             })
           )}
         </div>
-      )}
+  );
+
+  if (inline) return <div className="w-full">{menu}</div>;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            setTool(null);
+            setChoices(null);
+            setError(null);
+            return;
+          }
+          setOpen(true);
+          if (assets && entries.length === 1) openEntry(entries[0]);
+          else {
+            setTool(null);
+            setChoices(null);
+          }
+        }}
+        className={
+          compact
+            ? "rounded-full bg-white/10 px-3 py-1.5 text-xs hover:bg-white/15"
+            : "rounded-xl border border-white/10 px-3 py-2 text-sm whitespace-nowrap text-zinc-200 hover:bg-white/5"
+        }
+      >
+        {label}
+      </button>
+      {menu}
     </div>
   );
 }

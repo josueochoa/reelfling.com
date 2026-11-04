@@ -1,0 +1,75 @@
+{
+  "docs": "https://fal.ai/docs/platform-apis/v1/models",
+  "source": "Hand-checked against GET https://api.fal.ai/v1/models?endpoint_id=\u2026&expand=openapi-3.0 on Nov 4, 2026, with no API key. Not written by catalog:sync. Gemini uses v1.1/extend because the extend-video ids returned no OpenAPI schema.",
+  "models": [
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Continues a clip from its final frames. The source is an MP4 under 15 seconds and 50 MB.",
+      "family": "FLUX",
+      "group": "tool",
+      "id": "fal:blackforestlabs/flux-3/extend-video",
+      "name": "FLUX 3 Extend",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "blackforestlabs/flux-3/extend-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Appends a continuation to a source video of at most 30 seconds.",
+      "family": "Gemini",
+      "group": "tool",
+      "id": "fal:google/gemini-omni-flash/v1.1/extend",
+      "name": "Gemini Omni Extend",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "google/gemini-omni-flash/v1.1/extend",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Extends an MP4 of 2 to 15 seconds. The result is the source plus the new footage.",
+      "family": "Grok",
+      "group": "tool",
+      "id": "fal:xai/grok-imagine-video/extend-video",
+      "name": "Grok Imagine Extend",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "xai/grok-imagine-video/extend-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    }
+  ]
+}

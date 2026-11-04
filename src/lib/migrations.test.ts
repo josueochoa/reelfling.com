@@ -42,7 +42,8 @@ describe("migration 0012", () => {
     );
     assert.equal(files.filter((file) => file.startsWith("0012_")).length, 1);
     assert.equal(files.filter((file) => file.startsWith("0013_")).length, 1);
-    assert.equal(files.at(-1), "0013_model_routes.sql");
+    assert.equal(files.filter((file) => file.startsWith("0014_")).length, 1);
+    assert.equal(files.at(-1), "0014_sequence_parts.sql");
   });
 
   it("copies a personal workspace provider and leaves nulls alone", () => {
@@ -146,5 +147,60 @@ describe("migration 0013", () => {
     assert.equal(route.route, "fal");
     assert.equal(image.route, "openrouter");
     assert.equal(active.active_provider, "modelark");
+  });
+});
+
+describe("migration 0014", () => {
+  it("dedupes an existing (sequence, part) and then rejects another", () => {
+    const db = fresh();
+    apply(db, { through: "0013_model_routes.sql" });
+    db.exec(`
+      INSERT INTO users (id, email, created_at) VALUES
+        ('u1', 'a@b.c', 1),
+        ('u2', 'b@b.c', 1);
+      INSERT INTO generations (id, user_id, created_at, data) VALUES
+        ('g1', 'u1', 10, '{"sequenceId":"g1","part":1}'),
+        ('g2', 'u1', 20, '{"sequenceId":"g1","part":2}'),
+        ('g3', 'u1', 30, '{"sequenceId":"g1","part":2}'),
+        ('g4', 'u1', 12, '{"sequenceId":"other","part":1}'),
+        ('g5', 'u1', 13, '{"part":9}'),
+        ('g6', 'u1', 14, '{"sequenceId":"g1","part":"2"}'),
+        ('g7', 'u2', 20, '{"sequenceId":"g1","part":2}');
+      INSERT INTO fal_jobs (id, user_id, created_at, data) VALUES
+        ('j1', 'u1', 20, '{"sequence":{"sequenceId":"g1","part":2,"sourceGenerationId":"g1"}}'),
+        ('j2', 'u1', 40, '{"sequence":{"sequenceId":"g1","part":3,"sourceGenerationId":"g1"}}'),
+        ('j3', 'u1', 41, '{"sequence":{"sequenceId":"g1","part":2.5}}');
+    `);
+    apply(db, { from: "0014_sequence_parts.sql", through: "0014_sequence_parts.sql" });
+    const rows = (
+      db.prepare("SELECT user_id, sequence_id, part, source_id FROM sequence_parts ORDER BY sequence_id, part").all() as {
+        user_id: string;
+        sequence_id: string;
+        part: number;
+        source_id: string;
+      }[]
+    ).map((row) => ({
+      user_id: row.user_id,
+      sequence_id: row.sequence_id,
+      part: row.part,
+      source_id: row.source_id,
+    }));
+    assert.deepEqual(rows, [
+      { user_id: "u1", sequence_id: "g1", part: 1, source_id: "g1" },
+      { user_id: "u1", sequence_id: "g1", part: 2, source_id: "g2" },
+      { user_id: "u1", sequence_id: "g1", part: 3, source_id: "g1" },
+      { user_id: "u1", sequence_id: "other", part: 1, source_id: "g4" },
+    ]);
+    const kept = db.prepare("SELECT data FROM generations WHERE id = 'g3'").get() as { data: string };
+    assert.equal(JSON.parse(kept.data).part, 2);
+    assert.throws(
+      () =>
+        db
+          .prepare(
+            "INSERT INTO sequence_parts (user_id, sequence_id, part, source_id, created_at) VALUES ('u1', 'g1', 2, 'x', 1)",
+          )
+          .run(),
+      /UNIQUE constraint failed: sequence_parts\.sequence_id, sequence_parts\.part/,
+    );
   });
 });

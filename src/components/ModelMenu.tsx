@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check } from "@/components/ui/Icon";
 import { estimateRouteCost, PROVIDER_INFO, type EstimateInput, type RouteProvider, type VideoModel } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { groupByFamily, modelBadges } from "@/lib/registry/badges";
@@ -104,7 +105,7 @@ export function ModelMenu({
                     ? `${model.routes.length} routes`
                     : providerLabel(routeProviders(model.routes)[0])}
               </span>
-              {selected && !locked && <span className="text-accent">✓</span>}
+              {selected && !locked && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
             </button>
             {locked && hover === model.id && hint && (
               <div className="px-2.5 pb-1">

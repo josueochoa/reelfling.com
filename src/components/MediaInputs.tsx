@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { X } from "@/components/ui/Icon";
+import { toast } from "@/components/ui/Toast";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -29,7 +31,10 @@ function useImagePicker(onFiles: (urls: string[]) => void, onFile?: (file: File)
     const results = await Promise.allSettled([...files].map(readAsDataUrl));
     const ok = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     const failed = results.find((r) => r.status === "rejected");
-    if (failed) alert((failed as PromiseRejectedResult).reason.message);
+    if (failed) {
+      const reason = (failed as PromiseRejectedResult).reason;
+      toast(reason instanceof Error ? reason.message : "Couldn't read that image.", { tone: "error" });
+    }
     if (ok.length) onFiles(ok);
   }
 
@@ -70,7 +75,6 @@ export function ImageSlot({
   onChange,
   onFile,
   disabled,
-  testId,
 }: {
   label: string;
   value?: string;
@@ -78,13 +82,12 @@ export function ImageSlot({
   /** When set, a picked file is handed over instead of being read as a data URL. */
   onFile?: (file: File) => void;
   disabled?: boolean;
-  testId?: string;
 }) {
   const picker = useImagePicker((urls) => onChange(urls[0]), onFile);
 
   if (value) {
     return (
-      <div data-testid={testId} className="group relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
+      <div className="group relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={value} alt={label} className="size-full object-cover" />
         <span className="absolute top-2 left-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-zinc-300">
@@ -95,7 +98,7 @@ export function ImageSlot({
           className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-xs"
           aria-label={`Remove ${label}`}
         >
-          ✕
+          <X className="size-3" aria-hidden />
         </button>
       </div>
     );
@@ -107,7 +110,6 @@ export function ImageSlot({
         disabled={disabled}
         onClick={picker.open}
         {...picker.dropProps}
-        data-testid={testId}
         className={`flex aspect-video flex-col items-center justify-center gap-1 rounded-xl border border-dashed text-xs transition disabled:cursor-not-allowed disabled:opacity-30 ${
           picker.dragging
             ? "border-accent bg-accent/5 text-accent"

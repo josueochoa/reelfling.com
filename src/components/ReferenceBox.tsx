@@ -4,9 +4,10 @@
 // Mentions are numbered per kind (@Image 1, @Video 1, @Audio 1) in the order shown.
 
 import { useRef, useState } from "react";
-import { ACCEPT, type LibraryItem } from "./library";
+import { X } from "@/components/ui/Icon";
+import { ACCEPT, fileSrc, thumbSrc, type LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, usePlayer } from "./MediaBlocks";
-import { MediaPreview } from "./MediaPreview";
+import { Viewer } from "./Viewer";
 
 // Marks a drag that started on one of our own blocks (a reorder, not new files).
 const REORDER_TYPE = "application/x-reference-index";
@@ -146,7 +147,7 @@ export function ReferenceBox({
               className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-black/70 text-[10px] opacity-0 group-hover:opacity-100"
               aria-label={`Remove ${label}`}
             >
-              ✕
+              <X className="size-3" aria-hidden />
             </button>
           </div>
         ))}
@@ -154,17 +155,24 @@ export function ReferenceBox({
       <p className="mt-1.5 text-[11px] text-zinc-600">
         Drop images, video or audio, or pick from Uploads. Click a label to mention it.
       </p>
-      {previewing && (
-        <MediaPreview
-          item={previewing.item}
-          label={previewing.label}
-          onToggle={() => {
-            onRemove(preview!);
+      {previewing && preview !== null && (
+        <Viewer
+          label="Preview"
+          title={previewing.label}
+          kind={previewing.item.kind}
+          src={fileSrc(previewing.item)}
+          poster={previewing.item.kind === "video" ? thumbSrc(previewing.item) : undefined}
+          alt={previewing.item.name}
+          prompt={previewing.item.generation?.prompt || previewing.item.name}
+          peaks={previewing.item.peaks}
+          onClose={() => setPreview(null)}
+          onPrev={preview > 0 ? () => setPreview(preview - 1) : undefined}
+          onNext={preview < blocks.length - 1 ? () => setPreview(preview + 1) : undefined}
+          onUseAsReference={() => {
+            onRemove(preview);
             setPreview(null);
           }}
-          onPrev={preview! > 0 ? () => setPreview(preview! - 1) : undefined}
-          onNext={preview! < blocks.length - 1 ? () => setPreview(preview! + 1) : undefined}
-          onClose={() => setPreview(null)}
+          referenceLabel={`Remove ${previewing.label} from references`}
         />
       )}
       <input

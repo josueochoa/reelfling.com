@@ -16,15 +16,18 @@ import {
   type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
+import { nativeExpansionOf } from "@/lib/enhance";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
+import { toast } from "@/components/ui/Toast";
 import { CameraMoves } from "./CameraMoves";
 import { ModelMenu } from "./ModelMenu";
 import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
+import { PromptEnhance } from "./PromptEnhance";
 import { PromptEditor, type MentionItem, type PromptEditorHandle } from "./PromptEditor";
 import { ReferenceBox } from "./ReferenceBox";
 
@@ -55,6 +58,8 @@ export interface Preset {
   cameraMove?: string;
   /** Provider this generation ran on. Reuse sends it again. */
   route?: string;
+  /** Set when this generation continues another clip. */
+  continueFrom?: string;
 }
 
 /** A frame is a library item, or a one-off URL that isn't in the library. */
@@ -93,7 +98,7 @@ export interface ControlPanelHandle {
   setStartFrame: (item: LibraryItem) => void;
   /** Switches to References and attaches this item. */
   useAsReference: (item: LibraryItem) => void;
-  /** Inline note in the panel. No alert(). */
+  /** Inline note in the panel. */
   notify: (message: string) => void;
 }
 
@@ -190,6 +195,7 @@ export function ControlPanel({
   const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
     keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
   );
+  const [nativeOn, setNativeOn] = useState(false);
   const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
@@ -259,7 +265,9 @@ export function ControlPanel({
     ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
     : undefined;
   const referenceImages = refs ? refList.filter((r) => r.item.kind === "image").length : undefined;
-  const routeProvider = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider])?.provider;
+  const chosenRoute = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider]);
+  const routeProvider = chosenRoute?.provider;
+  const native = nativeExpansionOf(model, chosenRoute);
   const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds, referenceImages };
   const cost = estimateRouteCost(model, routeProvider, estimateInput);
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
@@ -314,23 +322,22 @@ export function ControlPanel({
       setMode("references");
       setRatio((current) => ratioForStartFrame(current, false));
     }
-    if (skipped.size) {
-      const message =
+    if (skipped.size)
+      toast(
         [...skipped]
           .map((k) =>
             limit[k] === 0
               ? `${model.name} doesn't take ${PLURAL[k]} as references.`
               : `${model.name} takes up to ${limit[k]} ${PLURAL[k]} (${caps.references.total} references in total).`,
           )
-          .join(" ") + " The files are still in your Uploads.";
-      setNotice(message);
-    }
+          .join(" ") + " The files are still in your Uploads.",
+      );
     return added;
   }
 
   async function addFiles(files: File[]) {
     const { items, errors } = await library.add(files);
-    if (errors.length) alert(errors.join("\n"));
+    if (errors.length) toast(errors.join("\n"), { tone: "error" });
     const added = addRefs(items);
     return items.filter((i) => added.includes(i.id));
   }
@@ -381,14 +388,14 @@ export function ControlPanel({
   useImperativeHandle(ref, () => ({
     toggle(item) {
       if (!hasRefs) {
-        alert(`${model.name} doesn't take references. Pick a model that does.`);
+        toast(`${model.name} doesn't take references. Pick a model that does.`);
         return;
       }
       if (refsNow.current.includes(item.id)) updateRefs(refsNow.current.filter((x) => x !== item.id));
       else addRefs([item]);
     },
     add(item) {
-      if (!hasRefs) alert(`${model.name} doesn't take references. Pick a model that does.`);
+      if (!hasRefs) toast(`${model.name} doesn't take references. Pick a model that does.`);
       else addRefs([item]);
     },
     forget(id) {
@@ -443,6 +450,7 @@ export function ControlPanel({
       return current.slice(0, Math.max(0, room));
     });
     setCameraMoves((moves) => keptCameraMoves(m, moves));
+    setNativeOn(false);
     setRouteChoice(undefined);
   }
 
@@ -516,6 +524,7 @@ export function ControlPanel({
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
       cameraFixed: showFixed ? cameraFixed : undefined,
+      promptExpansion: nativeOn && native ? true : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
@@ -528,6 +537,13 @@ export function ControlPanel({
                     return value ? [value] : [];
                   })
                 : undefined,
+            ...(caps.frames.start &&
+            framePayload(firstFrame) &&
+            preset.continueFrom &&
+            preset.firstFrameKey &&
+            frameItem(firstFrame)?.key === preset.firstFrameKey
+              ? { continueFrom: preset.continueFrom }
+              : {}),
           }
         : {
             referenceImages: refValues("image"),
@@ -610,7 +626,6 @@ export function ControlPanel({
                 {caps.frames.start && (
                   <ImageSlot
                     label="Start frame"
-                    testId="start-frame"
                     value={frameSrc(firstFrame)}
                     onChange={(v) => !v && setFirstFrame(undefined)}
                     onFile={(file) => void pickFrame("first", file)}
@@ -619,7 +634,6 @@ export function ControlPanel({
                 {caps.frames.end && (
                   <ImageSlot
                     label="End frame"
-                    testId="end-frame"
                     value={frameSrc(lastFrame)}
                     onChange={(v) => !v && setLastFrame(undefined)}
                     onFile={(file) => void pickFrame("last", file)}
@@ -635,7 +649,6 @@ export function ControlPanel({
                         <ImageSlot
                           key={`${frame.id ?? frame.url ?? "frame"}-${index}`}
                           label={`Keyframe ${index + 1}`}
-                          testId={`keyframe-${index + 1}`}
                           value={frameSrc(frame)}
                           onChange={(v) => !v && setMiddleFrames((current) => current.filter((_, i) => i !== index))}
                         />
@@ -644,8 +657,6 @@ export function ControlPanel({
                   )}
                   <button
                     type="button"
-                    data-testid="add-keyframe"
-                    data-limit={keyLimit}
                     disabled={!canAddKeyframe}
                     title={
                       !firstFrame ? "Add a start frame first" : keyframesFull ? `${model.name} takes up to ${keyLimit} keyframes` : undefined
@@ -655,7 +666,7 @@ export function ControlPanel({
                   >
                     {keyframesFull ? "Limit reached" : "Add keyframe"}
                   </button>
-                  <p data-testid="keyframe-count" className="text-[10px] text-zinc-500">
+                  <p className="text-[10px] text-zinc-500">
                     {keyUsed} of {keyLimit} keyframes
                   </p>
                   <input
@@ -712,6 +723,18 @@ export function ControlPanel({
                 : undefined
             }
             onAddCamera={(id) => changeCamera(id, false)}
+          />
+          <PromptEnhance
+            prompt={prompt}
+            onChange={setPrompt}
+            family={model.family}
+            cameras={cameraMoves}
+            references={mentionItems.map((item) => (item.detail ? `${item.token} (${item.detail})` : item.token))}
+            keyed={keyed}
+            onOpenKeys={onOpenKeys}
+            native={native}
+            nativeOn={nativeOn}
+            onNativeOn={setNativeOn}
           />
           {cameraMoves.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">

@@ -173,7 +173,11 @@ describe("keyframe mapping", () => {
       videoRequestError(flux, request(flux, { middleFrames: Array.from({ length: 9 }, () => mid), lastFrame: end })) ?? "",
       /up to 10 keyframes/,
     );
-    assert.match(videoRequestError(flux, request(flux, { firstFrame: undefined })) ?? "", /start frame/);
+    // A keyframes array with no images at all. The prompt is set, so this is the objects-shape check.
+    assert.equal(
+      videoRequestError(flux, request(flux, { firstFrame: undefined })),
+      `${flux.name} needs a start frame`,
+    );
 
     const wan = video("alibaba/wan-3.0/image-to-video");
     assert.equal(wan.capabilities.frames.middle, false);

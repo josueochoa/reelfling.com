@@ -49,6 +49,7 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
           if (!open) onOpen();
           setOpen((o) => !o);
         }}
+        data-dialog-return
         className="grid size-8 place-items-center overflow-hidden rounded-full bg-white/10 text-sm font-medium"
         aria-label="Account menu"
       >
