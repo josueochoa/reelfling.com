@@ -1,11 +1,11 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import { catalogPickerModels, toolMenu } from "@/lib/registry/generated";
+import { catalogImageModels, catalogPickerModels, toolMenu } from "@/lib/registry/generated";
 
-/** Slim OpenRouter video models and tool providers for the picker. The catalog JSON stays on the server. */
+/** Slim video and image models, plus tool providers, for the pickers. The catalog JSON stays on the server. */
 export async function GET() {
   try {
     await requireUser();
-    return Response.json({ models: catalogPickerModels(), tools: toolMenu() });
+    return Response.json({ models: catalogPickerModels(), images: catalogImageModels(), tools: toolMenu() });
   } catch (e) {
     return errorResponse(e);
   }

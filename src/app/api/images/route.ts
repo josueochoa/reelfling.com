@@ -5,14 +5,14 @@ import { invalidMentions } from "@/lib/mentions";
 import type { KeySource } from "@/lib/scope";
 import {
   estimateRouteCost,
-  getImageModel,
   imageProviderFor,
   imageRequestError,
+  isImage,
   ratioAllowed,
-  type ImageKeyProvider,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
+import { catalogModel } from "@/lib/registry/generated";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 import { preferredRoute } from "@/lib/registry/routing";
@@ -50,7 +50,8 @@ export async function POST(request: Request) {
   try {
     const { user, workspace } = await requireWorkspace(request);
     const req = (await request.json()) as ImageRequest & { keySource?: KeySource };
-    const model = getImageModel(req.model);
+    const found = catalogModel(req.model);
+    const model = found && isImage(found) ? found : undefined;
     if (!model) return bad(`Unknown model "${req.model}"`);
     const prompt = req.prompt?.trim();
     const refs = Array.isArray(req.references) ? req.references : [];
@@ -74,11 +75,18 @@ export async function POST(request: Request) {
       // imageProviderFor is the fallback: active image key, else any image key.
       prefer: (keyed) => preferredRoute(model, keyed, [explicit, saved, imageProviderFor(legacy, [...keyed])])?.provider,
     });
-    if (route.provider !== "argolink" && route.provider !== "openrouter")
+    if (route.provider !== "argolink" && route.provider !== "openrouter" && route.provider !== "fal")
       return bad("This model isn't available on the image tab.");
-    const imageProvider: ImageKeyProvider = route.provider;
+    const imageProvider = route.provider;
     await assertStorageAvailable(workspace.id);
-    const estimate = estimateRouteCost(model, imageProvider, { resolution: req.resolution, count: req.count }) ?? 0;
+    const estimate =
+      estimateRouteCost(model, imageProvider, {
+        resolution: req.resolution,
+        count: req.count,
+        quality: req.quality,
+        referenceImages: refs.length,
+        megapixels: 1,
+      }) ?? 0;
     const opened = await openGenerationKey({
       workspace,
       userId: user.id,

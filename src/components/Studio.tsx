@@ -5,7 +5,7 @@
 // remounted when it changes. Tabs stay mounted, so switching tabs keeps prompts.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { VideoModel } from "@/lib/registry";
+import type { ImageModel, VideoModel } from "@/lib/registry";
 import type { CatalogTool } from "@/lib/registry/availability";
 import { rememberModels } from "@/lib/registry/lookup";
 import { apiJson, setWorkspace, type Me } from "./api";
@@ -31,6 +31,7 @@ export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
   const [catalogModels, setCatalogModels] = useState<VideoModel[] | null>(null);
+  const [catalogImages, setCatalogImages] = useState<ImageModel[] | null>(null);
   const [tools, setTools] = useState<CatalogTool[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
@@ -48,10 +49,11 @@ export function Studio() {
     void loadMe();
   }, [loadMe]);
   useEffect(() => {
-    apiJson<{ models: VideoModel[]; tools?: CatalogTool[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; images?: ImageModel[]; tools?: CatalogTool[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
         setCatalogModels(body.models);
+        setCatalogImages(body.images ?? []);
         setTools(body.tools ?? []);
       })
       .catch(() => setCatalogModels([]));
@@ -97,6 +99,7 @@ export function Studio() {
           me={me}
           tab={tab}
           catalogModels={catalogModels}
+          catalogImages={catalogImages}
           tools={tools}
           onOpenKeys={openKeys}
           onChanged={loadMe}
@@ -115,6 +118,7 @@ function WorkspaceView({
   me,
   tab,
   catalogModels,
+  catalogImages,
   tools,
   onOpenKeys,
   onChanged,
@@ -122,6 +126,7 @@ function WorkspaceView({
   me: Me;
   tab: Tab;
   catalogModels: VideoModel[] | null;
+  catalogImages: ImageModel[] | null;
   tools: readonly CatalogTool[];
   onOpenKeys: () => void;
   onChanged: () => Promise<void>;
@@ -138,7 +143,7 @@ function WorkspaceView({
 
   return (
     <>
-      <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${tab === "video" ? "" : "hidden"}`}>
         <VideoStudio
           ref={video}
           me={me}
@@ -150,6 +155,7 @@ function WorkspaceView({
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
         <ImageStudio
+          catalogModels={catalogImages}
           ref={image}
           me={me}
           library={library}

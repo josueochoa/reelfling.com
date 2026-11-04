@@ -6,7 +6,7 @@ import openRouterCatalog from "./catalog/openrouter.json" with { type: "json" };
 import { routeProviders, type CatalogTool } from "./availability";
 import { HAND_MODELS } from "./hand";
 import { assertRegistry, parseModel } from "./parse";
-import { isVideo, type ModelEntry, type VideoModel } from "./types";
+import { isImage, isVideo, type ImageModel, type ModelEntry, type VideoModel } from "./types";
 
 interface CatalogFile {
   models?: unknown[];
@@ -78,12 +78,43 @@ export function toolMenu(): CatalogTool[] {
 
 const STUDIO_TASKS = new Set(["t2v", "i2v", "ref2v"]);
 
+/** Image endpoints that were already in the registry and stay off the Image tab. */
+const HIDDEN_FAL_IMAGES = new Set(["fal-ai/flux/dev", "fal-ai/flux/dev/image-to-image"]);
+
+/** fal image models for the Image tab. The catalog JSON stays on the server. */
+export function catalogImageModels(): ImageModel[] {
+  return ALL_MODELS.filter(isImage)
+    .filter((model) =>
+      model.routes.some((route) => route.provider === "fal" && !HIDDEN_FAL_IMAGES.has(route.endpoint)),
+    )
+    .map(slimImage);
+}
+
 /** OpenRouter videos plus fal text, image, and reference video models for the one picker. */
 export function catalogPickerModels(): VideoModel[] {
   const fal = ALL_MODELS.filter(isVideo).filter(
     (model) => model.routes.some((route) => route.provider === "fal") && model.tasks.some((task) => STUDIO_TASKS.has(task)),
   );
   return [...openRouterPickerModels(), ...fal.map((model) => slimVideo(model))];
+}
+
+function slimImage(model: ImageModel): ImageModel {
+  const description = model.description.length > 240 ? `${model.description.slice(0, 239)}…` : model.description;
+  return {
+    id: model.id,
+    family: model.family,
+    name: model.name,
+    description,
+    group: "image",
+    task: model.task,
+    tasks: model.tasks,
+    routes: model.routes,
+    promptRequired: model.promptRequired,
+    refSyntax: model.refSyntax,
+    ...(model.mark ? { mark: model.mark } : {}),
+    capabilities: model.capabilities,
+    ...(model.price ? { price: model.price } : {}),
+  };
 }
 
 function slimVideo(model: VideoModel, provider?: string): VideoModel {

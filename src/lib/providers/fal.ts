@@ -12,6 +12,7 @@
 // `{ error: { type: "authorization_error", message } }`.
 
 import type { FalFieldError, FalJobStatus } from "../falTypes";
+import type { FalInputMap } from "../registry/types";
 import { ProviderError } from "./types";
 
 const QUEUE_ORIGIN = "https://queue.fal.run";
@@ -365,12 +366,35 @@ export function falVideoEndpoint(endpoint: string, mode: "frames" | "references"
   return endpoint;
 }
 
-/** Shared fal video body. Field names match the published Seedance queue schema. */
-export function falVideoInput(req: {
+/** Seedance on fal. Other models pass the map built from their queue schema. */
+const SEEDANCE_INPUTS: FalInputMap = {
+  start: "image_url",
+  end: "end_image_url",
+  images: "image_urls",
+  videos: "video_urls",
+  audios: "audio_urls",
+  duration: "string",
+  audio: "generate_audio",
+  aspect: "aspect_ratio",
+  resolution: "resolution",
+  seed: true,
+};
+
+const IMAGE_SIZE_BY_RATIO: Record<string, string> = {
+  "1:1": "square_hd",
+  "16:9": "landscape_16_9",
+  "9:16": "portrait_16_9",
+  "4:3": "landscape_4_3",
+  "3:4": "portrait_4_3",
+};
+
+export interface FalMediaInput {
   prompt?: string;
   duration?: number;
   resolution?: string;
   ratio?: string;
+  quality?: string;
+  count?: number;
   generateAudio?: boolean;
   seed?: number;
   firstFrame?: string;
@@ -378,22 +402,83 @@ export function falVideoInput(req: {
   referenceImages?: string[];
   referenceVideos?: string[];
   referenceAudios?: string[];
-}): Record<string, unknown> {
-  const ratio = !req.ratio || req.ratio === "adaptive" ? "16:9" : req.ratio;
-  const input: Record<string, unknown> = {
-    prompt: req.prompt ?? "",
-    ...(req.duration !== undefined ? { duration: String(req.duration) } : {}),
-    ...(req.resolution ? { resolution: req.resolution } : {}),
-    aspect_ratio: ratio,
-  };
-  if (req.generateAudio !== undefined) input.generate_audio = req.generateAudio;
-  if (req.seed !== undefined) input.seed = req.seed;
-  if (req.firstFrame) input.image_url = req.firstFrame;
-  if (req.lastFrame) input.end_image_url = req.lastFrame;
-  if (req.referenceImages?.length) input.image_urls = req.referenceImages;
-  if (req.referenceVideos?.length) input.video_urls = req.referenceVideos;
-  if (req.referenceAudios?.length) input.audio_urls = req.referenceAudios;
+}
+
+/**
+ * Generic fal queue body. @Image and @Video go to the fields the model's schema
+ * publishes (`image_urls`, `video_urls`, `reference_*_urls`, or `elements`).
+ * A model that needs a start image and only accepts elements uses the first
+ * @Image as that start frame.
+ */
+export function falQueueInput(req: FalMediaInput, map: FalInputMap = SEEDANCE_INPUTS): Record<string, unknown> {
+  const input: Record<string, unknown> = { prompt: req.prompt ?? "" };
+  if (req.duration !== undefined && map.duration) {
+    input.duration =
+      map.duration === "number" ? req.duration : map.duration === "suffix" ? `${req.duration}s` : String(req.duration);
+  }
+  if (req.resolution && map.resolution) input.resolution = req.resolution;
+  if (map.aspect === "aspect_ratio") {
+    let ratio = req.ratio || "16:9";
+    if (ratio === "adaptive" && !map.aspects?.includes("adaptive")) ratio = "16:9";
+    if (!map.aspects || map.aspects.includes(ratio)) input.aspect_ratio = ratio;
+  }
+  if (req.generateAudio !== undefined && map.audio) input[map.audio] = req.generateAudio;
+  if (req.seed !== undefined && map.seed) input.seed = req.seed;
+  if (req.quality && map.quality) input.quality = req.quality;
+  if (map.count && req.count) input.num_images = req.count;
+
+  let images = [...(req.referenceImages ?? [])];
+  const videos = [...(req.referenceVideos ?? [])];
+  const audios = [...(req.referenceAudios ?? [])];
+  if (req.firstFrame && map.start) input[map.start] = req.firstFrame;
+  else if (!req.firstFrame && map.start && map.elements && images.length) {
+    input[map.start] = images[0];
+    images = images.slice(1);
+  }
+  if (req.lastFrame && map.end) input[map.end] = req.lastFrame;
+
+  if (map.elements) {
+    const elements = [
+      ...images.map((url) => ({ frontal_image_url: url })),
+      ...videos.map((url) => ({ video_url: url })),
+    ];
+    if (elements.length) input.elements = elements;
+  } else {
+    if (map.images && images.length) input[map.images] = images;
+    if (map.videos && videos.length) input[map.videos] = videos;
+  }
+  if (map.audios && audios.length) input[map.audios] = audios;
+  if (map.aspect === "image_size") {
+    const sized = req.resolution ? map.imageSizeByResolution?.[req.resolution] : undefined;
+    const fromRatio = req.ratio && req.ratio !== "auto" ? IMAGE_SIZE_BY_RATIO[req.ratio] : undefined;
+    const imageSize = sized || fromRatio;
+    if (imageSize) input.image_size = imageSize;
+  }
   return input;
+}
+
+/** Shared fal video body. Field names match the published Seedance queue schema. */
+export function falVideoInput(req: FalMediaInput): Record<string, unknown> {
+  return falQueueInput(req, SEEDANCE_INPUTS);
+}
+
+/** Image queue body. Reference images use the schema's image field (`image_urls`). */
+export function falImageInput(
+  req: { prompt: string; ratio?: string; resolution?: string; quality?: string; count?: number; images?: string[]; seed?: number },
+  map: FalInputMap,
+): Record<string, unknown> {
+  return falQueueInput(
+    {
+      prompt: req.prompt,
+      ratio: req.ratio,
+      resolution: req.resolution,
+      quality: req.quality,
+      count: req.count,
+      seed: req.seed,
+      referenceImages: req.images,
+    },
+    map,
+  );
 }
 
 /** Rejects a missing or zero Content-Length. An unsized body would skip the storage cap. */

@@ -1,4 +1,4 @@
-import type { EstimateInput, ModelEntry, PriceFormula, Route } from "./types";
+import type { EstimateInput, ModelEntry, PriceFormula, ReferenceImageFee, Route } from "./types";
 
 function rate(table: Readonly<Record<string, number>> | undefined, resolution: string | undefined) {
   if (!table) return undefined;
@@ -47,33 +47,56 @@ function argolinkBilledSeconds(output: number, referenceVideoSeconds: number) {
   return Math.max(output + Math.floor(referenceVideoSeconds), Math.ceil((output * 5) / 3));
 }
 
+function imageFee(fee: ReferenceImageFee | undefined, input: EstimateInput, outputs: number) {
+  if (!fee || input.referenceImages == null) return 0;
+  const extra = Math.max(0, input.referenceImages - fee.free) * fee.usd;
+  return fee.perOutput ? extra * outputs : extra;
+}
+
 function applyPrice(price: PriceFormula, input: EstimateInput): number | undefined {
   const count = input.count ?? 1;
   if (price.type === "per_second") {
-    const withVideo = videoInput(input) && price.byResolutionWithVideo;
-    const table = withVideo
+    const withVideo = videoInput(input);
+    const billing = withVideo ? price.referenceBilling : undefined;
+    const useVideoRate = withVideo && (price.byResolutionWithVideo || billing === "add" || billing === "double-min");
+    const table = useVideoRate && price.byResolutionWithVideo
       ? price.byResolutionWithVideo
-      : input.audio && price.byResolutionWithAudio
+      : input.audio && price.byResolutionWithAudio && !useVideoRate
         ? price.byResolutionWithAudio
         : price.byResolution;
     const perSecond =
       rate(table, input.resolution) ??
-      (input.audio && !withVideo ? rate(price.byResolution, input.resolution) : undefined);
+      (input.audio && !useVideoRate ? rate(price.byResolution, input.resolution) : undefined);
     if (perSecond === undefined || input.duration === undefined) return undefined;
     const ref = input.referenceVideoSeconds ?? 0;
-    const seconds =
-      withVideo && !input.durationIsBilled && price.referenceBilling === "argolink"
+    const seconds = input.durationIsBilled
+      ? input.duration
+      : billing === "argolink"
         ? argolinkBilledSeconds(input.duration, ref)
-        : input.duration;
-    return perSecond * seconds;
+        : billing === "add"
+          ? input.duration + ref
+          : billing === "double-min"
+            ? Math.max(input.duration + ref, input.duration * 2)
+            : input.duration;
+    return perSecond * seconds + imageFee(price.referenceImages, input, 1);
   }
   if (price.type === "per_image") {
-    const each = rate(price.byResolution, input.resolution) ?? price.usd;
-    return each === undefined ? undefined : each * count;
+    const quality = input.quality ?? "medium";
+    const each: number | undefined =
+      (input.resolution ? price.byResolutionQuality?.[`${input.resolution}/${quality}`] : undefined) ??
+      (input.resolution ? price.byResolutionQuality?.[`${input.resolution}/medium`] : undefined) ??
+      (input.quality ? price.byQuality?.[input.quality] : undefined) ??
+      rate(price.byResolution, input.resolution) ??
+      price.usd;
+    return each === undefined ? undefined : each * count + imageFee(price.referenceImages, input, count);
   }
   if (price.type === "per_megapixel") {
     const mp = input.megapixels ?? 1;
     const seconds = price.perSecond ? (input.duration ?? 1) : 1;
+    if (price.first !== undefined) {
+      const rounded = Math.max(1, Math.ceil(mp - 1e-9));
+      return (price.first + price.usd * Math.max(0, rounded - 1)) * seconds;
+    }
     return price.usd * mp * seconds;
   }
   const withVideo =

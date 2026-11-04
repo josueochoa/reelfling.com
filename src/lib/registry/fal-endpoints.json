@@ -2,7 +2,6 @@
   { "endpoint": "fal-ai/wan/v2.2-a14b/text-to-video", "task": "t2v" },
   { "endpoint": "fal-ai/kling-video/v3/pro/text-to-video", "task": "t2v" },
   { "endpoint": "fal-ai/minimax/video-01/image-to-video", "task": "i2v" },
-  { "endpoint": "alibaba/wan-3.0/reference-to-video", "task": "ref2v" },
   { "endpoint": "minimax/h3-max/extend-video", "task": "extend" },
   { "endpoint": "fal-ai/seedvr/upscale/video", "task": "upscale" },
   { "endpoint": "fal-ai/sync-lipsync/v3", "task": "lipsync" },
@@ -11,5 +10,133 @@
   { "endpoint": "fal-ai/minimax/speech-2.8-hd", "task": "tts" },
   { "endpoint": "fal-ai/flux/dev", "task": "image" },
   { "endpoint": "fal-ai/flux/dev/image-to-image", "task": "image-edit" },
-  { "endpoint": "fal-ai/bria/background/remove", "task": "tool" }
+  { "endpoint": "fal-ai/bria/background/remove", "task": "tool" },
+
+  { "endpoint": "kling/v4/text-to-video", "task": "t2v", "family": "Kling", "price": { "type": "per_second", "byResolution": { "720p": 0.157, "1080p": 0.235 } } },
+  { "endpoint": "kling/v4/image-to-video", "task": "i2v", "family": "Kling", "price": { "type": "per_second", "byResolution": { "720p": 0.157, "1080p": 0.235 } } },
+  {
+    "endpoint": "kling/v4/reference-to-video",
+    "task": "ref2v",
+    "family": "Kling",
+    "price": {
+      "type": "per_second",
+      "byResolution": { "720p": 0.157, "1080p": 0.235 },
+      "byResolutionWithVideo": { "720p": 0.094, "1080p": 0.141 },
+      "referenceBilling": "double-min"
+    }
+  },
+  {
+    "endpoint": "fal-ai/kling-video/v3/pro/image-to-video",
+    "task": "i2v",
+    "family": "Kling",
+    "price": {
+      "type": "per_second",
+      "byResolution": { "*": 0.112 },
+      "byResolutionWithAudio": { "*": 0.168 }
+    }
+  },
+
+  { "endpoint": "alibaba/wan-3.0/text-to-video", "task": "t2v", "family": "Wan", "price": { "type": "per_second", "byResolution": { "480p": 0.05, "720p": 0.1, "1080p": 0.2 } } },
+  { "endpoint": "alibaba/wan-3.0/image-to-video", "task": "i2v", "family": "Wan", "price": { "type": "per_second", "byResolution": { "480p": 0.05, "720p": 0.1, "1080p": 0.2 } } },
+  {
+    "endpoint": "alibaba/wan-3.0/reference-to-video",
+    "task": "ref2v",
+    "family": "Wan",
+    "price": {
+      "type": "per_second",
+      "byResolution": { "480p": 0.05, "720p": 0.1, "1080p": 0.2 },
+      "referenceBilling": "add"
+    }
+  },
+
+  { "endpoint": "minimax/h3/text-to-video", "task": "t2v", "family": "MiniMax", "price": { "type": "per_second", "byResolution": { "480P": 0.05, "768P": 0.06, "2K": 0.13, "4K": 0.16 } } },
+  { "endpoint": "minimax/h3/image-to-video", "task": "i2v", "family": "MiniMax", "price": { "type": "per_second", "byResolution": { "480P": 0.05, "768P": 0.06, "2K": 0.13, "4K": 0.16 } } },
+  {
+    "endpoint": "minimax/h3/reference-to-video",
+    "task": "ref2v",
+    "family": "MiniMax",
+    "price": {
+      "type": "per_second",
+      "byResolution": { "480P": 0.05, "768P": 0.06, "2K": 0.13, "4K": 0.16 },
+      "referenceImages": { "usd": 0.08, "free": 5 }
+    }
+  },
+
+  {
+    "endpoint": "blackforestlabs/flux-3/image-to-video",
+    "task": "i2v",
+    "family": "FLUX",
+    "price": { "type": "per_second", "byResolution": { "720p": 0.17, "1080p": 0.29, "1440p": 0.32, "2160p": 0.47 } }
+  },
+
+  { "endpoint": "google/gemini-omni-flash/v1.1/text-to-video", "task": "t2v", "family": "Gemini", "price": { "type": "per_second", "byResolution": { "360p": 0.03, "720p": 0.1, "1080p": 0.15, "4k": 0.3 } } },
+  { "endpoint": "google/gemini-omni-flash/v1.1/image-to-video", "task": "i2v", "family": "Gemini", "price": { "type": "per_second", "byResolution": { "360p": 0.03, "720p": 0.1, "1080p": 0.15, "4k": 0.3 } } },
+  { "endpoint": "google/gemini-omni-flash/v1.1/reference-to-video", "task": "ref2v", "family": "Gemini", "price": { "type": "per_second", "byResolution": { "360p": 0.03, "720p": 0.1, "1080p": 0.15, "4k": 0.3 } } },
+
+  { "endpoint": "xai/grok-imagine-video/v1.5/image-to-video", "task": "i2v", "family": "Grok", "price": { "type": "per_second", "byResolution": { "480p": 0.08, "720p": 0.14, "1080p": 0.25 } } },
+
+  {
+    "endpoint": "luma/agent/ray/v3.2/image-to-video",
+    "task": "i2v",
+    "family": "Luma",
+    "durations": { "min": 5, "max": 5, "default": 5 },
+    "price": { "type": "per_second", "byResolution": { "540p": 0.03, "720p": 0.06, "1080p": 0.24 } }
+  },
+
+  {
+    "endpoint": "bytedance/seedream/v5/pro/text-to-image",
+    "task": "image",
+    "family": "Seedream",
+    "resolutions": ["1k", "2k"],
+    "price": { "type": "per_image", "byResolution": { "1k": 0.0675, "2k": 0.135 } }
+  },
+  {
+    "endpoint": "bytedance/seedream/v5/pro/edit",
+    "task": "image-edit",
+    "family": "Seedream",
+    "resolutions": ["1k", "2k"],
+    "price": {
+      "type": "per_image",
+      "byResolution": { "1k": 0.0675, "2k": 0.135 },
+      "referenceImages": { "usd": 0.0045, "free": 1, "perOutput": true }
+    }
+  },
+  {
+    "endpoint": "fal-ai/flux-2-pro",
+    "task": "image",
+    "family": "Flux",
+    "price": { "type": "per_megapixel", "usd": 0.015, "first": 0.03 }
+  },
+  {
+    "endpoint": "fal-ai/flux-2-pro/edit",
+    "task": "image-edit",
+    "family": "Flux",
+    "price": { "type": "per_megapixel", "usd": 0.015, "first": 0.03 }
+  },
+  {
+    "endpoint": "ideogram/v4.5",
+    "task": "image",
+    "family": "Ideogram",
+    "price": { "type": "per_image", "byQuality": { "low": 0.03, "medium": 0.06, "high": 0.22 } }
+  },
+  { "endpoint": "fal-ai/recraft/v4.1/text-to-image", "task": "image", "family": "Recraft", "price": { "type": "per_image", "usd": 0.007 } },
+  {
+    "endpoint": "xai/grok-imagine-image/v2.0/edit",
+    "task": "image-edit",
+    "family": "Grok",
+    "resolutions": ["1k", "2k"],
+    "price": {
+      "type": "per_image",
+      "byResolutionQuality": {
+        "1k/low": 0.04,
+        "1k/medium": 0.06,
+        "1k/auto": 0.06,
+        "2k/low": 0.06,
+        "2k/medium": 0.08,
+        "2k/auto": 0.08
+      },
+      "referenceImages": { "usd": 0.01, "free": 0 }
+    }
+  },
+  { "endpoint": "fal-ai/z-image/turbo", "task": "image", "family": "Z-Image", "price": { "type": "per_megapixel", "usd": 0.02 } }
 ]

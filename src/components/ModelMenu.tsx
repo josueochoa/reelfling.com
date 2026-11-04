@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { estimateRouteCost, PROVIDER_INFO, type EstimateInput, type RouteProvider, type VideoModel } from "@/lib/registry";
 import { availability, availabilityHint, routeProviders } from "@/lib/registry/availability";
+import { groupByFamily, modelBadges } from "@/lib/registry/badges";
 import { UnlockHint } from "./UnlockHint";
 
 /** Every video model. Unavailable ones stay in the list, grayed, and can't be chosen. */
@@ -46,12 +47,16 @@ export function ModelMenu({
       aria-label="Model"
       className="max-h-56 space-y-0.5 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-1"
     >
-      {models.map((model) => {
+      {groupByFamily(models).map((group) => (
+        <div key={group.family} data-testid="model-family" data-family={group.family}>
+          <p className="px-2.5 pt-2 pb-0.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase">{group.family}</p>
+          {group.models.map((model) => {
         const open = availability(model, keyed);
         const locked = !open.available;
         const hint = availabilityHint(open.needs);
         const selected = model.id === value;
         const showHint = locked && hover === model.id && !!hint;
+        const badges = modelBadges(model);
         return (
           <div
             key={model.id}
@@ -81,6 +86,20 @@ export function ModelMenu({
               } ${selected && locked ? "bg-white/5" : ""}`}
             >
               <span className="min-w-0 flex-1 truncate">{model.name}</span>
+              {badges.length > 0 && (
+                <span className="flex shrink-0 gap-1">
+                  {badges.map((badge) => (
+                    <span
+                      key={badge.id}
+                      data-testid="model-badge"
+                      data-badge={badge.id}
+                      className={`rounded px-1 py-px text-[9px] ${locked ? "bg-white/5 text-zinc-600" : "bg-white/10 text-zinc-400"}`}
+                    >
+                      {badge.label}
+                    </span>
+                  ))}
+                </span>
+              )}
               <span className={`shrink-0 text-[10px] ${locked ? "text-zinc-600" : "text-zinc-500"}`}>
                 {selected && route && !locked
                   ? providerLabel(route)
@@ -137,7 +156,9 @@ export function ModelMenu({
             )}
           </div>
         );
-      })}
+          })}
+        </div>
+      ))}
     </div>
   );
 }

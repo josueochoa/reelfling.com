@@ -8,7 +8,7 @@ import { catalogModel } from "@/lib/registry/generated";
 import { estimateRouteCost, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
-import { falVideoEndpoint, falVideoInput, submitFal } from "@/lib/providers/fal";
+import { falQueueInput, falVideoEndpoint, submitFal } from "@/lib/providers/fal";
 import { mockProviders } from "@/lib/providers/mock";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
@@ -186,7 +186,7 @@ export async function POST(request: Request) {
     const started = await runWithCap(opened, async () => {
       if (mockProviders()) return { taskId: `mock-${crypto.randomUUID()}` };
       if (route.provider === "fal") {
-        const submission = await submitFal(opened.creds.apiKey, endpoint, falVideoInput(providerReq));
+        const submission = await submitFal(opened.creds.apiKey, endpoint, falQueueInput(providerReq, model.inputs));
         return {
           taskId: submission.requestId,
           falStatusUrl: submission.statusUrl,

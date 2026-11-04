@@ -245,12 +245,14 @@ export function ControlPanel({
   // @-mentions only resolve in references mode; anywhere else they're flagged.
   const refs = effectiveMode === "references";
   const referenceVideos = refs ? refList.filter((r) => r.item.kind === "video") : [];
-  // Images and audio are not billed. A video with no readable length still selects the with-video rate.
+  // A reference video with no readable length still selects the with-video rate.
+  // Reference images are billed only when that model's formula says so.
   const referenceVideoSeconds = referenceVideos.length
     ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
     : undefined;
+  const referenceImages = refs ? refList.filter((r) => r.item.kind === "image").length : undefined;
   const routeProvider = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider])?.provider;
-  const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds };
+  const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds, referenceImages };
   const cost = estimateRouteCost(model, routeProvider, estimateInput);
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
   const badMentions = invalidMentions(prompt, counts);
@@ -304,16 +306,18 @@ export function ControlPanel({
       setMode("references");
       if (ratio === "adaptive") setRatio("16:9");
     }
-    if (skipped.size)
-      alert(
+    if (skipped.size) {
+      const message =
         [...skipped]
           .map((k) =>
             limit[k] === 0
               ? `${model.name} doesn't take ${PLURAL[k]} as references.`
               : `${model.name} takes up to ${limit[k]} ${PLURAL[k]} (${caps.references.total} references in total).`,
           )
-          .join("\n") + "\nThe files are still in your Uploads.",
-      );
+          .join(" ") + " The files are still in your Uploads.";
+      setNotice(message);
+      alert(message);
+    }
     return added;
   }
 
@@ -482,7 +486,11 @@ export function ControlPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5">
-        {notice && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{notice}</p>}
+        {notice && (
+          <p data-testid="reference-limit" className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            {notice}
+          </p>
+        )}
         <Section label="Model">
           <ModelMenu
             models={models}
@@ -664,7 +672,7 @@ export function ControlPanel({
           </Section>
         )}
 
-        <Section label="Aspect ratio">
+        {caps.ratios.length > 0 && <Section label="Aspect ratio">
           <div className="flex flex-wrap gap-1.5">
             {caps.ratios.map((r) => (
               <Chip
@@ -678,9 +686,9 @@ export function ControlPanel({
               </Chip>
             ))}
           </div>
-        </Section>
+        </Section>}
 
-        <Section label="Resolution">
+        {caps.resolutions.length > 0 && <Section label="Resolution">
           <div className="flex gap-1.5">
             {caps.resolutions.map((r) => (
               <Chip key={r} active={resolution === r} onClick={() => setResolution(r)}>
@@ -688,7 +696,7 @@ export function ControlPanel({
               </Chip>
             ))}
           </div>
-        </Section>
+        </Section>}
 
         {durations && (
           <Section label="Duration" aside={`${duration}s`}>
