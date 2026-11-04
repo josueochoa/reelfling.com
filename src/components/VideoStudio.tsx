@@ -98,14 +98,28 @@ export function VideoStudio({
     setOpen((o) => (o?.id === gen.id ? gen : o));
   }, []);
 
+  /** The template form hides the composer. These actions show it again so the change is visible. */
+  function revealComposer() {
+    setTemplateId(null);
+    setGalleryOpen(false);
+  }
+
   useImperativeHandle(ref, () => ({
     addReference(item) {
-      if (panel.current) panel.current.add(item);
-      else toast("Add an API key first to generate videos.");
+      if (!panel.current) {
+        toast("Add an API key first to generate videos.");
+        return;
+      }
+      revealComposer();
+      panel.current.add(item);
     },
     setStartFrame(item) {
-      if (panel.current) panel.current.setStartFrame(item);
-      else toast("Add an API key first to generate videos.");
+      if (!panel.current) {
+        toast("Add an API key first to generate videos.");
+        return;
+      }
+      revealComposer();
+      panel.current.setStartFrame(item);
     },
     reload() {
       apiJson<Generation[]>("/api/generations")
@@ -290,6 +304,7 @@ export function VideoStudio({
       toast("Add an API key first to generate videos.");
       return;
     }
+    revealComposer();
     if (gen.status !== "succeeded" || !gen.stored) return;
     const item = await outputItem(gen);
     if (!item) {
@@ -395,7 +410,10 @@ export function VideoStudio({
           <UploadsPanel
             library={library}
             selected={refLabels}
-            onToggle={(item) => panel.current?.toggle(item)}
+            onToggle={(item) => {
+              revealComposer();
+              panel.current?.toggle(item);
+            }}
             onDelete={deleteUpload}
             onClose={() => setLibraryOpen(false)}
           />

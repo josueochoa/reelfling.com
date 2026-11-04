@@ -73,6 +73,13 @@ describe("template slots", () => {
       assert.equal(template.model.includes("o3"), false);
       assert.equal(template.model.includes("vidu"), false);
       assert.equal(template.model.includes("effects"), false);
+      const spoken = /"\{\{line\}\}"|\bsays\b|\btalks\b/.test(template.prompt);
+      if (spoken) {
+        assert.equal(template.audio, true, `${template.id} speaks without audio`);
+        const speaking = catalogModel(template.model);
+        assert.ok(speaking && isVideo(speaking), template.id);
+        assert.notEqual(speaking.capabilities.audio, false, template.id);
+      }
       const shown = previewOf(template);
       if (template.preview?.video?.startsWith("https://")) assert.equal(shown.video, template.preview.video);
       else assert.equal(shown.video, undefined, template.id);
@@ -121,7 +128,8 @@ describe("template slots", () => {
     assert.equal(blank.request.prompt.includes("@Image 1"), true);
     assert.equal(blank.request.templateSlots?.some((slot) => slot.id === "line"), false);
     const noted = buildTemplateRequest(beam, { ...valuesFor(beam), line: { text: "Keep the beam warm." } });
-    assert.ok(noted.request?.prompt.includes("Keep the beam warm."));
+    assert.ok(noted.request?.prompt.includes("unless a light note changes it. Keep the beam warm."));
+    assert.equal(blank.request?.prompt.includes("Light note:"), false);
   });
 
   it("builds a reference-to-video body on each allowed route", () => {

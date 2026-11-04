@@ -36,7 +36,7 @@
       "duration": 5,
       "ratio": "9:16",
       "resolution": "720p",
-      "prompt": "The person in {{character}} holds a neutral pose. One narrow beam of light travels from the left edge to the right edge across their face and shoulders, then the beam is gone. {{line}} The camera stays locked. No captions and no logos.",
+      "prompt": "The person in {{character}} holds a neutral pose. One narrow beam of light travels from the left edge to the right edge across their face and shoulders, then the beam is gone. The beam stays as it is unless a light note changes it. {{line}} The camera stays locked. Nobody speaks. No captions and no logos.",
       "slots": [
         {
           "id": "character",
@@ -51,7 +51,7 @@
           "label": "Light note",
           "required": false,
           "maxLength": 80,
-          "hint": "Optional. A short note about the light, or leave this blank."
+          "hint": "Optional. A direction for the light, such as \"Keep the beam warm.\" It is not spoken."
         }
       ]
     },
@@ -239,11 +239,12 @@
       "name": "Street answer",
       "category": "ugc",
       "summary": "Someone on a street answers the camera in a single breath.",
-      "model": "fal:kling/v4/reference-to-video",
-      "route": "fal",
+      "model": "openrouter:bytedance/seedance-2.5",
+      "route": "openrouter",
       "duration": 5,
       "ratio": "9:16",
       "resolution": "720p",
+      "audio": true,
       "prompt": "The person in {{character}} stands on the street in {{location}} and answers the camera in one breath: \"{{line}}\" Their clothes move a little in the wind. People behind them stay out of focus. No captions and no logos.",
       "slots": [
         {
