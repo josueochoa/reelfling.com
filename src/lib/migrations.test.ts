@@ -41,7 +41,8 @@ describe("migration 0012", () => {
       false,
     );
     assert.equal(files.filter((file) => file.startsWith("0012_")).length, 1);
-    assert.equal(files.at(-1), "0012_users_active_provider.sql");
+    assert.equal(files.filter((file) => file.startsWith("0013_")).length, 1);
+    assert.equal(files.at(-1), "0013_model_routes.sql");
   });
 
   it("copies a personal workspace provider and leaves nulls alone", () => {
@@ -123,5 +124,27 @@ describe("migration 0012", () => {
         .active_provider,
       "stale",
     );
+  });
+});
+
+describe("migration 0013", () => {
+  it("copies the route off each generation and keeps users.active_provider", () => {
+    const db = fresh();
+    apply(db, { through: "0012_users_active_provider.sql" });
+    db.exec(`
+      INSERT INTO users (id, email, created_at, active_provider) VALUES
+        ('u1', 'a@b.c', 1, 'modelark');
+      INSERT INTO generations (id, user_id, created_at, data) VALUES
+        ('g1', 'u1', 2, '{"route":"fal","model":"dreamina-seedance-2-0-260128"}');
+      INSERT INTO image_generations (id, user_id, created_at, data) VALUES
+        ('i1', 'u1', 2, '{"route":"openrouter","model":"nano-banana-2.1"}');
+    `);
+    apply(db, { from: "0013_model_routes.sql", through: "0013_model_routes.sql" });
+    const route = db.prepare("SELECT route FROM generations WHERE id = 'g1'").get() as { route: string };
+    const image = db.prepare("SELECT route FROM image_generations WHERE id = 'i1'").get() as { route: string };
+    const active = db.prepare("SELECT active_provider FROM users WHERE id = 'u1'").get() as { active_provider: string };
+    assert.equal(route.route, "fal");
+    assert.equal(image.route, "openrouter");
+    assert.equal(active.active_provider, "modelark");
   });
 });

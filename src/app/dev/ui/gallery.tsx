@@ -65,7 +65,7 @@ export function Gallery() {
         <section>
           <h2 className="text-title">Modal</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(["sm", "md", "lg", "xl", "full"] as const).map((size) => (
+            {(["sm", "md", "lg", "full"] as const).map((size) => (
               <button
                 key={size}
                 type="button"
@@ -131,7 +131,7 @@ export function Gallery() {
                   { value: "16:9", label: "16:9", subtitle: "Landscape" },
                   { value: "9:16", label: "9:16", subtitle: "Portrait" },
                   { value: "1:1", label: "1:1", subtitle: "Square" },
-                  { value: "21:9", label: "21:9", subtitle: "Needs a wider plan", locked: true },
+                  { value: "21:9", label: "21:9", subtitle: "Not on this model", locked: true },
                 ]}
               />
             </div>

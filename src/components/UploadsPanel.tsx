@@ -3,7 +3,7 @@
 // Picker for references: the user's assets, uploads first (generated ones one click away).
 
 import { useRef, useState } from "react";
-import { X } from "@/components/ui/Icon";
+import { Trash2, X } from "@/components/ui/Icon";
 import { confirmToast } from "@/components/ui/Toast";
 import type { AssetSource, UploadKind } from "@/lib/uploads";
 import { ACCEPT, fileSrc, type Library, type LibraryItem } from "./library";
@@ -203,7 +203,7 @@ export function UploadsPanel({
                     );
                   }}
                 >
-                  🗑
+                  <Trash2 className="size-3.5" aria-hidden />
                 </IconButton>
               </div>
               {editing === item.id ? (

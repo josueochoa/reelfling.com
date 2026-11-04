@@ -292,11 +292,32 @@ function inputSchema(openapi) {
   return name ? resolveSchema(openapi, schemas[name]) : { properties: {}, required: [] };
 }
 
+function describedMax(text) {
+  const source = String(text ?? "");
+  const paren = source.match(/\(max (\d+)\)/i);
+  if (paren) return Number(paren[1]);
+  const phrase = source.match(/\b(?:up to|maximum of) (\d+)\b/i);
+  return phrase ? Number(phrase[1]) : undefined;
+}
+
+function describedTotal(props) {
+  for (const spec of Object.values(props)) {
+    const match = String(spec.description ?? "").match(/at most (\d+) files/i);
+    if (match) return Number(match[1]);
+  }
+  return undefined;
+}
+
 function propertiesOf(openapi) {
   const schema = inputSchema(openapi);
   const props = {};
   for (const [key, value] of Object.entries(schema.properties ?? {})) {
     const resolved = unwrap(openapi, value);
+    const item = resolved.items ? unwrap(openapi, resolved.items) : undefined;
+    const videoProp = item?.properties?.video_url;
+    const videoText = `${resolved.description ?? ""} ${videoProp?.description ?? ""} ${
+      videoProp ? (unwrap(openapi, videoProp).description ?? "") : ""
+    }`;
     props[key] = {
       type: resolved.type,
       enum: Array.isArray(resolved.enum) ? resolved.enum.filter((item) => item != null) : undefined,
@@ -304,6 +325,8 @@ function propertiesOf(openapi) {
       maximum: typeof resolved.maximum === "number" ? resolved.maximum : undefined,
       default: resolved.default,
       maxItems: typeof resolved.maxItems === "number" ? resolved.maxItems : undefined,
+      description: typeof resolved.description === "string" ? resolved.description : undefined,
+      oneVideo: /one element with a video/i.test(videoText),
     };
   }
   return { props, required: schema.required ?? [] };
@@ -316,7 +339,8 @@ function hasKey(props, pattern) {
 function arrayLimit(props, pattern) {
   for (const [key, spec] of Object.entries(props)) {
     if (!pattern.test(key)) continue;
-    if (spec.type === "array") return spec.maxItems ?? 4;
+    if (spec.type === "array" || spec.maxItems != null || describedMax(spec.description) != null)
+      return spec.maxItems ?? describedMax(spec.description) ?? 4;
     return 1;
   }
   return 0;
@@ -376,16 +400,70 @@ function framesFor(task, tasks, props) {
 }
 
 function referencesFor(task, props) {
-  let image = arrayLimit(props, /^(reference_images?|image_urls|subject_images?|images)$/);
-  let video = arrayLimit(props, /reference_video|video_urls/);
-  let audio = arrayLimit(props, /reference_audio|audio_urls|audio_url$/);
-  if (["extend", "upscale", "v2v-edit", "lipsync", "motion"].includes(task) && video === 0 && hasKey(props, /video_url/))
+  let image = arrayLimit(props, /^(reference_images?|reference_image_urls|image_urls|subject_images?|images)$/);
+  let video = arrayLimit(props, /^(reference_videos?|reference_video_urls|video_urls)$/);
+  let audio = arrayLimit(props, /^(reference_audios?|reference_audio_urls|audio_urls)$/);
+  if (image === 0 && props.elements && !["extend", "upscale", "v2v-edit", "lipsync", "motion", "avatar"].includes(task)) {
+    const cap = props.elements.maxItems ?? describedMax(props.elements.description) ?? 4;
+    image = cap;
+    video = props.elements.oneVideo ? 1 : video;
+    const total = Math.min(describedTotal(props) ?? cap, image + video + audio);
+    return { image, video, audio, total };
+  }
+  if (["extend", "upscale", "v2v-edit", "lipsync", "motion"].includes(task) && video === 0 && hasKey(props, /^video_url$/))
     video = 1;
   if (task === "lipsync" && audio === 0 && hasKey(props, /audio/)) audio = 1;
   if (task === "ref2v" && image + video + audio === 0) image = arrayLimit(props, /image/) || 1;
   if (task === "image-edit" && image === 0) image = 1;
-  const total = image + video + audio;
+  const total = describedTotal(props) ?? image + video + audio;
   return { image, video, audio, total };
+}
+
+const IMAGE_QUALITIES = ["auto", "low", "medium", "high"];
+
+function qualitiesFrom(props) {
+  return enumStrings(props.quality).filter((item) => IMAGE_QUALITIES.includes(item));
+}
+
+function durationStyle(spec) {
+  if (!spec) return undefined;
+  const values = spec.enum ?? [];
+  if (values.some((value) => typeof value === "string" && /^\d+s$/.test(value))) return "suffix";
+  if (spec.type === "integer" || spec.type === "number" || values.some((value) => typeof value === "number"))
+    return "number";
+  if (spec.type === "string" || values.some((value) => typeof value === "string" && /^\d+$/.test(value)))
+    return "string";
+  return "number";
+}
+
+function inputsFor(props, spec) {
+  const images = props.image_urls ? "image_urls" : props.reference_image_urls ? "reference_image_urls" : undefined;
+  const videos = props.video_urls ? "video_urls" : props.reference_video_urls ? "reference_video_urls" : undefined;
+  const audios = props.audio_urls ? "audio_urls" : props.reference_audio_urls ? "reference_audio_urls" : undefined;
+  const elements = !images && !videos && props.elements ? "elements" : undefined;
+  const start = props.start_image_url ? "start_image_url" : props.image_url ? "image_url" : undefined;
+  const aspects = enumStrings(props.aspect_ratio);
+  const imageSizes = enumStrings(props.image_size);
+  const autoSize = {};
+  if (imageSizes.includes("auto_1K")) autoSize["1k"] = "auto_1K";
+  if (imageSizes.includes("auto_2K")) autoSize["2k"] = "auto_2K";
+  return compact({
+    start,
+    end: props.end_image_url ? "end_image_url" : undefined,
+    images,
+    videos,
+    audios,
+    elements,
+    duration: durationStyle(props.duration),
+    audio: props.generate_audio ? "generate_audio" : props.audio?.type === "boolean" ? "audio" : undefined,
+    aspect: props.aspect_ratio ? "aspect_ratio" : props.image_size ? "image_size" : undefined,
+    aspects: aspects.length ? aspects : undefined,
+    resolution: props.resolution ? "resolution" : undefined,
+    quality: props.quality ? "quality" : undefined,
+    count: props.num_images ? "num_images" : undefined,
+    seed: props.seed ? true : undefined,
+    imageSizeByResolution: spec.imageSizes ?? (Object.keys(autoSize).length ? autoSize : undefined),
+  });
 }
 
 function priceFromUnit(unitPrice, unit) {
@@ -408,7 +486,7 @@ export function falModel(spec, raw, unit) {
   const frames = framesFor(task, tasks, props);
   const references = referencesFor(task, props);
   const durations = durationsFrom(props);
-  const resolutions = resolutionsFrom(props);
+  const resolutions = spec.resolutions ?? resolutionsFrom(props);
   const ratios = ratiosFrom(props);
   const promptExpansion = hasKey(props, /prompt_expansion|prompt_optimizer|enhance_prompt/) ? "optional" : false;
   // Only `camera_fixed` is wired through to a provider body. Other camera-like
@@ -416,9 +494,10 @@ export function falModel(spec, raw, unit) {
   const camera = hasKey(props, /^camera_fixed$/)
     ? { fixed: true, prompt: true, params: ["camera_fixed"] }
     : false;
-  const price = priceFromUnit(unit?.unit_price, unit?.unit);
+  const price = spec.price ?? priceFromUnit(unit?.unit_price, unit?.unit);
   const display = (meta.display_name || spec.endpoint).trim();
-  const family = display.split(/\s+/)[0]?.replace(/:$/, "") || spec.endpoint.split("/")[0];
+  const family = spec.family || display.split(/\s+/)[0]?.replace(/:$/, "") || spec.endpoint.split("/")[0];
+  const inputs = inputsFor(props, spec);
   const base = {
     id: `fal:${spec.endpoint}`,
     family,
@@ -430,6 +509,7 @@ export function falModel(spec, raw, unit) {
     routes: [{ provider: "fal", endpoint: spec.endpoint, mapper: "fal.queue" }],
     promptRequired: required.includes("prompt") || task === "t2v" || task === "tts",
     refSyntax: "at",
+    inputs,
     price,
   };
   // Every fal route names fal.queue. The fal tab still submits raw JSON; nothing calls a mapper yet.
@@ -442,6 +522,7 @@ export function falModel(spec, raw, unit) {
         ratios: ratios.length ? ratios : ["1:1"],
         references,
         maxImages: Math.max(1, Math.round(maxImages)),
+        ...(qualitiesFrom(props).length ? { qualities: qualitiesFrom(props) } : {}),
         seed: Boolean(props.seed),
         promptExpansion,
       },
@@ -469,7 +550,7 @@ export function falModel(spec, raw, unit) {
   return compact({
     ...base,
     capabilities: compact({
-      durations,
+      durations: spec.durations ?? durations,
       resolutions,
       ratios,
       audio: hasKey(props, /^generate_audio$|^audio$/) ? "optional" : false,

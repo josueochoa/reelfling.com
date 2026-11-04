@@ -6,6 +6,8 @@ export interface Me {
   user: User;
   keys: KeySummary[];
   storage: Awaited<ReturnType<typeof storageUsage>>;
+  /** Saved provider per model id. */
+  routePreferences?: Record<string, string>;
   auth: { mode: AuthMode; signOutUrl: string };
 }
 

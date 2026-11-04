@@ -53,7 +53,7 @@ body {
 }
 
 /* Keyboard focus is a lime ring on every control. Unlayered so it wins over outline-none. */
-:where(a, button, input, select, textarea, summary, video, audio, [role="button"], [tabindex]):focus-visible {
+:where(a, button, input, select, textarea, summary, video, audio, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }

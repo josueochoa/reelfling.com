@@ -10,7 +10,7 @@ export function videoDetails(gen: Generation): ViewerDetail[] {
   const route = detailRoute(gen);
   const billed = gen.billedSeconds;
   const hadReferenceVideo = gen.inputs.videos > 0;
-  const cost =
+  const computed =
     model &&
     estimateCost(model, {
       resolution: gen.resolution,
@@ -18,6 +18,7 @@ export function videoDetails(gen: Generation): ViewerDetail[] {
       audio: gen.generateAudio,
       ...(hadReferenceVideo && billed !== undefined ? { referenceVideoSeconds: 0, durationIsBilled: true } : {}),
     });
+  const cost = gen.estimatedCost ?? computed;
   const rows: ViewerDetail[] = [{ label: "Model", value: model?.name ?? gen.model }];
   if (route) rows.push({ label: "Route", value: route });
   rows.push(

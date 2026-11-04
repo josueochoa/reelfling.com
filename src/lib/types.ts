@@ -25,6 +25,8 @@ export interface GenerateRequest {
   referenceAudios?: string[];
   /** Library keys of the reference blocks, in the order they were shown. */
   referenceOrder?: string[];
+  /** Provider route chosen in the picker or restored by Reuse. */
+  route?: string;
 }
 
 /** One reference block, stored so Reuse can rebuild the box. */
@@ -62,7 +64,7 @@ export const TERMINAL_STATUSES: TaskStatus[] = ["succeeded", "failed", "cancelle
 export interface Generation {
   id: string;
   /** Missing on records created before providers existed (= modelark). */
-  provider?: StudioProviderId;
+  provider?: StudioProviderId | "fal";
   taskId: string;
   status: TaskStatus;
   /** 0–100 while in flight, when the provider reports it. */
@@ -79,6 +81,16 @@ export interface Generation {
   cameraMove?: string;
   /** Preset ids in chip order. Absent on older records. */
   cameraMoves?: string[];
+  /** Provider this generation ran on. */
+  route?: string;
+  /** Catalog endpoint id that was called. */
+  routeEndpoint?: string;
+  /** Catalog estimate, USD. */
+  estimatedCost?: number;
+  /** fal queue URLs. Absent on every other provider. */
+  falStatusUrl?: string;
+  falResponseUrl?: string;
+  falCancelUrl?: string;
   /** Counts, plus the R2 keys of frames and reference blocks when they were saved. */
   inputs: GenerationInputs;
   /** Temporary signed URL from ModelArk (expires ~24h). */

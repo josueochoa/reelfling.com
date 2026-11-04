@@ -5,7 +5,7 @@
 // and in-flight polling.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { VideoModel } from "@/lib/registry";
+import type { ImageModel, VideoModel } from "@/lib/registry";
 import { rememberModels } from "@/lib/registry/lookup";
 import type { ToolView } from "@/lib/toolTypes";
 import { apiJson, type Me } from "./api";
@@ -32,6 +32,7 @@ export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
   const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
+  const [catalogImages, setCatalogImages] = useState<ImageModel[] | null>(null);
   const [tools, setTools] = useState<ToolView[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const library = useLibrary();
@@ -45,10 +46,11 @@ export function Studio() {
   }, [loadMe]);
   // Slim picker list. The generated catalog stays on the server.
   useEffect(() => {
-    apiJson<{ models: VideoModel[]; tools?: ToolView[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; images?: ImageModel[]; tools?: ToolView[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
         setOpenRouterModels(body.models);
+        setCatalogImages(body.images ?? []);
         setTools(body.tools ?? []);
       })
       .catch(() => setOpenRouterModels([]));
@@ -88,7 +90,7 @@ export function Studio() {
         <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
       </header>
 
-      <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${tab === "video" ? "" : "hidden"}`}>
         <VideoStudio
           ref={video}
           me={me}
@@ -111,6 +113,7 @@ export function Studio() {
           }}
           tools={tools}
           onToolJob={showToolJob}
+          catalogModels={catalogImages}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>

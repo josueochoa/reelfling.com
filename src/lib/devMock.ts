@@ -3,9 +3,14 @@
 
 import { env } from "./db";
 
+/** True only while `next dev` is running. Production builds inline NODE_ENV and drop this. */
+export function isNextDev(): boolean {
+  return process.env.NODE_ENV === "development";
+}
+
 /** True only in `next dev` when DEV_MOCK_PROVIDERS=1. The key is not sent. */
 export function devMockProviders(): boolean {
-  if (process.env.NODE_ENV !== "development") return false;
+  if (!isNextDev()) return false;
   if (process.env.DEV_MOCK_PROVIDERS === "1") return true;
   try {
     return env().DEV_MOCK_PROVIDERS === "1";

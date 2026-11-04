@@ -1,4 +1,54 @@
-import type { EstimateInput, ModelEntry, PriceFormula } from "./types";
+import type { EstimateInput, ModelEntry, PriceFormula, ReferenceImageFee, Route } from "./types";
+
+/** Long side, in pixels, for a resolution tier. `1080p` is a 16:9 frame's long side. */
+function longSide(resolution: string | undefined): number | undefined {
+  if (!resolution) return undefined;
+  const key = resolution.toLowerCase();
+  if (key === "1k") return 1024;
+  if (key === "1.5k") return 1536;
+  if (key === "2k") return 2048;
+  if (key === "4k") return 4096;
+  const height = /^(\d+)p$/.exec(key);
+  return height ? Math.round((Number(height[1]) * 16) / 9) : undefined;
+}
+
+function aspectParts(ratio: string | undefined): [number, number] {
+  const match = /^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/.exec(ratio ?? "");
+  if (!match) return [1, 1];
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? [width, height] : [1, 1];
+}
+
+/**
+ * fal's named image sizes, used when a model has no resolution tier.
+ * 1 megapixel is 1024×1024, matching fal's published megapixel schedule.
+ */
+const IMAGE_PRESET: Record<string, { width: number; height: number }> = {
+  "1:1": { width: 1024, height: 1024 },
+  "16:9": { width: 1024, height: 576 },
+  "9:16": { width: 576, height: 1024 },
+  "4:3": { width: 1024, height: 768 },
+  "3:4": { width: 768, height: 1024 },
+  "21:9": { width: 1024, height: 440 },
+};
+
+/** Output megapixels for a concrete resolution and aspect. Resolve `auto` before calling this. */
+export function outputMegapixels(resolution?: string, ratio?: string): number {
+  const [aspectWidth, aspectHeight] = aspectParts(ratio);
+  const tier = longSide(resolution);
+  const width = tier
+    ? aspectWidth >= aspectHeight
+      ? tier
+      : Math.max(1, Math.round((tier * aspectWidth) / aspectHeight))
+    : (IMAGE_PRESET[ratio ?? ""]?.width ?? 1024);
+  const height = tier
+    ? aspectHeight >= aspectWidth
+      ? tier
+      : Math.max(1, Math.round((tier * aspectHeight) / aspectWidth))
+    : (IMAGE_PRESET[ratio ?? ""]?.height ?? 1024);
+  return (width * height) / (1024 * 1024);
+}
 
 function rate(table: Readonly<Record<string, number>> | undefined, resolution: string | undefined) {
   if (!table) return undefined;
@@ -6,6 +56,24 @@ function rate(table: Readonly<Record<string, number>> | undefined, resolution: s
   if (table["*"] !== undefined) return table["*"];
   const values = Object.values(table);
   return values.length === 1 ? values[0] : undefined;
+}
+
+/** The route's formula when it has one, otherwise the model's. */
+export function priceFor(
+  model: { price?: PriceFormula; routes?: readonly Pick<Route, "provider" | "price">[] },
+  provider?: string | null,
+): PriceFormula | undefined {
+  const route = provider ? model.routes?.find((item) => item.provider === provider) : undefined;
+  return route?.price ?? model.price;
+}
+
+/** Estimate for one route. Uses that route's price when the catalog gives it one. */
+export function estimateRouteCost(
+  model: { price?: PriceFormula; routes?: readonly Pick<Route, "provider" | "price">[] },
+  provider: string | null | undefined,
+  input: EstimateInput = {},
+): number | undefined {
+  return estimateCost({ price: priceFor(model, provider) }, input);
 }
 
 /** USD the user's provider is expected to bill. Undefined when the entry has no formula. */
@@ -29,33 +97,56 @@ function argolinkBilledSeconds(output: number, referenceVideoSeconds: number) {
   return Math.max(output + Math.floor(referenceVideoSeconds), Math.ceil((output * 5) / 3));
 }
 
+function imageFee(fee: ReferenceImageFee | undefined, input: EstimateInput, outputs: number) {
+  if (!fee || input.referenceImages == null) return 0;
+  const extra = Math.max(0, input.referenceImages - fee.free) * fee.usd;
+  return fee.perOutput ? extra * outputs : extra;
+}
+
 function applyPrice(price: PriceFormula, input: EstimateInput): number | undefined {
   const count = input.count ?? 1;
   if (price.type === "per_second") {
-    const withVideo = videoInput(input) && price.byResolutionWithVideo;
-    const table = withVideo
+    const withVideo = videoInput(input);
+    const billing = withVideo ? price.referenceBilling : undefined;
+    const useVideoRate = withVideo && (price.byResolutionWithVideo || billing === "add" || billing === "double-min");
+    const table = useVideoRate && price.byResolutionWithVideo
       ? price.byResolutionWithVideo
-      : input.audio && price.byResolutionWithAudio
+      : input.audio && price.byResolutionWithAudio && !useVideoRate
         ? price.byResolutionWithAudio
         : price.byResolution;
     const perSecond =
       rate(table, input.resolution) ??
-      (input.audio && !withVideo ? rate(price.byResolution, input.resolution) : undefined);
+      (input.audio && !useVideoRate ? rate(price.byResolution, input.resolution) : undefined);
     if (perSecond === undefined || input.duration === undefined) return undefined;
     const ref = input.referenceVideoSeconds ?? 0;
-    const seconds =
-      withVideo && !input.durationIsBilled && price.referenceBilling === "argolink"
+    const seconds = input.durationIsBilled
+      ? input.duration
+      : billing === "argolink"
         ? argolinkBilledSeconds(input.duration, ref)
-        : input.duration;
-    return perSecond * seconds;
+        : billing === "add"
+          ? input.duration + ref
+          : billing === "double-min"
+            ? Math.max(input.duration + ref, input.duration * 2)
+            : input.duration;
+    return perSecond * seconds + imageFee(price.referenceImages, input, 1);
   }
   if (price.type === "per_image") {
-    const each = rate(price.byResolution, input.resolution) ?? price.usd;
-    return each === undefined ? undefined : each * count;
+    const quality = input.quality ?? "medium";
+    const each: number | undefined =
+      (input.resolution ? price.byResolutionQuality?.[`${input.resolution}/${quality}`] : undefined) ??
+      (input.resolution ? price.byResolutionQuality?.[`${input.resolution}/medium`] : undefined) ??
+      (input.quality ? price.byQuality?.[input.quality] : undefined) ??
+      rate(price.byResolution, input.resolution) ??
+      price.usd;
+    return each === undefined ? undefined : each * count + imageFee(price.referenceImages, input, count);
   }
   if (price.type === "per_megapixel") {
     const mp = input.megapixels ?? 1;
     const seconds = price.perSecond ? (input.duration ?? 1) : 1;
+    if (price.first !== undefined) {
+      const rounded = Math.max(1, Math.ceil(mp - 1e-9));
+      return (price.first + price.usd * Math.max(0, rounded - 1)) * seconds;
+    }
     return price.usd * mp * seconds;
   }
   const withVideo =
@@ -88,6 +179,45 @@ export function ratioAllowed(
   if (!model.capabilities.ratios.includes(ratio)) return false;
   const only = model.capabilities.ratioResolutions?.[ratio];
   return !only || only.includes(resolution);
+}
+
+type ImageAspectModel = {
+  capabilities: {
+    resolutions?: readonly string[];
+    ratios: readonly string[];
+    ratioResolutions?: Readonly<Record<string, readonly string[]>>;
+    autoFallback?: string;
+  };
+};
+
+/** Aspect stored for an image request. Auto uses the reference's ratio, else the model's fallback. */
+export function imageRequestAspect(
+  model: ImageAspectModel,
+  input: { ratio: string; resolution: string; references: number; autoRatio?: string },
+): string | undefined {
+  if (input.ratio !== "auto") return input.ratio;
+  if (
+    input.references > 0 &&
+    input.autoRatio &&
+    ratioAllowed(model, input.autoRatio, input.resolution) &&
+    input.autoRatio !== "auto"
+  )
+    return input.autoRatio;
+  return model.capabilities.autoFallback;
+}
+
+/**
+ * Megapixels the image composer shows and the image route saves.
+ * Auto with a reference uses that image's ratio. Auto with none uses `autoFallback`, or 1:1.
+ */
+export function imagePriceMegapixels(
+  model: ImageAspectModel,
+  input: { ratio: string; resolution: string; references: number; autoRatio?: string },
+): number {
+  const aspect = imageRequestAspect(model, input);
+  const billed = aspect && aspect !== "auto" ? aspect : "1:1";
+  const sized = model.capabilities.resolutions?.includes(input.resolution) ? input.resolution : undefined;
+  return outputMegapixels(sized, billed);
 }
 
 /** The supported ratio closest to an image's shape, for Auto with a reference image. */

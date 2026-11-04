@@ -9,11 +9,14 @@ import { X } from "./Icon";
 const SIZES = {
   sm: "w-full max-w-sm",
   md: "w-full max-w-lg",
-  /** Video lightbox width. */
-  lg: "w-[min(1200px,94vw)]",
-  /** Image lightbox width. */
-  xl: "w-[min(1300px,94vw)]",
+  lg: "w-[min(1100px,94vw)]",
   full: "h-full w-full max-w-none",
+} as const;
+
+/** Replaces the size's width. Lightboxes keep their previous caps. */
+const WIDTHS = {
+  1200: "w-[min(1200px,94vw)]",
+  1300: "w-[min(1300px,94vw)]",
 } as const;
 
 const SURFACES = {
@@ -23,6 +26,7 @@ const SURFACES = {
 } as const;
 
 export type ModalSize = keyof typeof SIZES;
+export type ModalWidth = keyof typeof WIDTHS;
 export type ModalSurface = keyof typeof SURFACES;
 
 export function Modal({
@@ -32,6 +36,7 @@ export function Modal({
   description,
   label,
   size = "md",
+  width,
   surface = "panel",
   showClose = true,
   children,
@@ -45,7 +50,9 @@ export function Modal({
   /** Accessible name when there is no visible title. */
   label?: string;
   size?: ModalSize;
-  /** Dialog fill. Replaces passing a `bg-*` class. */
+  /** When set, replaces the width from `size`. */
+  width?: ModalWidth;
+  /** Dialog fill. Defaults to panel so callers don't pass a competing `bg-*` class. */
   surface?: ModalSurface;
   showClose?: boolean;
   children: ReactNode;
@@ -82,8 +89,8 @@ export function Modal({
 
   return createPortal(
     <div
-      className={`overlay-in fixed inset-0 z-50 flex ${
-        size === "full" ? "bg-ink" : "items-center justify-center bg-black/80 p-3 sm:p-4"
+      className={`overlay-in fixed inset-0 z-50 flex bg-black/80 p-3 sm:p-4 ${
+        size === "full" ? "" : "items-center justify-center"
       }`}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -100,11 +107,7 @@ export function Modal({
         aria-label={title ? undefined : label}
         tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
-        className={`relative flex flex-col overflow-hidden text-fg outline-none ${SURFACES[surface]} ${
-          size === "full"
-            ? "h-dvh max-h-none w-full"
-            : `max-h-[min(92dvh,100%)] rounded-xl border border-line shadow-2xl ${SIZES[size]}`
-        } ${className}`}
+        className={`relative flex max-h-[min(92dvh,100%)] flex-col overflow-hidden rounded-xl border border-line text-fg shadow-2xl outline-none ${SURFACES[surface]} ${width ? WIDTHS[width] : SIZES[size]} ${className}`}
       >
         {title ? (
           <div className="flex items-start justify-between gap-3 px-5 pt-5">
@@ -123,9 +126,7 @@ export function Modal({
         ) : (
           showClose && <CloseButton onClose={() => onCloseRef.current()} floating />
         )}
-        <div className={`min-h-0 flex-1 overflow-y-auto ${title && size !== "full" ? "px-5 pt-4 pb-5" : ""}`}>
-          {children}
-        </div>
+        <div className={`min-h-0 flex-1 overflow-y-auto ${title ? "px-5 pt-4 pb-5" : ""}`}>{children}</div>
       </div>
     </div>,
     document.body,

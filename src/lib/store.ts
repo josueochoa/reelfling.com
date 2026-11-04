@@ -3,7 +3,9 @@
 
 import { all, first, run } from "./db";
 import { isDevMockTask } from "./devMock";
+import { getCredentials } from "./keys";
 import { providerForUser, terminalPollUpdate } from "./providers";
+import { fetchFalOutput, pollFal } from "./providers/fal";
 import { staleVideoFailure } from "./staleVideo";
 import { deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
 import { TERMINAL_STATUSES, type Generation } from "./types";
@@ -24,11 +26,12 @@ export async function getGeneration(userId: string, id: string): Promise<Generat
 
 export async function insertGeneration(userId: string, gen: Generation) {
   await run(
-    "INSERT INTO generations (id, user_id, created_at, data) VALUES (?, ?, ?, ?)",
+    "INSERT INTO generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)",
     gen.id,
     userId,
     gen.createdAt,
     JSON.stringify(gen),
+    gen.route ?? null,
   );
 }
 
@@ -63,8 +66,11 @@ export async function ensureStoredVideo(userId: string, gen: Generation): Promis
   const key = videoKey(gen.id);
   let asset = await getAsset(userId, key);
   if (!asset) {
-    const provider = await providerForUser(userId, gen.provider ?? "modelark");
-    const res = await provider.fetchVideo(gen.taskId, { videoUrl: gen.remoteVideoUrl });
+    const providerId = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+    const res =
+      (gen.route ?? gen.provider) === "fal"
+        ? await fetchFalOutput(gen.remoteVideoUrl || "")
+        : await (await providerForUser(userId, providerId)).fetchVideo(gen.taskId, { videoUrl: gen.remoteVideoUrl });
     if (!res.ok) throw new Error(`Video download failed (${res.status})`);
     asset = await putAsset(userId, { key, source: res, contentType: "video/mp4", generationId: gen.id });
   }
@@ -79,6 +85,19 @@ export async function failStaleGenerations(now = Date.now()) {
   return res.meta.changes;
 }
 
+/** fal polls the URLs from submit. Every other provider uses its task id. */
+async function syncTask(userId: string, gen: Generation) {
+  if ((gen.route ?? gen.provider) !== "fal") {
+    const providerId = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+    return (await providerForUser(userId, providerId)).getTask(gen.taskId);
+  }
+  if (!gen.falStatusUrl || !gen.falResponseUrl) return { status: gen.status };
+  const creds = await getCredentials(userId, "fal");
+  if (!creds) return { status: gen.status };
+  const snap = await pollFal(creds.apiKey, { statusUrl: gen.falStatusUrl, responseUrl: gen.falResponseUrl });
+  return { status: snap.status, videoUrl: snap.outputs[0]?.url, error: snap.error };
+}
+
 /** Pull the latest task state from the provider and persist it. */
 export async function syncGeneration(userId: string, id: string): Promise<Generation | undefined> {
   let gen = await getGeneration(userId, id);
@@ -86,7 +105,7 @@ export async function syncGeneration(userId: string, id: string): Promise<Genera
 
   if (!TERMINAL_STATUSES.includes(gen.status) && !isDevMockTask(gen.taskId)) {
     try {
-      const task = await (await providerForUser(userId, gen.provider ?? "modelark")).getTask(gen.taskId);
+      const task = await syncTask(userId, gen);
       const done = TERMINAL_STATUSES.includes(task.status);
       gen = await updateGeneration(userId, id, {
         status: task.status,

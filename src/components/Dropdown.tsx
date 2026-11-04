@@ -13,6 +13,8 @@ export interface DropdownOption<T extends string> {
   disabled?: boolean;
   /** Shown on hover or tap when the option can't be selected. Opens the keys dialog. */
   unlock?: string;
+  /** Family heading, drawn once when it changes. */
+  group?: string;
 }
 
 export function Dropdown<T extends string>({
@@ -74,15 +76,21 @@ export function Dropdown<T extends string>({
           className="absolute bottom-full left-0 z-30 mb-2 max-h-80 min-w-44 overflow-y-auto rounded-xl border border-white/10 bg-panel p-1.5 shadow-2xl shadow-black/60"
         >
           <p className="px-2.5 pt-1 pb-1.5 text-xs text-zinc-500">{title}</p>
-          {options.map((o) => {
+          {options.map((o, index) => {
             const locked = !!o.disabled;
             const showUnlock = locked && !!o.unlock && hover === o.value;
+            const showGroup = !!o.group && o.group !== options[index - 1]?.group;
             return (
               <div
                 key={o.value}
                 onMouseEnter={() => setHover(o.value)}
                 onMouseLeave={() => setHover((current) => (current === o.value ? null : current))}
               >
+                {showGroup && (
+                  <p data-testid="model-family" data-family={o.group} className="px-2.5 pt-2 pb-0.5 text-[10px] font-medium tracking-wide text-zinc-500 uppercase">
+                    {o.group}
+                  </p>
+                )}
                 <button
                   type="button"
                   role="option"

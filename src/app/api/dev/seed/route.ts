@@ -4,6 +4,7 @@
 
 import { errorResponse, requireUser } from "@/lib/auth";
 import { run } from "@/lib/db";
+import { isNextDev } from "@/lib/devMock";
 import { LOCAL_BUCKET } from "@/lib/localBucket";
 import { readFixture, writeLocal } from "@/lib/localMedia";
 import { saveKey } from "@/lib/keys";
@@ -45,7 +46,7 @@ async function putAsset(
 }
 
 export async function POST() {
-  if (process.env.NODE_ENV !== "development") return new Response("Not found", { status: 404 });
+  if (!isNextDev()) return new Response("Not found", { status: 404 });
   try {
     const user = await requireUser();
     const now = Date.now();
