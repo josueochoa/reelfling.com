@@ -8,6 +8,7 @@ import { downloadGeneratedImage } from "./imageDownload";
 import { getCredentials } from "./keys";
 import { normalizeMentions } from "./mentions";
 import { argo } from "./providers/argolink";
+import { falImageInput, fetchFalOutput, pollFal, submitFal } from "./providers/fal";
 import { generateOpenRouterImages, openRouterImageFile } from "./providers/openrouter";
 import { MAPPERS } from "./registry/mappers";
 import type { OpenRouterImageCall } from "./registry/bodies";
@@ -16,10 +17,11 @@ import {
   mentionSyntax,
   PROVIDER_INFO,
   routeFor,
-  type ImageKeyProvider,
   type ImageQuality,
   type ImageResolution,
 } from "./registry";
+import { catalogModel } from "./registry/generated";
+import { isImage } from "./registry/types";
 import { deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
 
 export type ImageStatus = "queued" | "running" | "succeeded" | "failed";
@@ -27,7 +29,7 @@ export type ImageStatus = "queued" | "running" | "succeeded" | "failed";
 export interface ImageGeneration {
   id: string;
   /** Which key ran it. Missing on jobs from before OpenRouter (= argolink). */
-  provider?: ImageKeyProvider;
+  provider?: "argolink" | "openrouter" | "fal";
   model: string;
   /** As written, with "@Image 1" mentions. */
   prompt: string;
@@ -139,7 +141,8 @@ export async function runImageJob(userId: string, id: string) {
   const gen = (await getImageGeneration(userId, id))!;
   let apiKey = "";
   try {
-    const model = getImageModel(gen.model);
+    const found = catalogModel(gen.model) ?? getImageModel(gen.model);
+    const model = found && isImage(found) ? found : undefined;
     if (!model) throw new Error(`Unknown model ${gen.model}`);
     const provider = gen.provider ?? "argolink";
     const route = routeFor(model, provider);
@@ -155,38 +158,42 @@ export async function runImageJob(userId: string, id: string) {
         return { image_url: await providerUrl(asset) };
       }),
     );
-    const map = MAPPERS[route.mapper];
-    if (!map) throw new Error(`${model.name} has no input mapper`);
-    const mapped = map(
-      {
-        kind: "image",
-        request: {
-          prompt: normalizeMentions(gen.prompt, mentionSyntax(model.refSyntax)),
-          aspect: gen.aspect,
-          resolution: gen.resolution,
-          quality: gen.quality,
-          count: gen.count,
-          ...(references.length && { images: references }),
-        },
-      },
-      { endpoint: route.endpoint },
-    );
-
+    const prompt = normalizeMentions(gen.prompt, mentionSyntax(model.refSyntax));
     const items =
-      provider === "openrouter"
-        ? await generateOpenRouterImages(creds.apiKey, mapped as OpenRouterImageCall)
-        : ((
-            await argo<ArgoImages>(creds, (mapped as { path: string }).path, {
-              method: "POST",
-              body: JSON.stringify((mapped as { body: unknown }).body),
-            })
-          ).data ?? []);
+      provider === "fal"
+        ? await falImageFiles(
+            creds.apiKey,
+            route.endpoint,
+            falImageInput(
+              {
+                prompt,
+                ratio: gen.aspect,
+                resolution: gen.resolution,
+                quality: gen.quality,
+                count: gen.count,
+                images: references.map((item) => item.image_url),
+              },
+              model.inputs ?? {},
+            ),
+          )
+        : await mappedImages(provider, creds, model.name, route, {
+            prompt,
+            aspect: gen.aspect,
+            resolution: gen.resolution,
+            quality: gen.quality,
+            count: gen.count,
+            ...(references.length && { images: references }),
+          });
     if (!items.length) throw new Error(`${PROVIDER_INFO[provider].label} returned no images`);
 
     const images: ImageGeneration["images"] = [];
     for (const [i, item] of items.entries()) {
       const source =
-        provider === "openrouter" ? await openRouterImageFile(creds.apiKey, item) : await downloadGeneratedImage(item);
+        provider === "fal" && item.url
+          ? await fetchFalOutput(item.url)
+          : provider === "openrouter"
+            ? await openRouterImageFile(creds.apiKey, item)
+            : await downloadGeneratedImage(item);
       const contentType = source.headers.get("content-type")?.split(";")[0] || "image/jpeg";
       const asset = await putAsset(userId, {
         key: `images/${id}/${i}.${EXT[contentType] ?? "jpg"}`,
@@ -206,6 +213,46 @@ export async function runImageJob(userId: string, id: string) {
       completedAt: Date.now(),
     });
   }
+}
+
+const FAL_IMAGE_LIMIT_MS = 14 * 60 * 1000;
+
+/** Submits one fal image job and polls until the queue finishes. The key stays on fal hosts. */
+async function falImageFiles(apiKey: string, endpoint: string, input: unknown) {
+  const submitted = await submitFal(apiKey, endpoint, input);
+  const deadline = Date.now() + FAL_IMAGE_LIMIT_MS;
+  for (;;) {
+    const snap = await pollFal(apiKey, submitted);
+    if (snap.status === "succeeded") return snap.outputs.map((output) => ({ url: output.url }));
+    if (snap.status === "failed") throw new Error(snap.error || "fal image generation failed");
+    if (Date.now() > deadline) throw new Error("fal image generation timed out");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+async function mappedImages(
+  provider: string,
+  creds: { apiKey: string; baseUrl?: string },
+  name: string,
+  route: { mapper: keyof typeof MAPPERS | string; endpoint: string },
+  request: {
+    prompt: string;
+    aspect?: string;
+    resolution: ImageGeneration["resolution"];
+    quality?: ImageGeneration["quality"];
+    count: number;
+    images?: { image_url: string }[];
+  },
+) {
+  const map = MAPPERS[route.mapper as keyof typeof MAPPERS];
+  if (!map) throw new Error(`${name} has no input mapper`);
+  const mapped = map({ kind: "image", request }, { endpoint: route.endpoint });
+  if (provider === "openrouter") return generateOpenRouterImages(creds.apiKey, mapped as OpenRouterImageCall);
+  const body = await argo<ArgoImages>(creds, (mapped as { path: string }).path, {
+    method: "POST",
+    body: JSON.stringify((mapped as { body: unknown }).body),
+  });
+  return body.data ?? [];
 }
 
 /** Jobs whose run died (Worker evicted, queue lost): fail them so they don't spin forever. */

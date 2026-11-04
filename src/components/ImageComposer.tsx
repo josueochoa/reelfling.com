@@ -6,6 +6,7 @@ import { useRef } from "react";
 import {
   estimateRouteCost,
   imageModels,
+  imagePriceMegapixels,
   imageProviderFor,
   PROVIDER_INFO,
   ratioAllowed,
@@ -15,6 +16,7 @@ import {
   type RouteProvider,
 } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders, sortByAvailability } from "@/lib/registry/availability";
+import { groupByFamily } from "@/lib/registry/badges";
 import { preferredRoute } from "@/lib/registry/routing";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
 import { Dropdown } from "./Dropdown";
@@ -34,7 +36,7 @@ export interface ComposerState {
 }
 
 const QUALITY_LABEL: Record<ImageQuality, string> = { auto: "Auto", low: "Low", medium: "Medium", high: "High" };
-const MODELS = imageModels();
+const HAND_MODELS = imageModels();
 
 function Mark({ mark }: { mark?: string }) {
   if (!mark) return null;
@@ -60,6 +62,8 @@ export function ImageComposer({
   defaultProvider,
   onSaveRoute,
   onOpenKeys,
+  models = HAND_MODELS,
+  autoRatio,
 }: {
   state: ComposerState;
   onChange: (patch: Partial<ComposerState>) => void;
@@ -77,6 +81,13 @@ export function ImageComposer({
   defaultProvider?: string | null;
   onSaveRoute?: (modelId: string, provider: string) => void;
   onOpenKeys: () => void;
+  /** Hand models plus fal image models from /api/models. */
+  models?: readonly ImageModel[];
+  /**
+   * Nearest allowed ratio for the first reference when aspect is Auto.
+   * The image route prices this same value.
+   */
+  autoRatio?: string;
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
   const route = preferredRoute(model, keyed, [
@@ -87,23 +98,34 @@ export function ImageComposer({
   const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
-  const cost = estimateRouteCost(model, route, { resolution, count }) ?? 0;
+  const priceInput = { ratio, resolution, references: references.length, autoRatio };
+  const megapixels = imagePriceMegapixels(model, priceInput);
+  const cost =
+    estimateRouteCost(model, route, { resolution, count, quality, referenceImages: references.length, megapixels }) ?? 0;
   const counts = { Image: references.length, Video: 0, Audio: 0 };
   const bad = invalidMentions(prompt, counts);
   const uploading = references.some((r) => r.status !== "ready");
   const modelAvail = availabilityFor(routeProviders(model.routes), keyed);
-  const canGenerate = !submitting && !uploading && modelAvail.available && prompt.trim().length > 0 && bad.length === 0;
-  const models = sortByAvailability(MODELS, (item) => availabilityFor(routeProviders(item.routes), keyed).available);
+  const sorted = sortByAvailability(models, (item) => availabilityFor(routeProviders(item.routes), keyed).available);
+  const overLimit = references.length > caps.references.image;
+  const limitMessage = overLimit
+    ? `${model.name} takes up to ${caps.references.image} reference image${caps.references.image === 1 ? "" : "s"}`
+    : null;
+  const canGenerate =
+    !submitting && !uploading && !overLimit && modelAvail.available && prompt.trim().length > 0 && bad.length === 0;
 
   function changeModel(id: string) {
-    const m = MODELS.find((x) => x.id === id);
+    const m = models.find((x) => x.id === id);
     if (!m || !availabilityFor(routeProviders(m.routes), keyed).available) return;
-    const res = m.capabilities.resolutions.includes(resolution) ? resolution : (m.capabilities.resolutions[0] as ImageResolution);
+    const res = m.capabilities.resolutions.includes(resolution)
+      ? resolution
+      : ((m.capabilities.resolutions[0] as ImageResolution | undefined) ?? resolution);
     onChange({
       model: m,
       resolution: res,
       ratio: ratioAllowed(m, ratio, res) ? ratio : "auto",
       count: Math.min(count, m.capabilities.maxImages),
+      quality: m.capabilities.qualities?.includes(quality) ? quality : (m.capabilities.qualities?.[0] ?? quality),
       route: undefined,
     });
   }
@@ -182,6 +204,11 @@ export function ImageComposer({
               {bad.join(", ")} {bad.length === 1 ? "doesn't" : "don't"} match an attached image
             </p>
           )}
+          {limitMessage && (
+            <p data-testid="reference-limit" className="px-1 text-xs text-red-300">
+              {limitMessage}
+            </p>
+          )}
           {error && <p className="px-1 text-xs text-red-300">{error}</p>}
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -208,20 +235,23 @@ export function ImageComposer({
                   <Mark mark={model.mark} /> {model.name} <span className="text-zinc-500">›</span>
                 </>
               }
-              options={models.map((m) => {
-                const open = availabilityFor(routeProviders(m.routes), keyed);
-                return {
-                  value: m.id,
-                  label: (
-                    <>
-                      <Mark mark={m.mark} /> {m.name}
-                    </>
-                  ),
-                  hint: open.available ? m.description : undefined,
-                  disabled: !open.available,
-                  unlock: open.available ? undefined : availabilityHint(open.needs),
-                };
-              })}
+              options={groupByFamily(sorted).flatMap((group) =>
+                group.models.map((m) => {
+                  const open = availabilityFor(routeProviders(m.routes), keyed);
+                  return {
+                    value: m.id,
+                    group: group.family,
+                    label: (
+                      <>
+                        <Mark mark={m.mark} /> {m.name}
+                      </>
+                    ),
+                    hint: open.available ? m.description : undefined,
+                    disabled: !open.available,
+                    unlock: open.available ? undefined : availabilityHint(open.needs),
+                  };
+                }),
+              )}
               onChange={changeModel}
               onOpenKeys={onOpenKeys}
             />
@@ -265,22 +295,24 @@ export function ImageComposer({
               }))}
               onChange={(r) => onChange({ ratio: r })}
             />
-            <Dropdown
-              title="Resolution"
-              icon="◇"
-              value={resolution}
-              options={caps.resolutions.map((r) => ({
-                value: r,
-                label: r.toUpperCase(),
-                hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1 }) ?? 0).toFixed(3)} per image`,
-              }))}
-              onChange={(r) =>
-                onChange({
-                  resolution: r as ImageResolution,
-                  ratio: ratioAllowed(model, ratio, r) ? ratio : "auto",
-                })
-              }
-            />
+            {caps.resolutions.length > 0 && (
+              <Dropdown
+                title="Resolution"
+                icon="◇"
+                value={resolution}
+                options={caps.resolutions.map((r) => ({
+                  value: r,
+                  label: r.toUpperCase(),
+                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: imagePriceMegapixels(model, { ratio, resolution: r, references: references.length, autoRatio }) }) ?? 0).toFixed(3)} per image`,
+                }))}
+                onChange={(r) =>
+                  onChange({
+                    resolution: r as ImageResolution,
+                    ratio: ratioAllowed(model, ratio, r) ? ratio : "auto",
+                  })
+                }
+              />
+            )}
             {caps.qualities && (
               <Dropdown
                 title="Quality"

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { normalizeMentions } from "../mentions";
 import { availabilityFor, routeProviders } from "./availability";
-import { openRouterPickerModels } from "./generated";
+import { catalogPickerModels } from "./generated";
 import { estimateRouteCost, getModel, imageProviderFor, isVideo, mentionSyntax, MODELS } from "./index";
 import { preferredRoute, routeChoiceError } from "./routing";
 
@@ -14,7 +14,7 @@ const seedance = () => {
 
 function studioCatalog() {
   const hand = MODELS.filter(isVideo);
-  const extra = openRouterPickerModels().filter((model) => !hand.some((item) => item.id === model.id));
+  const extra = catalogPickerModels().filter((model) => !hand.some((item) => item.id === model.id));
   return [...hand, ...extra];
 }
 
@@ -70,16 +70,18 @@ describe("per-model routes", () => {
   });
 
   it("leaves unchecked fal catalog models out of the picker", () => {
-    const endpoints = openRouterPickerModels().flatMap((model) => model.routes.map((route) => `${route.provider}:${route.endpoint}`));
+    const endpoints = catalogPickerModels().flatMap((model) =>
+      model.routes.map((route) => `${route.provider}:${route.endpoint}`),
+    );
     for (const dropped of [
       "fal:fal-ai/kling-video/v3/pro/text-to-video",
       "fal:fal-ai/wan/v2.2-a14b/text-to-video",
-      "fal:alibaba/wan-3.0/reference-to-video",
       "fal:fal-ai/minimax/video-01/image-to-video",
     ]) {
       assert.equal(endpoints.includes(dropped), false, dropped);
     }
-    assert.equal(endpoints.some((endpoint) => endpoint.startsWith("fal:")), false);
+    assert.equal(endpoints.includes("fal:alibaba/wan-3.0/reference-to-video"), true);
+    assert.equal(endpoints.includes("fal:kling/v4/text-to-video"), true);
   });
 
   it("rejects an unknown model id and a provider that is not a route of that model", () => {

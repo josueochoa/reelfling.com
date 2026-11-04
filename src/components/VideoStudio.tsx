@@ -193,8 +193,8 @@ export function VideoStudio({
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
-    <div className="flex h-full flex-col lg:flex-row">
-      <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:flex-row">
+      <aside className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
           <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
             API keys

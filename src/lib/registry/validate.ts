@@ -21,7 +21,7 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
   if (model.promptRequired && !req.prompt?.trim()) return `${label} needs a prompt`;
   if (!req.prompt?.trim() && !(frames && req.firstFrame) && !req.referenceImages?.length)
     return "Add a prompt or an image";
-  if (!caps.ratios.includes(req.ratio)) return `Ratio ${req.ratio} isn't available on ${label}`;
+  if (caps.ratios.length > 0 && !caps.ratios.includes(req.ratio)) return `Ratio ${req.ratio} isn't available on ${label}`;
   if (req.ratio === "adaptive" && !(frames && req.firstFrame)) return "Auto ratio needs a start frame";
   if (caps.resolutions.length && !caps.resolutions.includes(req.resolution))
     return `Resolution ${req.resolution} isn't available on ${label} (${caps.resolutions.join(", ")})`;
@@ -41,6 +41,8 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
     if (audios > audio) return `${label} takes up to ${audio} reference audio clips`;
     if (images + videos + audios > total) return `${label} takes up to ${total} references in total`;
     if (audios > 0 && images + videos === 0) return "Audio needs at least one image or video reference";
+    if (model.inputs?.elements && model.inputs.start && images === 0 && !req.firstFrame)
+      return `${label} needs an image`;
   }
   if (req.generateAudio && caps.audio === false) return `${label} doesn't generate audio`;
   if (req.seed !== undefined && !caps.seed) return `${label} doesn't take a seed`;

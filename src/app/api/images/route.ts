@@ -5,14 +5,15 @@ import { invalidMentions } from "@/lib/mentions";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import {
   estimateRouteCost,
-  getImageModel,
+  imagePriceMegapixels,
   imageProviderFor,
+  imageRequestAspect,
   imageRequestError,
-  ratioAllowed,
-  type ImageKeyProvider,
+  isImage,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
+import { catalogModel, FAL_IMAGE_ENDPOINTS } from "@/lib/registry/generated";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
@@ -49,7 +50,8 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const req = (await request.json()) as ImageRequest;
-    const model = getImageModel(req.model);
+    const found = catalogModel(req.model);
+    const model = found && isImage(found) ? found : undefined;
     if (!model) return bad(`Unknown model "${req.model}"`);
     const prompt = req.prompt?.trim();
     const refs = Array.isArray(req.references) ? req.references : [];
@@ -69,18 +71,30 @@ export async function POST(request: Request) {
     const saved = await getRoutePreference(user.id, model.id);
     const explicit = typeof req.route === "string" ? req.route : null;
     const route = preferredRoute(model, keyed, [explicit, saved, imageProviderFor(user.activeProvider, [...keyed])]);
-    if (!route || (route.provider !== "argolink" && route.provider !== "openrouter"))
+    const falImage = route?.provider === "fal" && FAL_IMAGE_ENDPOINTS.has(route.endpoint) && !!model.inputs;
+    if (
+      !route ||
+      !(route.provider === "argolink" || route.provider === "openrouter" || (route.provider === "fal" && falImage))
+    )
       return bad("This model isn't available on the image tab.");
-    const imageProvider: ImageKeyProvider = route.provider;
+    const imageProvider = route.provider;
     await assertStorageAvailable(user.id);
 
-    // "auto": the reference's shape if there is one; otherwise the model's own fallback.
-    let aspect: string | undefined = req.ratio;
-    if (req.ratio === "auto")
-      aspect =
-        refs.length && req.autoRatio && ratioAllowed(model, req.autoRatio, req.resolution) && req.autoRatio !== "auto"
-          ? req.autoRatio
-          : model.capabilities.autoFallback;
+    const priceInput = {
+      ratio: req.ratio,
+      resolution: req.resolution,
+      references: refs.length,
+      autoRatio: req.autoRatio,
+    };
+    const aspect = imageRequestAspect(model, priceInput);
+    const estimate =
+      estimateRouteCost(model, imageProvider, {
+        resolution: req.resolution,
+        count: req.count,
+        quality: req.quality,
+        referenceImages: refs.length,
+        megapixels: imagePriceMegapixels(model, priceInput),
+      }) ?? 0;
 
     const now = Date.now();
     const gen: ImageGeneration = {
@@ -96,7 +110,7 @@ export async function POST(request: Request) {
       count: req.count,
       references: refs,
       images: [],
-      cost: estimateRouteCost(model, imageProvider, { resolution: req.resolution, count: req.count }) ?? 0,
+      cost: estimate,
       route: imageProvider,
       routeEndpoint: route.endpoint,
       createdAt: now,

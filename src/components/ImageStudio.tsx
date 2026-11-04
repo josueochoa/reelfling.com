@@ -3,7 +3,7 @@
 // The Image tab: generated images in a grid, with the prompt bar floating over it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
+import { imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed, type ImageModel } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
@@ -49,6 +49,7 @@ export function ImageStudio({
   onUseAsStartFrame,
   tools,
   onToolJob,
+  catalogModels,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -58,6 +59,8 @@ export function ImageStudio({
   onUseAsStartFrame: (item: LibraryItem) => void;
   tools: readonly ToolView[];
   onToolJob: () => void;
+  /** fal image models from /api/models. Null until that request returns. */
+  catalogModels?: readonly ImageModel[] | null;
 }) {
   const [gens, setGens] = useState<ImageGeneration[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -89,7 +92,12 @@ export function ImageStudio({
     routePreferences[state.model.id],
     imageProviderFor(defaultProvider, [...keyed]),
   ])?.provider;
-  const imageProvider = imageRoute === "argolink" || imageRoute === "openrouter" ? imageRoute : undefined;
+  const imageProvider =
+    imageRoute === "argolink" || imageRoute === "openrouter" || imageRoute === "fal" ? imageRoute : undefined;
+  const models = [
+    ...imageModels(),
+    ...(catalogModels ?? []).filter((model) => !imageModels().some((item) => item.id === model.id)),
+  ];
 
   function saveRoute(modelId: string, provider: string) {
     setRoutePreferences((prev) => ({ ...prev, [modelId]: provider }));
@@ -165,18 +173,28 @@ export function ImageStudio({
     await library.remove(item.id).catch((e) => setError((e as Error).message));
   }
 
+  const firstRef = state.ratio === "auto" ? references[0] : undefined;
+  const firstSrc = firstRef ? thumbSrc(firstRef) : undefined;
+  const [measured, setMeasured] = useState<{ src: string; ratio: string } | undefined>();
+  useEffect(() => {
+    if (!firstSrc) return;
+    let gone = false;
+    imageSize(firstSrc).then((size) => {
+      if (gone || !size) return;
+      setMeasured({ src: firstSrc, ratio: nearestRatio(state.model, size.w, size.h, state.resolution) });
+    });
+    return () => {
+      gone = true;
+    };
+  }, [firstSrc, state.model, state.resolution]);
+  const autoRatio = firstSrc && measured?.src === firstSrc ? measured.ratio : undefined;
+
   // ---- generate
   async function generate() {
     setError(null);
     setSubmitting(true);
     try {
       const { model, ratio, resolution } = state;
-      let autoRatio: string | undefined;
-      const first = references[0];
-      if (ratio === "auto" && first) {
-        const size = await imageSize(thumbSrc(first) ?? "");
-        if (size) autoRatio = nearestRatio(model, size.w, size.h, resolution);
-      }
       upsert(
         await apiJson<ImageGeneration>("/api/images", {
           method: "POST",
@@ -232,7 +250,8 @@ export function ImageStudio({
 
   /** Back into the composer: prompt, settings and the reference images still in Uploads. */
   function reuse(gen: ImageGeneration) {
-    const model = getImageModel(gen.model) ?? state.model;
+    // Reuse puts the stored route back on this generation. It does not save a preference.
+    const model = models.find((item) => item.id === gen.model) ?? state.model;
     setState({
       model,
       prompt: gen.prompt,
@@ -370,6 +389,8 @@ export function ImageStudio({
             defaultProvider={defaultProvider}
             onSaveRoute={saveRoute}
             onOpenKeys={onOpenKeys}
+            models={models}
+            autoRatio={autoRatio}
           />
         </div>
       </div>
@@ -409,6 +430,7 @@ export function ImageStudio({
           keyed={keyed}
           onOpenKeys={onOpenKeys}
           onToolJob={onToolJob}
+          modelName={models.find((model) => model.id === openTile.model)?.name}
         />
       )}
     </div>
@@ -428,6 +450,7 @@ function ImageLightbox({
   keyed,
   onOpenKeys,
   onToolJob,
+  modelName,
 }: {
   gen: ImageGeneration;
   index: number;
@@ -441,6 +464,7 @@ function ImageLightbox({
   keyed: ReadonlySet<string>;
   onOpenKeys: () => void;
   onToolJob: () => void;
+  modelName?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -452,9 +476,8 @@ function ImageLightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, onNavigate]);
 
-  const model = getImageModel(gen.model);
   const details: [string, string][] = [
-    ["Model", model?.name ?? gen.model],
+    ["Model", modelName ?? gen.model],
     ["Ratio", gen.aspect ?? "Auto"],
     ["Resolution", gen.resolution.toUpperCase()],
     ...(gen.quality ? [["Quality", gen.quality] as [string, string]] : []),

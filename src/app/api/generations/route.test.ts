@@ -12,6 +12,10 @@ import { RequestCookies } from "next/dist/server/web/spec-extension/cookies.js";
 import { sha256 } from "@/lib/crypto";
 import { setTestEnv, type AppEnv } from "@/lib/db";
 import { saveKey } from "@/lib/keys";
+import { falQueueInput } from "@/lib/providers/fal";
+import { isVideo } from "@/lib/registry";
+import { ALL_MODELS, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
+import type { VideoModel } from "@/lib/registry/types";
 
 const USER = "user-1";
 const TOKEN = "session-token";
@@ -77,7 +81,7 @@ function asRequest<T>(fn: () => Promise<T>) {
 
 const originalFetch = globalThis.fetch;
 const originalError = console.error;
-let calls: string[] = [];
+let calls: { url: string; body: string }[] = [];
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -86,29 +90,79 @@ afterEach(() => {
   database.prepare("DELETE FROM generations").run();
 });
 
-async function post(model: string) {
+const IMAGE_URL = "https://cdn.example/frame.png";
+const VIDEO_URL = "https://cdn.example/clip.mp4";
+
+function modelFor(endpoint: string): VideoModel {
+  const model = ALL_MODELS.find(
+    (item) => isVideo(item) && item.routes.some((route) => route.provider === "fal" && route.endpoint === endpoint),
+  );
+  assert.ok(model && isVideo(model) && model.inputs, endpoint);
+  return model;
+}
+
+/** A request this model's caps accept, with https media when the schema takes it. */
+function requestFor(model: VideoModel) {
+  const caps = model.capabilities;
+  const ratio = caps.ratios.find((item) => item !== "auto" && item !== "adaptive") ?? "16:9";
+  const resolution = caps.resolutions.includes("720p") ? "720p" : (caps.resolutions[0] ?? "720p");
+  const frames = caps.references.image === 0 && caps.frames.start;
+  const generateAudio = !!caps.audio;
+  return {
+    model: model.id,
+    route: "fal",
+    prompt: "a boat on a lake",
+    mode: frames ? "frames" : "references",
+    ratio,
+    resolution,
+    duration: caps.durations?.default ?? 5,
+    ...(generateAudio ? { generateAudio: true } : {}),
+    ...(frames ? { firstFrame: IMAGE_URL } : {}),
+    ...(!frames && caps.references.image > 0 ? { referenceImages: [IMAGE_URL] } : {}),
+    ...(!frames && caps.references.video > 0 ? { referenceVideos: [VIDEO_URL] } : {}),
+  };
+}
+
+function providerInput(model: VideoModel, req: ReturnType<typeof requestFor>) {
+  return {
+    prompt: req.prompt,
+    duration: req.duration,
+    resolution: req.resolution,
+    ratio: req.ratio,
+    generateAudio: req.generateAudio,
+    firstFrame: "firstFrame" in req ? req.firstFrame : undefined,
+    referenceImages: "referenceImages" in req ? req.referenceImages : undefined,
+    referenceVideos: "referenceVideos" in req ? req.referenceVideos : undefined,
+  };
+}
+
+function installFetch(refuse: boolean) {
   calls = [];
   console.error = () => {};
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    calls.push(url);
-    return new Response("provider should not be called", { status: 500 });
+    const body = typeof init?.body === "string" ? init.body : "";
+    calls.push({ url, body });
+    if (refuse) return new Response("provider should not be called", { status: 500 });
+    return new Response(
+      JSON.stringify({
+        request_id: "req-checked",
+        status_url: "https://queue.fal.run/status/req-checked",
+        response_url: "https://queue.fal.run/response/req-checked",
+        cancel_url: "https://queue.fal.run/cancel/req-checked",
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
   }) as typeof fetch;
+}
+
+async function post(body: unknown) {
   return asRequest(() =>
     POST(
       new Request("https://internal.invalid/api/generations", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          route: "fal",
-          prompt: "a boat on a lake",
-          mode: "references",
-          ratio: "16:9",
-          resolution: "720p",
-          duration: 5,
-          generateAudio: true,
-        }),
+        body: JSON.stringify(body),
       }),
     ),
   );
@@ -119,10 +173,19 @@ describe("POST /api/generations", () => {
     for (const model of [
       "fal:fal-ai/kling-video/v3/pro/text-to-video",
       "fal:fal-ai/wan/v2.2-a14b/text-to-video",
-      "fal:alibaba/wan-3.0/reference-to-video",
       "fal:fal-ai/minimax/video-01/image-to-video",
     ]) {
-      const res = await post(model);
+      installFetch(true);
+      const res = await post({
+        model,
+        route: "fal",
+        prompt: "a boat on a lake",
+        mode: "references",
+        ratio: "16:9",
+        resolution: "720p",
+        duration: 5,
+        generateAudio: true,
+      });
       const body = await res.text();
       assert.equal(res.status, 400, body);
       assert.equal(JSON.parse(body).error, "This model isn't available on the video tab.");
@@ -131,5 +194,27 @@ describe("POST /api/generations", () => {
     }
     const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
     assert.equal(rows.n, 0);
+  });
+
+  it("submits each schema-checked fal video with that model's body", async () => {
+    assert.ok(FAL_VIDEO_ENDPOINTS.size > 0);
+    for (const endpoint of FAL_VIDEO_ENDPOINTS) {
+      const model = modelFor(endpoint);
+      const req = requestFor(model);
+      installFetch(false);
+      const res = await post(req);
+      const text = await res.text();
+      assert.equal(res.status, 201, `${endpoint} ${text}`);
+      assert.equal(text.includes(KEY), false);
+      assert.equal(calls.length, 1, endpoint);
+      const call = calls[0];
+      assert.equal(call.url, `https://queue.fal.run/${endpoint}`);
+      assert.equal(call.url.includes(KEY), false);
+      assert.equal(call.body.includes(KEY), false);
+      const sent = JSON.parse(call.body) as Record<string, unknown>;
+      const input = providerInput(model, req);
+      assert.deepEqual(sent, falQueueInput(input, model.inputs));
+      assert.notDeepEqual(sent, falQueueInput(input));
+    }
   });
 });

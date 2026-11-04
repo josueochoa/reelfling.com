@@ -191,24 +191,43 @@ export type PerSecondPrice = {
    */
   byResolutionWithVideo?: Readonly<Record<string, number>>;
   /**
-   * `argolink`: billed seconds = output + floor(reference-video seconds),
-   * and at least ceil(output × 5/3). Reference images and audio are free.
+   * How reference-video seconds change the bill.
+   * `argolink`: output + floor(reference seconds), at least ceil(output × 5/3).
+   * `add`: output + reference seconds, at this rate (the with-video rate when set).
+   * `double-min`: output + reference seconds, and at least twice the output, at the with-video rate.
+   * Reference images use `referenceImages` when the catalog prices them. Audio does not.
    */
-  referenceBilling?: "argolink";
+  referenceBilling?: "argolink" | "add" | "double-min";
+  /** Extra USD for reference images past `free`. `perOutput` folds that into each output image. */
+  referenceImages?: ReferenceImageFee;
   /** Floor for one generation, when the provider publishes one. */
   minimum?: number;
+};
+
+export type ReferenceImageFee = {
+  usd: number;
+  /** This many reference images are included. */
+  free: number;
+  /** When set, the extra is added to each output image instead of once per request. */
+  perOutput?: boolean;
 };
 
 export type PerImagePrice = {
   type: "per_image";
   byResolution?: Readonly<Record<string, number>>;
+  byQuality?: Readonly<Record<string, number>>;
+  /** `${resolution}/${quality}` when both change the rate. */
+  byResolutionQuality?: Readonly<Record<string, number>>;
   usd?: number;
+  referenceImages?: ReferenceImageFee;
 };
 
 export type PerMegapixelPrice = {
   type: "per_megapixel";
-  /** USD per megapixel, or per megapixel-second when `perSecond` is set. */
+  /** USD per megapixel, or per extra megapixel when `first` is set. */
   usd: number;
+  /** USD for the first megapixel. Later megapixels cost `usd`, rounded up. */
+  first?: number;
   perSecond?: boolean;
 };
 
@@ -247,6 +266,33 @@ interface ModelBase {
   refSyntax: RefSyntax;
   /** Short picker mark, when the family has one. */
   mark?: string;
+  /**
+   * fal queue field names for this model's published input. Absent on routes whose
+   * body is still the Seedance shape (`image_url`, `image_urls`, `video_urls`).
+   */
+  inputs?: FalInputMap;
+}
+
+/** Which fal fields a model's queue schema accepts. Built from the live OpenAPI document. */
+export interface FalInputMap {
+  start?: "image_url" | "start_image_url";
+  end?: "end_image_url";
+  images?: "image_urls" | "reference_image_urls";
+  videos?: "video_urls" | "reference_video_urls";
+  audios?: "audio_urls" | "reference_audio_urls";
+  /** @Image and @Video become element objects. Used when the schema has no url arrays. */
+  elements?: "elements";
+  duration?: "number" | "string" | "suffix";
+  audio?: "generate_audio" | "audio";
+  aspect?: "aspect_ratio" | "image_size";
+  /** Legal aspect_ratio values. Adaptive is rewritten when it is not in this list. */
+  aspects?: readonly string[];
+  resolution?: "resolution";
+  quality?: "quality";
+  count?: "num_images";
+  seed?: boolean;
+  /** image_size values keyed by the composer's resolution (1k, 2k). */
+  imageSizeByResolution?: Readonly<Record<string, string>>;
 }
 
 export interface VideoModel extends ModelBase {
@@ -304,6 +350,10 @@ export interface EstimateInput {
    * Reference images and audio are not part of this input.
    */
   referenceVideoSeconds?: number;
+  /** Reference images attached to the request. Priced only when the formula says so. */
+  referenceImages?: number;
+  /** Image quality, when the formula has a per-quality rate. */
+  quality?: string;
   /**
    * `duration` is the provider's billed seconds (output plus reference video,
    * minimum already applied). Use the with-video rate and do not add reference
