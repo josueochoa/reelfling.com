@@ -8,6 +8,7 @@ import { isFalApiHost } from "./providers/fal";
 import { outputLineage, parseToolParams, TOOL_FORMS } from "./registry/tool-forms";
 import { publicTools, runnableTools } from "./toolCatalog";
 import { toolsForKind, type ToolView } from "./toolTypes";
+import { planBulkToolJobs } from "./upscaleQuote";
 
 const SECRET = "test-auth-secret-at-least-32-characters";
 const KEY = "fal-test-key-do-not-leak-9f3a";
@@ -57,7 +58,7 @@ setTestEnv({
   R2_ACCESS_KEY_ID: "r2-access",
   R2_SECRET_ACCESS_KEY: "r2-secret",
   R2_ENDPOINT: "https://r2.example.com",
-  R2_BUCKET_PREFIX: "dev",
+  R2_BUCKET: "reelfling-media",
   STORAGE_QUOTA_GB: "2",
 });
 
@@ -158,18 +159,33 @@ const imageTools: ToolView[] = [{ id: "image-tool", name: "Cut", description: ""
 const videoTools: ToolView[] = [{ id: "video-tool", name: "Clip", description: "", accepts: "video", fields: [] }];
 
 describe("tool catalog", () => {
-  it("offers background removal for images and nothing for video", () => {
+  it("offers background removal for images and upscale for images and videos", () => {
     const tools = runnableTools();
-    assert.equal(tools.length, 1);
+    assert.equal(tools.length, 7);
     assert.equal(tools[0].id, "fal:fal-ai/birefnet/v2");
     assert.equal(tools[0].accepts, "image");
     assert.equal(tools[0].endpoint, ENDPOINT);
     assert.equal(publicTools().some((tool) => "endpoint" in tool), false);
+    assert.equal(publicTools().find((tool) => tool.id === "fal:topaz/upscale/video/precision")?.quote, undefined);
+    assert.equal(publicTools().find((tool) => tool.id === "fal:fal-ai/seedvr/upscale/video")?.quote, undefined);
+    assert.equal(publicTools().find((tool) => tool.id === "fal:fal-ai/seedvr/upscale/image")?.quote?.type, "output_megapixels");
     assert.deepEqual(
       toolsForKind(tools, "image").map((tool) => tool.id),
-      ["fal:fal-ai/birefnet/v2"],
+      [
+        "fal:fal-ai/birefnet/v2",
+        "fal:fal-ai/seedvr/upscale/image",
+        "fal:topaz/upscale/image/precision",
+        "fal:fal-ai/recraft/upscale/crisp",
+      ],
     );
-    assert.deepEqual(toolsForKind(tools, "video"), []);
+    assert.deepEqual(
+      toolsForKind(tools, "video").map((tool) => tool.id),
+      [
+        "fal:fal-ai/seedvr/upscale/video",
+        "fal:topaz/upscale/video/precision",
+        "fal:fal-ai/flashvsr/upscale/video",
+      ],
+    );
     assert.deepEqual(toolsForKind(tools, "audio"), []);
     assert.deepEqual(
       toolsForKind([...imageTools, ...videoTools], "image").map((tool) => tool.id),
@@ -200,6 +216,7 @@ describe("tool catalog", () => {
       if (!text.includes("use client")) continue;
       assert.equal(text.includes("registry/generated"), false, file);
       assert.equal(text.includes("catalog/fal"), false, file);
+      assert.equal(text.includes("catalog/upscale"), false, file);
       assert.equal(text.includes("tool-forms"), false, file);
       assert.equal(text.includes("toolCatalog"), false, file);
     }
@@ -312,6 +329,94 @@ describe("tool jobs", () => {
       /needs an image/,
     );
     assert.equal(calls.length, 0);
+  });
+
+  it("rejects an over-limit upscale before calling fal", async () => {
+    install(() => {
+      throw new Error("fal was called");
+    });
+    database.prepare("UPDATE assets SET meta = ? WHERE user_id = ? AND key = ?").run(JSON.stringify({ duration: 301 }), USER, VIDEO);
+    await assert.rejects(
+      () => createToolJob(USER, { toolId: "fal:topaz/upscale/video/precision", assetIds: [VIDEO], params: { target: "2x" } }, KEY),
+      /5 minutes/,
+    );
+    database.prepare("UPDATE assets SET meta = ? WHERE user_id = ? AND key = ?").run(JSON.stringify({ duration: 300 }), USER, VIDEO);
+    await assert.rejects(
+      () => createToolJob(USER, { toolId: "fal:fal-ai/recraft/upscale/crisp", assetIds: [PARENT], params: {} }, KEY),
+      /PNG/,
+    );
+    assert.equal(calls.length, 0);
+  });
+
+  it("queues one upscale job per asset", async () => {
+    const other = "uploads/other.png";
+    database
+      .prepare(
+        "INSERT INTO assets (user_id, key, bucket, bytes, content_type, created_at, name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(USER, other, "dev-user-1", 800, "image/png", 3, "other.png");
+    install(() => submitResponse());
+    const plans = planBulkToolJobs(
+      [
+        { key: PARENT, kind: "image" },
+        { key: other, kind: "image" },
+      ],
+      { id: "fal:fal-ai/seedvr/upscale/image", accepts: "image" },
+      { target: "2x" },
+    );
+    assert.equal(plans.length, 2);
+    assert.deepEqual(plans.map((plan) => plan.assetIds), [[PARENT], [other]]);
+    const created = [];
+    for (const plan of plans) created.push(await createToolJob(USER, plan, KEY));
+    assert.equal(created.length, 2);
+    assert.notEqual(created[0].id, created[1].id);
+    const posts = calls.filter((call) => call.method === "POST");
+    assert.equal(posts.length, 2);
+    const bodies = posts.map((call) => JSON.parse(call.body!) as { image_url: string; upscale_factor: number; upscale_mode: string });
+    assert.equal(bodies[0].upscale_mode, "factor");
+    assert.equal(bodies[0].upscale_factor, 2);
+    assert.equal(bodies[1].upscale_factor, 2);
+    assert.notEqual(bodies[0].image_url, bodies[1].image_url);
+    assert.equal(bodies[0].image_url.includes(PARENT), true);
+    assert.equal(bodies[1].image_url.includes(other), true);
+    assert.equal(JSON.stringify(created).includes(KEY), false);
+    assertKeyStayedOnFal();
+  });
+
+  it("stores the upscaled resolution and the source link", async () => {
+    database
+      .prepare("UPDATE assets SET meta = ? WHERE user_id = ? AND key = ?")
+      .run(JSON.stringify({ width: 960, height: 540 }), USER, PARENT);
+    const script = [
+      submitResponse(),
+      json(202, { status: "IN_QUEUE", request_id: "req_tool", queue_position: 1 }),
+      json(202, { status: "IN_PROGRESS", request_id: "req_tool" }),
+      json(200, { status: "COMPLETED", request_id: "req_tool" }),
+      json(200, { image: { url: OUTPUT_URL, content_type: "image/png", file_name: "up.png" } }),
+      new Response(new Uint8Array(32), { headers: { "content-type": "image/png", "content-length": "32" } }),
+      new Response(null, { status: 200 }),
+    ];
+    install(() => script.shift()!);
+    const created = await createToolJob(
+      USER,
+      { toolId: "fal:fal-ai/seedvr/upscale/image", assetIds: [PARENT], params: { target: "2x" } },
+      KEY,
+    );
+    await syncFalJob(USER, created.id);
+    await syncFalJob(USER, created.id);
+    const done = await syncFalJob(USER, created.id);
+    assert.equal(done?.status, "succeeded");
+    const key = done?.outputs[0]?.key;
+    const row = database.prepare("SELECT parent_id, tool, meta FROM assets WHERE user_id = ? AND key = ?").get(USER, key) as {
+      parent_id: string;
+      tool: string;
+      meta: string;
+    };
+    assert.equal(row.parent_id, PARENT);
+    assert.equal(row.tool, "fal:fal-ai/seedvr/upscale/image");
+    assert.equal(JSON.parse(row.meta).resolution, "1920×1080");
+    assert.equal(parentRow().tool, null);
+    assertKeyStayedOnFal();
   });
 });
 

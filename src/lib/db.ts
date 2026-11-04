@@ -21,7 +21,8 @@ export interface AppEnv {
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   R2_ENDPOINT?: string;
-  R2_BUCKET_PREFIX?: string;
+  /** Shared bucket. Objects are stored at `<user id>/<key>` inside it. */
+  R2_BUCKET?: string;
   STORAGE_QUOTA_GB?: string;
 }
 

@@ -4,7 +4,6 @@
   { "endpoint": "fal-ai/minimax/video-01/image-to-video", "task": "i2v" },
   { "endpoint": "alibaba/wan-3.0/reference-to-video", "task": "ref2v" },
   { "endpoint": "minimax/h3-max/extend-video", "task": "extend" },
-  { "endpoint": "fal-ai/seedvr/upscale/video", "task": "upscale" },
   { "endpoint": "fal-ai/sync-lipsync/v3", "task": "lipsync" },
   { "endpoint": "fal-ai/kling-video/ai-avatar/v2/standard", "task": "avatar" },
   { "endpoint": "fal-ai/kling-video/v3/pro/motion-control", "task": "motion" },

@@ -183,7 +183,6 @@ export function ControlPanel({
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
   const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
-  const cost = estimateCost(model, { resolution, duration, audio: audioOn });
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const frameItem = (frame?: FrameRef) =>
@@ -218,6 +217,12 @@ export function ControlPanel({
 
   // @-mentions only resolve in references mode; anywhere else they're flagged.
   const refs = effectiveMode === "references";
+  const referenceVideos = refs ? refList.filter((r) => r.item.kind === "video") : [];
+  // Images and audio are not billed. A video with no readable length still selects the with-video rate.
+  const referenceVideoSeconds = referenceVideos.length
+    ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
+    : undefined;
+  const cost = estimateCost(model, { resolution, duration, audio: audioOn, referenceVideoSeconds });
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
   const badMentions = invalidMentions(prompt, counts);
   const mentionItems: MentionItem[] = !refs

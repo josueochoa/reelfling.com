@@ -103,7 +103,13 @@ describe("fal queue client", () => {
     const done = await pollFal(KEY, submitted);
     assert.equal(done.status, "succeeded");
     assert.deepEqual(done.outputs, [
-      { url: "https://v3.fal.media/files/rabbit/out.png", contentType: "image/png", fileName: undefined },
+      {
+        url: "https://v3.fal.media/files/rabbit/out.png",
+        contentType: "image/png",
+        fileName: undefined,
+        width: 1024,
+        height: 1024,
+      },
     ]);
     assert.equal(JSON.stringify(done.response).includes(KEY), false);
     assertKeyStayedOnFal();

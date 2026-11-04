@@ -33,6 +33,8 @@ export interface FalOutput {
   url: string;
   contentType?: string;
   fileName?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface FalSnapshot {
@@ -287,11 +289,17 @@ function httpsUrl(value: string): URL | undefined {
 export function collectOutputs(value: unknown): FalOutput[] {
   const out: FalOutput[] = [];
   const seen = new Set<string>();
-  const add = (raw: string, contentType?: string, fileName?: string) => {
+  const add = (raw: string, contentType?: string, fileName?: string, width?: number, height?: number) => {
     const url = httpsUrl(raw);
     if (!url || isFalApiHost(url.hostname) || seen.has(raw)) return;
     seen.add(raw);
-    out.push({ url: raw, contentType, fileName });
+    out.push({
+      url: raw,
+      contentType,
+      fileName,
+      ...(typeof width === "number" && Number.isFinite(width) ? { width } : {}),
+      ...(typeof height === "number" && Number.isFinite(height) ? { height } : {}),
+    });
   };
   const walk = (node: unknown, key?: string) => {
     if (typeof node === "string") {
@@ -316,6 +324,8 @@ export function collectOutputs(value: unknown): FalOutput[] {
           rec.url,
           typeof rec.content_type === "string" ? rec.content_type : undefined,
           typeof rec.file_name === "string" ? rec.file_name : undefined,
+          typeof rec.width === "number" ? rec.width : undefined,
+          typeof rec.height === "number" ? rec.height : undefined,
         );
     }
     for (const [k, v] of Object.entries(rec)) if (k !== "url") walk(v, k);
