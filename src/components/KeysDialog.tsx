@@ -1,51 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
+import { Modal } from "@/components/ui/Modal";
+import { confirmToast } from "@/components/ui/Toast";
 import { apiJson, type Me } from "./api";
 
 const ORDER: ProviderId[] = ["argolink", "openrouter", "modelark", "fal"];
 
 export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   return (
-    <div className="fixed inset-0 z-50 flex bg-black/80 p-4 backdrop-blur-sm" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-label="API keys"
-        className="m-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-panel p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">API keys</h2>
-            <p className="mt-1 text-sm text-zinc-400">
-              Generations run on your own provider account. Keys are encrypted and never sent to the browser.
-            </p>
-          </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white" aria-label="Close">
-            ✕
-          </button>
-        </div>
-
-        <div className="mt-5 space-y-3">
-          {ORDER.map((p) => (
-            <ProviderRow
-              key={p}
-              provider={p}
-              saved={me.keys.find((k) => k.provider === p)}
-              active={me.user.activeProvider === p}
-              onChanged={onChanged}
-            />
-          ))}
-        </div>
+    <Modal
+      size="md"
+      onClose={onClose}
+      title="API keys"
+      description="Generations run on your own provider account. Keys are encrypted and never sent to the browser."
+    >
+      <div className="space-y-3">
+        {ORDER.map((p) => (
+          <ProviderRow
+            key={p}
+            provider={p}
+            saved={me.keys.find((k) => k.provider === p)}
+            active={me.user.activeProvider === p}
+            onChanged={onChanged}
+          />
+        ))}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -94,7 +76,8 @@ function ProviderRow({
 
   const remove = () =>
     run(async () => {
-      if (!confirm(`Remove your ${info.label} key?`)) return;
+      const ok = await confirmToast(`Remove your ${info.label} key?`, { confirmLabel: "Remove" });
+      if (!ok) return;
       await apiJson(`/api/keys?provider=${provider}`, { method: "DELETE" });
       setEditing(true);
     });
@@ -105,13 +88,13 @@ function ProviderRow({
     });
 
   return (
-    <section className={`rounded-xl border p-4 ${active ? "border-accent/50 bg-accent/[0.04]" : "border-white/10"}`}>
+    <section className={`rounded-lg border p-4 ${active ? "border-accent bg-accent-soft" : "border-line"}`}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-medium">{info.label}</h3>
             {active && (
-              <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-ink">In use</span>
+              <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-accent-fg">In use</span>
             )}
           </div>
           <p className="mt-0.5 text-xs text-zinc-500">{saved ? `Key ••••${saved.last4}` : info.blurb}</p>
@@ -194,7 +177,7 @@ function ProviderRow({
         </form>
       )}
 
-      {message && <p className={`mt-2 text-xs ${message.ok ? "text-accent" : "text-red-300"}`}>{message.text}</p>}
+      {message && <p className={`mt-2 text-xs ${message.ok ? "text-fg" : "text-red-300"}`}>{message.text}</p>}
     </section>
   );
 }

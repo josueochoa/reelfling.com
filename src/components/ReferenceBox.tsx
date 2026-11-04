@@ -4,6 +4,7 @@
 // Mentions are numbered per kind (@Image 1, @Video 1, @Audio 1) in the order shown.
 
 import { useRef, useState } from "react";
+import { X } from "@/components/ui/Icon";
 import { ACCEPT, type LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, usePlayer } from "./MediaBlocks";
 import { MediaPreview } from "./MediaPreview";
@@ -146,7 +147,7 @@ export function ReferenceBox({
               className="absolute top-1 right-1 grid size-5 place-items-center rounded-full bg-black/70 text-[10px] opacity-0 group-hover:opacity-100"
               aria-label={`Remove ${label}`}
             >
-              ✕
+              <X className="size-3" aria-hidden />
             </button>
           </div>
         ))}

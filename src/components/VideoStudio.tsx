@@ -7,6 +7,7 @@ import { restoreInputs } from "@/lib/inputs";
 import { isVideo, MODELS, PROVIDER_INFO, type VideoModel } from "@/lib/registry";
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
+import { confirmToast, toast } from "@/components/ui/Toast";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
@@ -73,11 +74,11 @@ export function VideoStudio({
   useImperativeHandle(ref, () => ({
     addReference(item) {
       if (panel.current) panel.current.add(item);
-      else alert("Add an API key first to generate videos.");
+      else toast("Add an API key first to generate videos.");
     },
     setStartFrame(item) {
       if (panel.current) panel.current.setStartFrame(item);
-      else alert("Add an API key first to generate videos.");
+      else toast("Add an API key first to generate videos.");
     },
     reload() {
       apiJson<Generation[]>("/api/generations")
@@ -117,6 +118,8 @@ export function VideoStudio({
   }
 
   async function remove(gen: Generation) {
+    const ok = await confirmToast("Delete this generation? This can't be undone.", { confirmLabel: "Delete" });
+    if (!ok) return;
     setGenerations((prev) => prev.filter((g) => g.id !== gen.id));
     if (open?.id === gen.id) setOpen(null);
     await api(`/api/generations/${gen.id}`, { method: "DELETE" });
@@ -157,7 +160,7 @@ export function VideoStudio({
   async function referenceStoredVideo(gen: Generation) {
     setOpen(null);
     if (!panel.current) {
-      alert("Add an API key first to generate videos.");
+      toast("Add an API key first to generate videos.");
       return;
     }
     if (gen.status !== "succeeded" || !gen.stored) return;

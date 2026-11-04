@@ -14,6 +14,7 @@ import {
 } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
+import { toast } from "@/components/ui/Toast";
 import { CameraMoves } from "./CameraMoves";
 import { ModelMenu } from "./ModelMenu";
 import { UnlockHint } from "./UnlockHint";
@@ -84,7 +85,7 @@ export interface ControlPanelHandle {
   setStartFrame: (item: LibraryItem) => void;
   /** Switches to References and attaches this item. */
   useAsReference: (item: LibraryItem) => void;
-  /** Inline note in the panel. No alert(). */
+  /** Inline note in the panel. */
   notify: (message: string) => void;
 }
 
@@ -276,7 +277,7 @@ export function ControlPanel({
       if (ratio === "adaptive") setRatio("16:9");
     }
     if (skipped.size)
-      alert(
+      toast(
         [...skipped]
           .map((k) =>
             limit[k] === 0
@@ -290,7 +291,7 @@ export function ControlPanel({
 
   async function addFiles(files: File[]) {
     const { items, errors } = await library.add(files);
-    if (errors.length) alert(errors.join("\n"));
+    if (errors.length) toast(errors.join("\n"), { tone: "error" });
     const added = addRefs(items);
     return items.filter((i) => added.includes(i.id));
   }
@@ -338,14 +339,14 @@ export function ControlPanel({
   useImperativeHandle(ref, () => ({
     toggle(item) {
       if (!hasRefs) {
-        alert(`${model.name} doesn't take references. Pick a model that does.`);
+        toast(`${model.name} doesn't take references. Pick a model that does.`);
         return;
       }
       if (refsNow.current.includes(item.id)) updateRefs(refsNow.current.filter((x) => x !== item.id));
       else addRefs([item]);
     },
     add(item) {
-      if (!hasRefs) alert(`${model.name} doesn't take references. Pick a model that does.`);
+      if (!hasRefs) toast(`${model.name} doesn't take references. Pick a model that does.`);
       else addRefs([item]);
     },
     forget(id) {

@@ -4,6 +4,8 @@
 // happens here. Generations still run on each person's own key and storage.
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Play } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import type { TeamAsset, TeamAuthor, TeamGeneration, TeamMember, TeamSummary } from "@/lib/teamPolicy";
 import { teamMediaUrl } from "@/lib/teamPolicy";
 import { apiJson, type Me } from "./api";
@@ -425,22 +427,23 @@ function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; 
             data-testid="team-video"
             className="absolute inset-0 grid place-items-center"
           >
-            <span className="grid size-9 place-items-center rounded-full bg-black/60 text-xs text-white">▶</span>
+            <span className="grid size-9 place-items-center rounded-full bg-black/60 text-white">
+              <Play className="size-4" aria-hidden />
+            </span>
           </button>
         )}
       </div>
       {open && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-6" onClick={() => setOpen(false)}>
+        <Modal size="lg" onClose={() => setOpen(false)} label={asset.name} className="bg-black">
           <video
             src={fileUrl}
             controls
             autoPlay
             playsInline
             data-testid="team-video-player"
-            className="max-h-[80dvh] w-full max-w-4xl bg-black"
-            onClick={(event) => event.stopPropagation()}
+            className="max-h-[80dvh] w-full bg-black"
           />
-        </div>
+        </Modal>
       )}
       <div className="px-2.5 py-2">
         <p className="truncate text-sm">{asset.name}</p>

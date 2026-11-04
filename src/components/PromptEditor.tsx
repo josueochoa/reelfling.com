@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
+import { Play } from "@/components/ui/Icon";
 import { convertHiggsfieldMentions, segmentPrompt, type RefCounts, type RefKind } from "@/lib/mentions";
 
 export interface MentionItem {
@@ -420,7 +421,9 @@ function MentionPreview({ item }: { item: MentionItem }) {
     return <img src={item.thumb} alt="" className={box} />;
   if (item.preview) return <video src={`${item.preview}#t=0.1`} muted playsInline preload="metadata" className={box} />;
   return (
-    <div className={`${box} grid place-items-center text-2xl text-zinc-500`}>{item.kind === "Video" ? "▶" : "♪"}</div>
+    <div className={`${box} grid place-items-center text-2xl text-zinc-500`}>
+      {item.kind === "Video" ? <Play className="size-6" aria-hidden /> : "♪"}
+    </div>
   );
 }
 
@@ -437,7 +440,7 @@ export function MentionThumb({ item }: { item: MentionItem }) {
     return <img src={item.thumb} alt="" className="size-8 shrink-0 rounded-md object-cover" />;
   return (
     <span className="grid size-8 shrink-0 place-items-center rounded-md bg-white/10 text-xs text-zinc-300">
-      {item.kind === "Video" ? "▶" : "♪"}
+      {item.kind === "Video" ? <Play className="size-3.5" aria-hidden /> : "♪"}
     </span>
   );
 }

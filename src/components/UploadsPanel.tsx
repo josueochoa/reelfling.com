@@ -3,6 +3,8 @@
 // Picker for references: the user's assets, uploads first (generated ones one click away).
 
 import { useRef, useState } from "react";
+import { X } from "@/components/ui/Icon";
+import { confirmToast } from "@/components/ui/Toast";
 import type { AssetSource, UploadKind } from "@/lib/uploads";
 import { ACCEPT, type Library, type LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
@@ -122,7 +124,7 @@ export function UploadsPanel({
           aria-label="Close uploads"
           className="ml-auto grid size-8 place-items-center rounded-full bg-white/5 text-zinc-300 hover:bg-white/10"
         >
-          ✕
+          <X className="size-4" aria-hidden />
         </button>
       </div>
 
@@ -134,7 +136,7 @@ export function UploadsPanel({
             ))}
           </ul>
           <button onClick={() => setErrors([])} aria-label="Dismiss" className="text-red-300/70 hover:text-red-200">
-            ✕
+            <X className="size-3.5" aria-hidden />
           </button>
         </div>
       )}
@@ -193,7 +195,11 @@ export function UploadsPanel({
                           ? "this generated video (and its generation)"
                           : "this generated image"
                         : `“${item.name}” from your uploads`;
-                    if (confirm(`Delete ${what}? This can't be undone.`)) onDelete(item);
+                    void confirmToast(`Delete ${what}? This can't be undone.`, { confirmLabel: "Delete" }).then(
+                      (ok) => {
+                        if (ok) onDelete(item);
+                      },
+                    );
                   }}
                 >
                   🗑

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check } from "@/components/ui/Icon";
 import { PROVIDER_INFO, type VideoModel } from "@/lib/registry";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { UnlockHint } from "./UnlockHint";
@@ -67,7 +68,7 @@ export function ModelMenu({
                   .map((provider) => PROVIDER_INFO[provider].label)
                   .join(" · ")}
               </span>
-              {selected && !locked && <span className="text-accent">✓</span>}
+              {selected && !locked && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
             </button>
             {locked && hover === model.id && hint && (
               <div className="px-2.5 pb-1">

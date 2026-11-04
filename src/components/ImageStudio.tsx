@@ -3,6 +3,10 @@
 // The Image tab: generated images in a grid, with the prompt bar floating over it.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Download, RotateCcw, X } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { confirmToast, toast } from "@/components/ui/Toast";
 import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
 import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
@@ -130,17 +134,17 @@ export function ImageStudio({
   function addRefs(items: LibraryItem[]) {
     const images = items.filter((i) => i.kind === "image" && !refIds.includes(i.id));
     if (images.length < items.filter((i) => !refIds.includes(i.id)).length)
-      alert("Image models take images as references, not video or audio.");
+      toast("Image models take images as references, not video or audio.");
     const room = state.model.capabilities.references.image - refIds.length;
     if (images.length > room)
-      alert(`${state.model.name} takes up to ${state.model.capabilities.references.image} reference images.`);
+      toast(`${state.model.name} takes up to ${state.model.capabilities.references.image} reference images.`);
     const added = room > 0 ? images.slice(0, room) : [];
     if (added.length) setRefs([...refIds, ...added.map((i) => i.id)]);
     return added;
   }
   async function addFiles(files: File[]) {
     const { items, errors } = await library.add(files);
-    if (errors.length) alert(errors.join("\n"));
+    if (errors.length) toast(errors.join("\n"), { tone: "error" });
     return addRefs(items);
   }
   function toggleRef(item: LibraryItem) {
@@ -187,12 +191,13 @@ export function ImageStudio({
   }
 
   async function remove(gen: ImageGeneration) {
-    if (
-      !confirm(
-        gen.images.length > 1 ? `Delete all ${gen.images.length} images from this generation?` : "Delete this image?",
-      )
-    )
-      return;
+    const ok = await confirmToast(
+      gen.images.length > 1
+        ? `Delete all ${gen.images.length} images from this generation? This can't be undone.`
+        : "Delete this image? This can't be undone.",
+      { confirmLabel: "Delete" },
+    );
+    if (!ok) return;
     setGens((prev) => prev.filter((g) => g.id !== gen.id));
     setOpen(null);
     await api(`/api/images/${gen.id}`, { method: "DELETE" });
@@ -277,8 +282,9 @@ export function ImageStudio({
                     </div>
                   </div>
                 ) : (
-                  <div style={aspectStyle(gen.aspect)} className="shimmer grid place-items-center">
-                    <span className="text-xs text-zinc-400 tabular-nums">
+                  <div style={aspectStyle(gen.aspect)} className="relative">
+                    <Skeleton fill />
+                    <span className="absolute inset-0 grid place-items-center text-xs text-zinc-400 tabular-nums">
                       {gen.status === "queued" ? "Queued" : "Generating"} ·{" "}
                       {Math.max(0, Math.floor((now - (gen.startedAt ?? gen.createdAt)) / 1000))}s
                     </span>
@@ -309,25 +315,30 @@ export function ImageStudio({
                       {i >= 0 && (
                         <a
                           href={imageUrl(gen, i, true)}
+                          aria-label="Download"
                           title="Download"
                           className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
                         >
-                          ↓
+                          <Download className="size-3.5" aria-hidden />
                         </a>
                       )}
                       <button
+                        type="button"
                         onClick={() => reuse(gen)}
+                        aria-label="Reuse prompt and settings"
                         title="Reuse prompt and settings"
                         className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
                       >
-                        ↺
+                        <RotateCcw className="size-3.5" aria-hidden />
                       </button>
                       <button
+                        type="button"
                         onClick={() => remove(gen)}
+                        aria-label="Delete"
                         title="Delete"
                         className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
                       >
-                        ✕
+                        <X className="size-3.5" aria-hidden />
                       </button>
                     </div>
                   </div>
@@ -357,20 +368,15 @@ export function ImageStudio({
       </div>
 
       {libraryOpen && (
-        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setLibraryOpen(false)}>
-          <div
-            className="absolute inset-3 overflow-y-auto rounded-2xl border border-white/10 bg-ink lg:inset-10"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <UploadsPanel
-              library={library}
-              selected={new Map(references.map((r, i) => [r.id, `@Image ${i + 1}`]))}
-              onToggle={toggleRef}
-              onDelete={deleteUpload}
-              onClose={() => setLibraryOpen(false)}
-            />
-          </div>
-        </div>
+        <Modal size="full" onClose={() => setLibraryOpen(false)} label="Uploads" showClose={false} className="bg-ink">
+          <UploadsPanel
+            library={library}
+            selected={new Map(references.map((r, i) => [r.id, `@Image ${i + 1}`]))}
+            onToggle={toggleRef}
+            onDelete={deleteUpload}
+            onClose={() => setLibraryOpen(false)}
+          />
+        </Modal>
       )}
 
       {openTile && open && (
@@ -426,13 +432,12 @@ function ImageLightbox({
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
       if (e.key === "ArrowLeft") onNavigate(-1);
       if (e.key === "ArrowRight") onNavigate(1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, onNavigate]);
+  }, [onNavigate]);
 
   const model = getImageModel(gen.model);
   const details: [string, string][] = [
@@ -446,11 +451,8 @@ function ImageLightbox({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black/85 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="m-auto flex max-h-[92dvh] w-[min(1300px,94vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel lg:flex-row"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal size="lg" onClose={onClose} label="Image" showClose={false} className="lg:max-w-6xl">
+      <div className="flex max-h-[92dvh] flex-col lg:flex-row">
         <div className="relative grid min-h-[300px] flex-1 place-items-center bg-black">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={imageUrl(gen, index)} alt={gen.prompt} className="max-h-[92dvh] w-full object-contain" />
@@ -459,9 +461,9 @@ function ImageLightbox({
               key={d}
               onClick={() => onNavigate(d)}
               aria-label={d < 0 ? "Previous" : "Next"}
-              className={`absolute top-1/2 ${d < 0 ? "left-3" : "right-3"} grid size-10 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-2xl text-white hover:bg-black/80`}
+              className={`absolute top-1/2 ${d < 0 ? "left-3" : "right-3"} grid size-10 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80`}
             >
-              {d < 0 ? "‹" : "›"}
+              {d < 0 ? <ChevronLeft className="size-5" aria-hidden /> : <ChevronRight className="size-5" aria-hidden />}
             </button>
           ))}
         </div>
@@ -473,7 +475,7 @@ function ImageLightbox({
               aria-label="Close"
               className="grid size-8 shrink-0 place-items-center rounded-full bg-white/5 hover:bg-white/10"
             >
-              ✕
+              <X className="size-4" aria-hidden />
             </button>
           </div>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -513,6 +515,6 @@ function ImageLightbox({
           </div>
         </aside>
       </div>
-    </div>
+    </Modal>
   );
 }

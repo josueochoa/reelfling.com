@@ -4,6 +4,8 @@
 
 import { useEffect } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
+import { ChevronLeft, ChevronRight, X } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import { fileSrc, type LibraryItem } from "./library";
 import { formatDuration, Waveform } from "./MediaBlocks";
 import { formatBytes } from "./UserMenu";
@@ -42,13 +44,12 @@ export function MediaPreview({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
       if (e.key === "ArrowLeft") onPrev?.();
       if (e.key === "ArrowRight") onNext?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, onPrev, onNext]);
+  }, [onPrev, onNext]);
 
   const size = item.resolution ?? (item.width && item.height ? `${item.width}×${item.height}` : undefined);
   const details = [
@@ -64,11 +65,8 @@ export function MediaPreview({
   ].filter(Boolean);
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black/85 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="m-auto flex max-h-[92dvh] w-[min(1000px,94vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal size="lg" onClose={onClose} label="Preview" showClose={false}>
+      <div className="flex max-h-[92dvh] min-h-[240px] flex-col">
         <div className="relative grid min-h-[240px] flex-1 place-items-center bg-black">
           {item.kind === "video" && (
             // key: a new element per item, so switching items restarts playback
@@ -86,12 +84,12 @@ export function MediaPreview({
           )}
           {onPrev && (
             <NavButton side="left" onClick={onPrev} label="Previous">
-              ‹
+              <ChevronLeft className="size-5" aria-hidden />
             </NavButton>
           )}
           {onNext && (
             <NavButton side="right" onClick={onNext} label="Next">
-              ›
+              <ChevronRight className="size-5" aria-hidden />
             </NavButton>
           )}
         </div>
@@ -148,11 +146,11 @@ export function MediaPreview({
             aria-label="Close preview"
             className="grid size-9 place-items-center rounded-full bg-white/5 text-zinc-300 hover:bg-white/10"
           >
-            ✕
+            <X className="size-4" aria-hidden />
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

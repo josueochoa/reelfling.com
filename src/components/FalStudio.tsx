@@ -6,6 +6,7 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "r
 import { shouldCancelFal, shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
 import { availabilityFor, availabilityHint } from "@/lib/registry/availability";
 import { assetFileUrl } from "@/lib/uploads";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { api, type Me } from "./api";
 import { UnlockHint } from "./UnlockHint";
 
@@ -214,7 +215,7 @@ export function FalStudio({
                     {needsPoll(job) && (
                       <div className="mt-3">
                         <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-                          <div className="shimmer h-full w-1/2 rounded-full bg-accent/80" />
+                          <Skeleton className="h-full w-1/2 rounded-full !bg-accent/80" />
                         </div>
                         <p className="mt-1.5 text-[11px] text-zinc-500">
                           {STATUS_LABEL[job.status]}
