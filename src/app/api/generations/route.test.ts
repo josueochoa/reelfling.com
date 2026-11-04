@@ -65,6 +65,7 @@ setTestEnv({
 await saveKey(USER, "fal", KEY);
 
 const { POST } = await import("./route");
+const { PATCH: patchMe } = await import("../me/route");
 
 type Storage = { run: <T>(store: object, fn: () => Promise<T>) => Promise<T> };
 
@@ -273,5 +274,55 @@ describe("POST /api/generations", () => {
     assert.deepEqual(calls, []);
     const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
     assert.equal(rows.n, 0);
+  });
+});
+
+describe("PATCH /api/me", () => {
+  it("does not store fal as the route for a fal-only video model", async () => {
+    for (const modelId of [
+      "fal:fal-ai/kling-video/v3/pro/text-to-video",
+      "fal:fal-ai/wan/v2.2-a14b/text-to-video",
+      "fal:fal-ai/minimax/video-01/image-to-video",
+      "fal:kling/v4/text-to-video",
+      "fal:alibaba/wan-3.0/reference-to-video",
+      "fal:minimax/h3/text-to-video",
+    ]) {
+      const res = await asRequest(() =>
+        patchMe(
+          new Request("https://internal.invalid/api/me", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ modelId, provider: "fal" }),
+          }),
+        ),
+      );
+      const text = await res.text();
+      assert.equal(res.status, 400, `${modelId} ${text}`);
+      assert.equal(JSON.parse(text).error, "That model has no stored route on this provider");
+      assert.equal(text.includes(KEY), false);
+      const row = database
+        .prepare("SELECT provider FROM route_preferences WHERE user_id = ? AND model_id = ?")
+        .get(USER, modelId) as { provider: string } | undefined;
+      assert.equal(row, undefined, modelId);
+    }
+  });
+
+  it("still stores a studio route the model can choose", async () => {
+    const res = await asRequest(() =>
+      patchMe(
+        new Request("https://internal.invalid/api/me", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ modelId: "nano-banana-2.1", provider: "openrouter" }),
+        }),
+      ),
+    );
+    const text = await res.text();
+    assert.equal(res.status, 200, text);
+    assert.equal(JSON.parse(text).ok, true);
+    const row = database
+      .prepare("SELECT provider FROM route_preferences WHERE user_id = ? AND model_id = ?")
+      .get(USER, "nano-banana-2.1") as { provider: string };
+    assert.equal(row.provider, "openrouter");
   });
 });

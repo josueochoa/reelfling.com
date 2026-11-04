@@ -3,7 +3,7 @@
 
 import { availableRoute } from "./availability";
 import { routeFor } from "./index";
-import type { Route } from "./types";
+import { isStudioProvider, type Route } from "./types";
 
 /** First choice that is keyed and is one of the model's routes, else the first keyed route. */
 export function preferredRoute<T extends { routes: readonly Route[] }>(
@@ -19,12 +19,17 @@ export function preferredRoute<T extends { routes: readonly Route[] }>(
   return availableRoute(model, keyed);
 }
 
-/** Null when this provider is a real route of a known catalog model. */
+/**
+ * Null when this provider may be stored for this catalog model.
+ * Video preferences are studio routes only. fal on a video model is not one:
+ * the generation's route (preset.route) is what Reuse resends, and Reuse does not save it.
+ */
 export function routeChoiceError(
-  model: { routes: readonly { provider: string }[] } | undefined,
+  model: { group?: string; routes: readonly { provider: string }[] } | undefined,
   provider: string,
 ): string | null {
   if (!model) return "Unknown model";
   if (!model.routes.some((route) => route.provider === provider)) return "That model has no route on this provider";
+  if (model.group === "video" && !isStudioProvider(provider)) return "That model has no stored route on this provider";
   return null;
 }

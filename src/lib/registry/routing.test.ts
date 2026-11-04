@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { normalizeMentions } from "../mentions";
 import { availabilityFor, routeProviders } from "./availability";
-import { catalogPickerModels } from "./generated";
+import { catalogModel, catalogPickerModels } from "./generated";
 import { estimateRouteCost, getModel, imageProviderFor, isVideo, mentionSyntax, MODELS } from "./index";
 import { preferredRoute, routeChoiceError } from "./routing";
 
@@ -28,8 +28,10 @@ describe("per-model routes", () => {
     assert.equal(modelark.routes.some((route) => route.provider === "argolink"), false);
     assert.equal(argolink.capabilities.resolutions.includes("4k"), true);
     assert.equal(modelark.capabilities.resolutions.includes("4k"), false);
-    const sent = normalizeMentions("the boat in @Image 1", mentionSyntax(argolink.refSyntax));
+    const sent = normalizeMentions("the boat in @img1", mentionSyntax(argolink.refSyntax));
     assert.equal(sent, "the boat in @Image 1");
+    const brackets = normalizeMentions("the boat in @img1", mentionSyntax(modelark.refSyntax));
+    assert.equal(brackets, "the boat in [Image 1]");
     assert.equal(studioCatalog().some((model) => model.id === "seedance-2.0"), true);
   });
 
@@ -65,6 +67,12 @@ describe("per-model routes", () => {
     assert.equal(availabilityFor(routeProviders(model.routes), keyed).available, true);
     assert.equal(imageProviderFor("modelark", ["openrouter"]), "openrouter");
     assert.equal(preferredRoute(model, keyed, [imageProviderFor("modelark", ["openrouter"])])?.provider, "openrouter");
+    // ArgoLink is the first catalog route. OpenRouter is selected only when the choice is read.
+    const both = new Set(["argolink", "openrouter"]);
+    assert.equal(
+      preferredRoute(model, both, [imageProviderFor("openrouter", ["argolink", "openrouter"])])?.provider,
+      "openrouter",
+    );
     assert.equal(estimateRouteCost(model, "argolink", { resolution: "1k", count: 1 }), 0.02);
     assert.equal(estimateRouteCost(model, "openrouter", { resolution: "1k", count: 1 }), 0.034);
   });
@@ -92,5 +100,17 @@ describe("per-model routes", () => {
     assert.equal(routeChoiceError(model, "fal"), "That model has no route on this provider");
     assert.equal(routeChoiceError(model, "modelark"), null);
     assert.equal(routeChoiceError(getModel("nano-banana-2.1"), "openrouter"), null);
+    assert.equal(routeChoiceError(catalogModel("openrouter:bytedance/seedance-2.5"), "openrouter"), null);
+    assert.equal(routeChoiceError(catalogModel("fal:fal-ai/z-image/turbo"), "fal"), null);
+    for (const id of [
+      "fal:fal-ai/kling-video/v3/pro/text-to-video",
+      "fal:fal-ai/wan/v2.2-a14b/text-to-video",
+      "fal:fal-ai/minimax/video-01/image-to-video",
+      "fal:kling/v4/text-to-video",
+      "fal:alibaba/wan-3.0/text-to-video",
+      "fal:minimax/h3/text-to-video",
+    ]) {
+      assert.equal(routeChoiceError(catalogModel(id), "fal"), "That model has no stored route on this provider", id);
+    }
   });
 });
