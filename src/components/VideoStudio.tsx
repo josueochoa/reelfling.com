@@ -14,9 +14,12 @@ import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/
 import { assetFileUrl } from "@/lib/uploads";
 import { confirmToast, toast } from "@/components/ui/Toast";
 import type { SavedLook } from "@/lib/registry/looks";
+import { getTemplate, restoredSlotInputs, type SlotInput } from "@/lib/templates/templates";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
+import { TemplateForm } from "./TemplateForm";
+import { TemplateGallery, type FilterId } from "./TemplateGallery";
 import type { Library, LibraryItem } from "./library";
 import { UploadsPanel } from "./UploadsPanel";
 import { Viewer } from "./Viewer";
@@ -66,6 +69,11 @@ export function VideoStudio({
   const [continueBusy, setContinueBusy] = useState(false);
   const [extendJobs, setExtendJobs] = useState<FalJobView[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryCategory, setGalleryCategory] = useState<FilterId>("all");
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [templateInitial, setTemplateInitial] = useState<Record<string, SlotInput> | undefined>(undefined);
+  const [templateKey, setTemplateKey] = useState(0);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
   const defaultProvider = me?.user.activeProvider ?? null;
@@ -90,14 +98,28 @@ export function VideoStudio({
     setOpen((o) => (o?.id === gen.id ? gen : o));
   }, []);
 
+  /** The template form hides the composer. These actions show it again so the change is visible. */
+  function revealComposer() {
+    setTemplateId(null);
+    setGalleryOpen(false);
+  }
+
   useImperativeHandle(ref, () => ({
     addReference(item) {
-      if (panel.current) panel.current.add(item);
-      else toast("Add an API key first to generate videos.");
+      if (!panel.current) {
+        toast("Add an API key first to generate videos.");
+        return;
+      }
+      revealComposer();
+      panel.current.add(item);
     },
     setStartFrame(item) {
-      if (panel.current) panel.current.setStartFrame(item);
-      else toast("Add an API key first to generate videos.");
+      if (!panel.current) {
+        toast("Add an API key first to generate videos.");
+        return;
+      }
+      revealComposer();
+      panel.current.setStartFrame(item);
     },
     reload() {
       apiJson<Generation[]>("/api/generations")
@@ -153,6 +175,7 @@ export function VideoStudio({
     setError(null);
     try {
       upsert(await apiJson<Generation>("/api/generations", { method: "POST", body: JSON.stringify(req) }));
+      if (req.templateId) setGalleryOpen(false);
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -168,6 +191,21 @@ export function VideoStudio({
     await api(`/api/generations/${gen.id}`, { method: "DELETE" });
   }
 
+  function openTemplate(id: string, initial?: Record<string, SlotInput>) {
+    setTemplateId(id);
+    setTemplateInitial(initial);
+    setTemplateKey((key) => key + 1);
+    setLibraryOpen(false);
+  }
+
+  function openTemplateAgain(gen: Generation) {
+    const template = getTemplate(gen.templateId);
+    if (!template) return;
+    setOpen(null);
+    openTemplate(template.id, restoredSlotInputs(gen));
+    setGalleryOpen(false);
+  }
+
   function saveRoute(modelId: string, provider: string) {
     setRoutePreferences((prev) => ({ ...prev, [modelId]: provider }));
     void apiJson("/api/me", { method: "PATCH", body: JSON.stringify({ modelId, provider }) }).catch(() => {});
@@ -181,6 +219,7 @@ export function VideoStudio({
 
   function reuse(gen: Generation, extra?: { frameKey?: string; continueFrom?: string }) {
     setOpen(null);
+    setTemplateId(null);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // Don't claim files were deleted while the library is still loading.
     const restored = extra?.frameKey || !library.loaded ? undefined : restoreInputs(gen, available);
@@ -265,6 +304,7 @@ export function VideoStudio({
       toast("Add an API key first to generate videos.");
       return;
     }
+    revealComposer();
     if (gen.status !== "succeeded" || !gen.stored) return;
     const item = await outputItem(gen);
     if (!item) {
@@ -281,6 +321,7 @@ export function VideoStudio({
   }
 
   const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
+  const activeTemplate = getTemplate(templateId ?? undefined);
   const feed = groupFeed([
     ...generations.map((gen) => ({
       kind: "generation" as const,
@@ -323,23 +364,43 @@ export function VideoStudio({
           )}
         </header>
         {models.length > 0 && (
-          <ControlPanel
-            ref={panel}
-            key={me ? preset.key : "pending"}
-            library={library}
-            onOpenLibrary={() => setLibraryOpen(true)}
-            onReferencesChange={setRefLabels}
+          <div className={activeTemplate ? "hidden" : "flex min-h-0 min-w-0 flex-1 flex-col"}>
+            <ControlPanel
+              ref={panel}
+              key={me ? preset.key : "pending"}
+              library={library}
+              onOpenLibrary={() => {
+                setGalleryOpen(false);
+                setLibraryOpen(true);
+              }}
+              onReferencesChange={setRefLabels}
+              models={models}
+              keyed={keyed}
+              routePreferences={routePreferences}
+              defaultProvider={defaultProvider}
+              onSaveRoute={saveRoute}
+              preset={preset}
+              onGenerate={generate}
+              error={error}
+              onOpenKeys={onOpenKeys}
+              savedLooks={savedLooks}
+              onLooks={onLooks}
+            />
+          </div>
+        )}
+        {activeTemplate && (
+          <TemplateForm
+            key={templateKey}
+            template={activeTemplate}
             models={models}
+            modelsReady={openRouterModels !== null}
             keyed={keyed}
-            routePreferences={routePreferences}
-            defaultProvider={defaultProvider}
-            onSaveRoute={saveRoute}
-            preset={preset}
+            library={library}
+            initial={templateInitial}
             onGenerate={generate}
-            error={error}
+            onBack={() => setTemplateId(null)}
             onOpenKeys={onOpenKeys}
-            savedLooks={savedLooks}
-            onLooks={onLooks}
+            error={error}
           />
         )}
       </aside>
@@ -349,9 +410,20 @@ export function VideoStudio({
           <UploadsPanel
             library={library}
             selected={refLabels}
-            onToggle={(item) => panel.current?.toggle(item)}
+            onToggle={(item) => {
+              revealComposer();
+              panel.current?.toggle(item);
+            }}
             onDelete={deleteUpload}
             onClose={() => setLibraryOpen(false)}
+          />
+        ) : galleryOpen ? (
+          <TemplateGallery
+            category={galleryCategory}
+            onCategory={setGalleryCategory}
+            selectedId={templateId}
+            onSelect={(id) => openTemplate(id)}
+            onClose={() => setGalleryOpen(false)}
           />
         ) : (
           <>
@@ -359,12 +431,29 @@ export function VideoStudio({
               <h1 className="text-sm font-medium text-zinc-300">
                 Generations <span className="text-zinc-500">· {generations.length}</span>
               </h1>
-              <button
-                onClick={() => setLibraryOpen(true)}
-                className="rounded-full bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10"
-              >
-                Uploads
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  data-testid="open-templates"
+                  onClick={() => {
+                    setLibraryOpen(false);
+                    setGalleryOpen(true);
+                  }}
+                  className="rounded-full bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10"
+                >
+                  Templates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGalleryOpen(false);
+                    setLibraryOpen(true);
+                  }}
+                  className="rounded-full bg-white/5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10"
+                >
+                  Uploads
+                </button>
+              </div>
             </div>
 
             {loaded && feed.length === 0 ? (
@@ -374,6 +463,16 @@ export function VideoStudio({
                   <p className="mt-1 text-sm text-zinc-500">
                     {keyed.size ? "Write a prompt and hit Generate to start." : "Add an API key to start generating."}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLibraryOpen(false);
+                      setGalleryOpen(true);
+                    }}
+                    className="mt-3 text-body text-fg underline"
+                  >
+                    Browse templates
+                  </button>
                 </div>
               </div>
             ) : (
@@ -397,6 +496,9 @@ export function VideoStudio({
                             gen={item.gen}
                             onOpen={() => setOpen(item.gen)}
                             onReuse={() => reuse(item.gen)}
+                            onUseTemplate={
+                              getTemplate(item.gen.templateId) ? () => openTemplateAgain(item.gen) : undefined
+                            }
                             onUseAsReference={() => void referenceStoredVideo(item.gen)}
                             onDelete={() => remove(item.gen)}
                           />
@@ -462,6 +564,7 @@ export function VideoStudio({
               : undefined
           }
           onReuse={() => reuse(open)}
+          onUseTemplate={getTemplate(open.templateId) ? () => openTemplateAgain(open) : undefined}
           onUseAsReference={() => void referenceStoredVideo(open)}
           onContinue={open.status === "succeeded" ? () => void continueFromVideo(generationBytesUrl(open.id), open) : undefined}
           continueBusy={continueBusy}
@@ -509,6 +612,7 @@ function OpenVideo({
   onPrev,
   onNext,
   onReuse,
+  onUseTemplate,
   onUseAsReference,
   onContinue,
   continueBusy,
@@ -525,6 +629,7 @@ function OpenVideo({
   onPrev?: () => void;
   onNext?: () => void;
   onReuse: () => void;
+  onUseTemplate?: () => void;
   onUseAsReference: () => void;
   onContinue?: () => void;
   continueBusy?: boolean;
@@ -555,6 +660,7 @@ function OpenVideo({
       onPrev={onPrev}
       onNext={onNext}
       onReuse={onReuse}
+      onUseTemplate={onUseTemplate}
       onUseAsReference={ready && gen.stored ? onUseAsReference : undefined}
       onContinue={onContinue}
       continueBusy={continueBusy}

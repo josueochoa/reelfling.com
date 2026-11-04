@@ -36,11 +36,24 @@ export interface GenerateRequest {
   route?: string;
   /** Generation this clip continues. The server assigns the sequence and part. */
   continueFrom?: string;
+  /** Set when this run was started from a gallery template. */
+  templateId?: string;
+  /** Text and library keys for that template, so Use this template again can refill the form. */
+  templateSlots?: TemplateSlotFill[];
   /**
    * Ask a model with native expansion to rewrite the prompt.
    * Enhance is not called on this path. Omitted means leave the provider default.
    */
   promptExpansion?: boolean;
+}
+
+/** One filled template slot, stored on the generation so the form can open again. */
+export interface TemplateSlotFill {
+  id: string;
+  /** Text slot, already trimmed. */
+  text?: string;
+  /** Library key for an image slot (`uploads/…`). */
+  key?: string;
 }
 
 /** One reference block, stored so Reuse can rebuild the box. */
@@ -107,6 +120,10 @@ export interface Generation {
   routeEndpoint?: string;
   /** Catalog estimate, USD. */
   estimatedCost?: number;
+  /** Gallery template this generation was started from. */
+  templateId?: string;
+  /** Slot text and library keys saved with that template. */
+  templateSlots?: TemplateSlotFill[];
   /** Shared by every part of an extended clip. */
   sequenceId?: string;
   /** 1 is the original. Later parts count up. */
