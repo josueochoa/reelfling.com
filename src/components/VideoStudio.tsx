@@ -362,38 +362,41 @@ export function VideoStudio({
               <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 2xl:grid-cols-3">
                 {feed.map((group) => {
                   const numbered = isNumberedSequence(group.parts);
-                  const cards = group.parts.map((item) => (
-                    <div key={item.id}>
-                      {numbered && (
-                        <p data-testid="sequence-part" className="mb-1.5 text-[11px] font-medium text-zinc-400">
-                          Part {item.part}
-                        </p>
-                      )}
-                      {item.kind === "generation" ? (
-                        <GenerationCard
-                          gen={item.gen}
-                          onOpen={() => setOpen(item.gen)}
-                          onReuse={() => reuse(item.gen)}
-                          onUseAsReference={() => void referenceStoredVideo(item.gen)}
-                          onDelete={() => remove(item.gen)}
-                        />
-                      ) : (
-                        <ExtendPart
-                          job={item.job}
-                          source={generations.find((gen) => gen.id === item.job.sourceGenerationId)}
-                          canExtend={extendOffers.some((offer) =>
-                            generations.some(
-                              (gen) => gen.id === item.job.sourceGenerationId && offer.modelIds.includes(gen.model),
-                            ),
-                          )}
-                          onContinue={(src, source) => void continueFromVideo(src, source)}
-                          onExtend={(modelId, assetKey, prompt) => nativeExtend(modelId, assetKey, prompt)}
-                          onReuse={(source) => reuse(source)}
-                          onDelete={() => void removeExtend(item.job)}
-                        />
-                      )}
-                    </div>
-                  ));
+                  const cards = group.parts.map((item) => {
+                    const source =
+                      item.kind === "extend"
+                        ? generations.find((gen) => gen.id === item.job.sourceGenerationId)
+                        : undefined;
+                    return (
+                      <div key={item.id}>
+                        {numbered && (
+                          <p data-testid="sequence-part" className="mb-1.5 text-[11px] font-medium text-zinc-400">
+                            Part {item.part}
+                          </p>
+                        )}
+                        {item.kind === "generation" ? (
+                          <GenerationCard
+                            gen={item.gen}
+                            onOpen={() => setOpen(item.gen)}
+                            onReuse={() => reuse(item.gen)}
+                            onUseAsReference={() => void referenceStoredVideo(item.gen)}
+                            onDelete={() => remove(item.gen)}
+                          />
+                        ) : (
+                          <ExtendPart
+                            job={item.job}
+                            source={source}
+                            canExtend={!!source && extendOffers.some((offer) => offer.modelIds.includes(source.model))}
+                            continueBusy={continueBusy}
+                            onContinue={(src, from) => void continueFromVideo(src, from)}
+                            onExtend={(modelId, assetKey, prompt) => nativeExtend(modelId, assetKey, prompt)}
+                            onReuse={(from) => reuse(from)}
+                            onDelete={() => void removeExtend(item.job)}
+                          />
+                        )}
+                      </div>
+                    );
+                  });
                   if (!numbered)
                     return (
                       <div key={group.id} className="contents">
@@ -445,6 +448,7 @@ function ExtendPart({
   job,
   source,
   canExtend,
+  continueBusy,
   onContinue,
   onExtend,
   onReuse,
@@ -453,6 +457,7 @@ function ExtendPart({
   job: FalJobView;
   source?: Generation;
   canExtend: boolean;
+  continueBusy: boolean;
   onContinue: (src: string, source: Generation) => void;
   onExtend: (modelId: string, assetKey: string, prompt: string) => Promise<void>;
   onReuse: (source: Generation) => void;
@@ -479,7 +484,9 @@ function ExtendPart({
         <p className="text-[10px] text-zinc-500">{job.tool?.name ?? "Extend"}</p>
         <div className="flex flex-wrap gap-1.5">
           {output && source && (
-            <PartButton onClick={() => onContinue(assetBytesUrl(output.key), source)}>Continue</PartButton>
+            <PartButton disabled={continueBusy} onClick={() => onContinue(assetBytesUrl(output.key), source)}>
+              {continueBusy ? "Saving…" : "Continue"}
+            </PartButton>
           )}
           {source && <PartButton onClick={() => onReuse(source)}>Reuse</PartButton>}
           <PartButton onClick={onDelete}>Delete</PartButton>
@@ -520,12 +527,21 @@ function ExtendPart({
   );
 }
 
-function PartButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function PartButton({
+  onClick,
+  disabled,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+      disabled={disabled}
+      className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white disabled:opacity-40"
     >
       {children}
     </button>

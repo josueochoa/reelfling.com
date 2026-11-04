@@ -173,18 +173,28 @@ export function ImageStudio({
     await library.remove(item.id).catch((e) => setError((e as Error).message));
   }
 
+  const firstRef = state.ratio === "auto" ? references[0] : undefined;
+  const firstSrc = firstRef ? thumbSrc(firstRef) : undefined;
+  const [measured, setMeasured] = useState<{ src: string; ratio: string } | undefined>();
+  useEffect(() => {
+    if (!firstSrc) return;
+    let gone = false;
+    imageSize(firstSrc).then((size) => {
+      if (gone || !size) return;
+      setMeasured({ src: firstSrc, ratio: nearestRatio(state.model, size.w, size.h, state.resolution) });
+    });
+    return () => {
+      gone = true;
+    };
+  }, [firstSrc, state.model, state.resolution]);
+  const autoRatio = firstSrc && measured?.src === firstSrc ? measured.ratio : undefined;
+
   // ---- generate
   async function generate() {
     setError(null);
     setSubmitting(true);
     try {
       const { model, ratio, resolution } = state;
-      let autoRatio: string | undefined;
-      const first = references[0];
-      if (ratio === "auto" && first) {
-        const size = await imageSize(thumbSrc(first) ?? "");
-        if (size) autoRatio = nearestRatio(model, size.w, size.h, resolution);
-      }
       upsert(
         await apiJson<ImageGeneration>("/api/images", {
           method: "POST",
@@ -380,6 +390,7 @@ export function ImageStudio({
             onSaveRoute={saveRoute}
             onOpenKeys={onOpenKeys}
             models={models}
+            autoRatio={autoRatio}
           />
         </div>
       </div>

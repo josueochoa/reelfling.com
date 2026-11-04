@@ -3,7 +3,16 @@ import { describe, it } from "node:test";
 import { falImageInput, falQueueInput } from "../providers/fal";
 import { ALL_MODELS, catalogImageModels, catalogPickerModels } from "./generated";
 import { groupByFamily, modelBadges } from "./badges";
-import { estimateCost, imageRequestError, isImage, isVideo, outputMegapixels, videoRequestError } from "./index";
+import {
+  estimateCost,
+  estimateRouteCost,
+  imagePriceMegapixels,
+  imageRequestError,
+  isImage,
+  isVideo,
+  outputMegapixels,
+  videoRequestError,
+} from "./index";
 import { lookupModelName } from "./lookup";
 import type { ImageModel, VideoModel } from "./types";
 
@@ -224,17 +233,38 @@ describe("fal lineup catalog", () => {
     const fluxSmall = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: oneMegapixel });
     const fluxLarge = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: above });
     assert.ok(fluxSmall !== undefined && fluxLarge !== undefined && fluxLarge > fluxSmall);
-    // No input image: auto is the model's square default. A 16:9 input is priced from that frame.
-    assert.equal(outputMegapixels("2k", "auto"), outputMegapixels("2k", "1:1"));
-    const autoWide = outputMegapixels("2k", "auto", { width: 1920, height: 1080 });
-    assert.equal(autoWide, 2.25);
-    assert.ok(autoWide < outputMegapixels("2k", "1:1"));
-    const autoSmall = estimateCost(image("fal-ai/z-image/turbo"), { megapixels: outputMegapixels("1k", "auto") });
-    const autoLarge = estimateCost(image("fal-ai/z-image/turbo"), { megapixels: autoWide });
-    assert.ok(autoSmall !== undefined && autoLarge !== undefined && autoLarge > autoSmall);
-    const fluxAutoSmall = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: outputMegapixels("1k", "1:1") });
-    const fluxAutoLarge = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: outputMegapixels("2k", "auto", { width: 1920, height: 1080 }) });
-    assert.ok(fluxAutoSmall !== undefined && fluxAutoLarge !== undefined && fluxAutoLarge > fluxAutoSmall);
+  });
+
+  it("prices auto the same in the composer and on the image route", () => {
+    const z = image("fal-ai/z-image/turbo");
+    const withImage = { ratio: "auto", resolution: "2k", references: 1, autoRatio: "16:9" };
+    const noImage = { ratio: "auto", resolution: "2k", references: 0 };
+    const shownWithImage = imagePriceMegapixels(z, withImage);
+    const savedWithImage = imagePriceMegapixels(z, withImage);
+    assert.equal(shownWithImage, savedWithImage);
+    assert.equal(shownWithImage, outputMegapixels(undefined, "16:9"));
+    const shownAlone = imagePriceMegapixels(z, noImage);
+    const savedAlone = imagePriceMegapixels(z, noImage);
+    assert.equal(shownAlone, savedAlone);
+    assert.equal(shownAlone, outputMegapixels(undefined, "1:1"));
+    assert.ok(shownWithImage < shownAlone);
+    const cost = (megapixels: number) => estimateRouteCost(z, "fal", { resolution: "2k", count: 1, megapixels });
+    const withCost = cost(shownWithImage);
+    const aloneCost = cost(shownAlone);
+    assert.ok(withCost !== undefined && aloneCost !== undefined && aloneCost > withCost);
+
+    const fallback = {
+      capabilities: {
+        resolutions: ["2k"],
+        ratios: ["auto", "1:1", "16:9"],
+        autoFallback: "16:9",
+      },
+    };
+    const bare = { ratio: "auto", resolution: "2k", references: 0 };
+    const square = { ratio: "auto", resolution: "2k", references: 1, autoRatio: "1:1" };
+    assert.equal(imagePriceMegapixels(fallback, bare), outputMegapixels("2k", "16:9"));
+    assert.equal(imagePriceMegapixels(fallback, square), outputMegapixels("2k", "1:1"));
+    assert.equal(imagePriceMegapixels(fallback, { ...square, autoRatio: "21:9" }), outputMegapixels("2k", "16:9"));
   });
 
   it("groups the picker by family and badges audio, end frame, references, and duration", () => {

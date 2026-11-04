@@ -33,27 +33,20 @@ const IMAGE_PRESET: Record<string, { width: number; height: number }> = {
   "21:9": { width: 1024, height: 440 },
 };
 
-/**
- * Output megapixels for the resolution and aspect we actually send.
- * `auto` and `adaptive` use the input image's shape. With no input they use the
- * model's default square (`square_hd` / a 1:1 frame at that tier).
- */
-export function outputMegapixels(
-  resolution?: string,
-  ratio?: string,
-  input?: { width: number; height: number } | null,
-): number {
+/** Output megapixels for a concrete resolution and aspect. Resolve `auto` before calling this. */
+export function outputMegapixels(resolution?: string, ratio?: string): number {
+  const [aspectWidth, aspectHeight] = aspectParts(ratio);
   const tier = longSide(resolution);
-  const auto = ratio === "auto" || ratio === "adaptive";
-  const box = input && input.width > 0 && input.height > 0 ? input : undefined;
-  if (!tier && !auto) {
-    const preset = IMAGE_PRESET[ratio ?? ""];
-    if (preset) return (preset.width * preset.height) / (1024 * 1024);
-  }
-  const [aspectWidth, aspectHeight] = auto && box ? [box.width, box.height] : aspectParts(auto ? "1:1" : ratio);
-  const long = tier ?? 1024;
-  const width = aspectWidth >= aspectHeight ? long : Math.max(1, Math.round((long * aspectWidth) / aspectHeight));
-  const height = aspectHeight >= aspectWidth ? long : Math.max(1, Math.round((long * aspectHeight) / aspectWidth));
+  const width = tier
+    ? aspectWidth >= aspectHeight
+      ? tier
+      : Math.max(1, Math.round((tier * aspectWidth) / aspectHeight))
+    : (IMAGE_PRESET[ratio ?? ""]?.width ?? 1024);
+  const height = tier
+    ? aspectHeight >= aspectWidth
+      ? tier
+      : Math.max(1, Math.round((tier * aspectHeight) / aspectWidth))
+    : (IMAGE_PRESET[ratio ?? ""]?.height ?? 1024);
   return (width * height) / (1024 * 1024);
 }
 
@@ -186,6 +179,45 @@ export function ratioAllowed(
   if (!model.capabilities.ratios.includes(ratio)) return false;
   const only = model.capabilities.ratioResolutions?.[ratio];
   return !only || only.includes(resolution);
+}
+
+type ImageAspectModel = {
+  capabilities: {
+    resolutions?: readonly string[];
+    ratios: readonly string[];
+    ratioResolutions?: Readonly<Record<string, readonly string[]>>;
+    autoFallback?: string;
+  };
+};
+
+/** Aspect stored for an image request. Auto uses the reference's ratio, else the model's fallback. */
+export function imageRequestAspect(
+  model: ImageAspectModel,
+  input: { ratio: string; resolution: string; references: number; autoRatio?: string },
+): string | undefined {
+  if (input.ratio !== "auto") return input.ratio;
+  if (
+    input.references > 0 &&
+    input.autoRatio &&
+    ratioAllowed(model, input.autoRatio, input.resolution) &&
+    input.autoRatio !== "auto"
+  )
+    return input.autoRatio;
+  return model.capabilities.autoFallback;
+}
+
+/**
+ * Megapixels the image composer shows and the image route saves.
+ * Auto with a reference uses that image's ratio. Auto with none uses `autoFallback`, or 1:1.
+ */
+export function imagePriceMegapixels(
+  model: ImageAspectModel,
+  input: { ratio: string; resolution: string; references: number; autoRatio?: string },
+): number {
+  const aspect = imageRequestAspect(model, input);
+  const billed = aspect && aspect !== "auto" ? aspect : "1:1";
+  const sized = model.capabilities.resolutions?.includes(input.resolution) ? input.resolution : undefined;
+  return outputMegapixels(sized, billed);
 }
 
 /** The supported ratio closest to an image's shape, for Auto with a reference image. */
