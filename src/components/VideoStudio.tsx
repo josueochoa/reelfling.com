@@ -3,16 +3,20 @@
 // The Video tab: Seedance generations with the control panel on the left.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { shouldPollFal, type FalJobView } from "@/lib/falTypes";
 import { restoreInputs } from "@/lib/inputs";
+import { extractLastFrame, generationBytesUrl } from "@/lib/lastFrame";
 import { isVideo, MODELS, type VideoModel } from "@/lib/registry";
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { pickerModels, reuseSelection } from "@/lib/registry/routing";
+import { groupFeed, isNumberedSequence } from "@/lib/sequence";
+import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
+import { assetFileUrl } from "@/lib/uploads";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
-import type { ToolView } from "@/lib/toolTypes";
 import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
 
@@ -35,6 +39,7 @@ export function VideoStudio({
   onOpenKeys,
   openRouterModels,
   tools,
+  extendOffers,
   onToolJob,
 }: {
   ref?: React.Ref<StudioTabHandle>;
@@ -44,6 +49,7 @@ export function VideoStudio({
   /** Null until /api/models returns. Empty when that request failed. */
   openRouterModels: VideoModel[] | null;
   tools: readonly ToolView[];
+  extendOffers: readonly ExtendOffer[];
   onToolJob: () => void;
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
@@ -51,15 +57,21 @@ export function VideoStudio({
   const [preset, setPreset] = useState<Preset>({ key: 0 });
   const [open, setOpen] = useState<Generation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [continueBusy, setContinueBusy] = useState(false);
+  const [extendJobs, setExtendJobs] = useState<FalJobView[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
   const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
+  const jobsRef = useRef(extendJobs);
   useEffect(() => {
     gensRef.current = generations;
   }, [generations]);
+  useEffect(() => {
+    jobsRef.current = extendJobs;
+  }, [extendJobs]);
 
   const upsert = useCallback((gen: Generation) => {
     setGenerations((prev) => {
@@ -88,11 +100,20 @@ export function VideoStudio({
     },
   }));
 
+  const loadJobs = useCallback(() => {
+    api("/api/fal")
+      .then(async (res) => {
+        if (res.ok) setExtendJobs(await res.json());
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     apiJson<Generation[]>("/api/generations")
       .then(setGenerations)
       .finally(() => setLoaded(true));
-  }, []);
+    loadJobs();
+  }, [loadJobs]);
 
   useEffect(() => {
     const timer = setInterval(async () => {
@@ -106,6 +127,21 @@ export function VideoStudio({
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [upsert]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const pending = jobsRef.current.filter((job) => job.sequenceId && shouldPollFal(job.status));
+      void Promise.all(
+        pending.map(async (job) => {
+          const res = await api(`/api/fal/${job.id}`);
+          if (!res.ok) return;
+          const next = (await res.json()) as FalJobView;
+          setExtendJobs((prev) => prev.map((item) => (item.id === next.id ? next : item)));
+        }),
+      );
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   async function generate(req: GenerateRequest) {
     setError(null);
@@ -135,14 +171,20 @@ export function VideoStudio({
     return pickerModels([...hand, ...extra]);
   }
 
-  function reuse(gen: Generation, asFirstFrame?: string) {
+  function reuse(gen: Generation, extra?: { frameKey?: string; continueFrom?: string }) {
     setOpen(null);
     const picked = reuseSelection(catalog(), gen.model, gen.route);
     if (picked.route) saveRoute(picked.id, picked.route);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // Don't claim files were deleted while the library is still loading.
-    const restored = asFirstFrame || !library.loaded ? undefined : restoreInputs(gen, available);
-    const waiting = !asFirstFrame && !library.loaded;
+    const restored = extra?.frameKey || !library.loaded ? undefined : restoreInputs(gen, available);
+    const waiting = !extra?.frameKey && !library.loaded;
+    const pickedModel = catalog().find((model) => model.id === picked.id);
+    const frameNote = extra?.frameKey
+      ? pickedModel?.capabilities.frames.start
+        ? "Last frame saved to Uploads. It's the start frame."
+        : "Last frame saved to Uploads. This model doesn't take a start frame, so pick one that does."
+      : undefined;
     setPreset((p) => ({
       key: p.key + 1,
       model: picked.id,
@@ -154,15 +196,50 @@ export function VideoStudio({
       generateAudio: gen.generateAudio,
       cameraMoves: gen.cameraMoves,
       cameraMove: gen.cameraMove,
-      mode: asFirstFrame ? "frames" : (restored?.mode ?? gen.mode),
-      firstFrame: asFirstFrame,
-      firstFrameKey: restored?.firstFrameKey,
-      lastFrameKey: restored?.lastFrameKey,
-      referenceKeys: restored?.referenceKeys,
-      notice: waiting
-        ? "Uploads are still loading, so frames and references weren't restored. Try Reuse again in a moment."
-        : restored?.notice,
+      mode: extra?.frameKey ? "frames" : (restored?.mode ?? gen.mode),
+      firstFrameKey: extra?.frameKey ?? restored?.firstFrameKey,
+      lastFrameKey: extra?.frameKey ? undefined : restored?.lastFrameKey,
+      referenceKeys: extra?.frameKey ? undefined : restored?.referenceKeys,
+      continueFrom: extra?.continueFrom,
+      notice:
+        frameNote ??
+        (waiting
+          ? "Uploads are still loading, so frames and references weren't restored. Try Reuse again in a moment."
+          : restored?.notice),
     }));
+  }
+
+  async function continueClip(gen: Generation) {
+    setContinueBusy(true);
+    setError(null);
+    try {
+      const blob = await extractLastFrame(generationBytesUrl(gen.id));
+      const file = new File([blob], "Last frame.jpg", { type: "image/jpeg" });
+      const { items, errors } = await library.add([file]);
+      if (errors[0] || !items[0]) throw new Error(errors[0] || "Couldn't save the frame");
+      const ready = await library.whenReady(items[0].id);
+      if (!ready.key) throw new Error("Couldn't save the frame");
+      reuse(gen, { frameKey: ready.key, continueFrom: gen.id });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setContinueBusy(false);
+    }
+  }
+
+  async function nativeExtend(gen: Generation, prompt: string) {
+    const offer = extendOffers.find((item) => item.modelIds.includes(gen.model));
+    if (!offer) throw new Error("This model can't extend a video");
+    const probe = await api(generationBytesUrl(gen.id), { headers: { Range: "bytes=0-1" } });
+    await probe.body?.cancel().catch(() => {});
+    if (!probe.ok) throw new Error("Save the video before extending it");
+    const job = await apiJson<FalJobView>("/api/fal", {
+      method: "POST",
+      body: JSON.stringify({ toolId: offer.id, assetIds: [`videos/${gen.id}.mp4`], params: { prompt } }),
+    });
+    setExtendJobs((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
+    setGenerations(await apiJson<Generation[]>("/api/generations"));
+    setOpen(null);
   }
 
   async function outputItem(gen: Generation) {
@@ -192,6 +269,26 @@ export function VideoStudio({
   }
 
   const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
+  const feed = groupFeed([
+    ...generations.map((gen) => ({
+      kind: "generation" as const,
+      id: gen.id,
+      sequenceId: gen.sequenceId,
+      part: gen.part,
+      createdAt: gen.createdAt,
+      gen,
+    })),
+    ...extendJobs
+      .filter((job) => job.sequenceId && job.part)
+      .map((job) => ({
+        kind: "extend" as const,
+        id: job.id,
+        sequenceId: job.sequenceId,
+        part: job.part,
+        createdAt: job.createdAt,
+        job,
+      })),
+  ]);
   const models = sortByAvailability(catalog(), (model) => availabilityFor(routeProviders(model.routes), keyed).available);
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
@@ -252,7 +349,7 @@ export function VideoStudio({
               </button>
             </div>
 
-            {loaded && generations.length === 0 ? (
+            {loaded && feed.length === 0 ? (
               <div className="grid h-[60vh] place-items-center text-center">
                 <div>
                   <p className="text-lg font-medium text-zinc-300">No videos yet</p>
@@ -263,16 +360,47 @@ export function VideoStudio({
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 2xl:grid-cols-3">
-                {generations.map((g) => (
-                  <GenerationCard
-                    key={g.id}
-                    gen={g}
-                    onOpen={() => setOpen(g)}
-                    onReuse={() => reuse(g)}
-                    onUseAsReference={() => void referenceStoredVideo(g)}
-                    onDelete={() => remove(g)}
-                  />
-                ))}
+                {feed.map((group) => {
+                  const numbered = isNumberedSequence(group.parts);
+                  const cards = group.parts.map((item) => (
+                    <div key={item.id}>
+                      {numbered && (
+                        <p data-testid="sequence-part" className="mb-1.5 text-[11px] font-medium text-zinc-400">
+                          Part {item.part}
+                        </p>
+                      )}
+                      {item.kind === "generation" ? (
+                        <GenerationCard
+                          gen={item.gen}
+                          onOpen={() => setOpen(item.gen)}
+                          onReuse={() => reuse(item.gen)}
+                          onUseAsReference={() => void referenceStoredVideo(item.gen)}
+                          onDelete={() => remove(item.gen)}
+                        />
+                      ) : (
+                        <ExtendPart job={item.job} />
+                      )}
+                    </div>
+                  ));
+                  if (!numbered)
+                    return (
+                      <div key={group.id} className="contents">
+                        {cards}
+                      </div>
+                    );
+                  return (
+                    <section
+                      key={group.id}
+                      data-testid="sequence"
+                      className="col-span-full rounded-2xl border border-white/10 p-3"
+                    >
+                      <h2 className="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
+                        Sequence · {group.parts.length} parts
+                      </h2>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">{cards}</div>
+                    </section>
+                  );
+                })}
               </div>
             )}
           </>
@@ -281,11 +409,15 @@ export function VideoStudio({
 
       {open && (
         <Lightbox
+          key={open.id}
           gen={open}
           onClose={() => setOpen(null)}
           onReuse={() => reuse(open)}
           onUseAsReference={() => void referenceStoredVideo(open)}
-          onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
+          onContinue={open.status === "succeeded" ? () => void continueClip(open) : undefined}
+          continueBusy={continueBusy}
+          extendOffer={extendOffers.find((offer) => offer.modelIds.includes(open.model))}
+          onNativeExtend={(prompt) => nativeExtend(open, prompt)}
           onDelete={() => remove(open)}
           tools={tools}
           keyed={keyed}
@@ -294,5 +426,27 @@ export function VideoStudio({
         />
       )}
     </div>
+  );
+}
+
+function ExtendPart({ job }: { job: FalJobView }) {
+  const output = job.outputs.find((item) => item.contentType.startsWith("video/"));
+  return (
+    <article className="overflow-hidden rounded-2xl border border-white/5 bg-panel">
+      <div className="relative grid aspect-video place-items-center bg-black">
+        {output ? (
+          <video src={assetFileUrl(output.key)} controls playsInline className="size-full object-contain" />
+        ) : (
+          <p className="text-xs text-zinc-400 capitalize">
+            {job.status}
+            {job.error ? ` · ${job.error}` : ""}
+          </p>
+        )}
+      </div>
+      <div className="space-y-1 p-3.5">
+        <p className="line-clamp-2 text-sm text-zinc-300">{job.prompt || "Extend"}</p>
+        <p className="text-[10px] text-zinc-500">{job.tool?.name ?? "Extend"}</p>
+      </div>
+    </article>
   );
 }

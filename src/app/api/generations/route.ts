@@ -10,7 +10,7 @@ import { estimateRouteCost, isVideo, mentionSyntax, videoRequestError } from "@/
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
-import { insertGeneration, listGenerations } from "@/lib/store";
+import { continueSequence, getGeneration, insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
@@ -173,6 +173,8 @@ export async function POST(request: Request) {
       referenceVideos: referenceVideos?.map((media) => media.url),
       referenceAudios: referenceAudios?.map((media) => media.url),
     });
+    if (typeof req.continueFrom === "string" && req.continueFrom && !(await getGeneration(user.id, req.continueFrom)))
+      return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
     const endpoint = route.provider === "fal" ? falVideoEndpoint(route.endpoint, req.mode, !!first) : route.endpoint;
     let taskId: string;
     let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
@@ -190,6 +192,12 @@ export async function POST(request: Request) {
       const provider = await providerForUser(user.id, route.provider);
       ({ taskId } = await provider.createTask(providerReq));
     }
+    const continued =
+      typeof req.continueFrom === "string" && req.continueFrom
+        ? await continueSequence(user.id, req.continueFrom)
+        : undefined;
+    if (typeof req.continueFrom === "string" && req.continueFrom && !continued)
+      return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
     const now = Date.now();
     const inputs: GenerationInputs = {
       firstFrame: frames && !!first,
@@ -219,6 +227,11 @@ export async function POST(request: Request) {
       route: route.provider,
       routeEndpoint: endpoint,
       estimatedCost: estimate,
+      ...(continued && {
+        sequenceId: continued.sequenceId,
+        part: continued.part,
+        continuedFrom: continued.sourceGenerationId,
+      }),
       ...falUrls,
       createdAt: now,
       updatedAt: now,

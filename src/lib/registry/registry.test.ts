@@ -249,7 +249,7 @@ describe("model registry", () => {
   });
 
   it("does not write API keys into the generated catalogs", () => {
-    for (const name of ["fal.json", "openrouter.json", "upscale.json"]) {
+    for (const name of ["fal.json", "openrouter.json", "upscale.json", "extend.json"]) {
       const text = readFileSync(new URL(`./catalog/${name}`, import.meta.url), "utf8");
       assert.equal(text.includes("Authorization"), false, name);
       assert.equal(text.includes("FAL_KEY"), false, name);

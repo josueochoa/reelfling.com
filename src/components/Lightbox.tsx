@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { cameraSummary, estimateCost } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
-import type { ToolView } from "@/lib/toolTypes";
+import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 import { ToolsMenu } from "./ToolsMenu";
@@ -13,7 +13,10 @@ export function Lightbox({
   onClose,
   onReuse,
   onUseAsReference,
-  onExtend,
+  onContinue,
+  continueBusy,
+  extendOffer,
+  onNativeExtend,
   onDelete,
   tools,
   keyed,
@@ -24,7 +27,12 @@ export function Lightbox({
   onClose: () => void;
   onReuse: () => void;
   onUseAsReference: () => void;
-  onExtend?: () => void;
+  /** Extract the last frame and use it as the start frame. */
+  onContinue?: () => void;
+  continueBusy?: boolean;
+  /** Set when this clip's model has a native extend endpoint. */
+  extendOffer?: ExtendOffer;
+  onNativeExtend?: (prompt: string) => Promise<void>;
   onDelete: () => void;
   tools: readonly ToolView[];
   keyed: ReadonlySet<string>;
@@ -34,6 +42,9 @@ export function Lightbox({
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
   const canReference = ready && !!gen.stored;
+  const [extendPrompt, setExtendPrompt] = useState(gen.prompt);
+  const [extendBusy, setExtendBusy] = useState(false);
+  const [extendError, setExtendError] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -124,10 +135,49 @@ export function Lightbox({
                 Download
               </a>
             )}
-            {onExtend && (
-              <button onClick={onExtend} className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5">
-                Continue from last frame
+            {ready && onContinue && (
+              <button
+                type="button"
+                data-testid="continue-last-frame"
+                onClick={onContinue}
+                disabled={continueBusy}
+                className="rounded-xl border border-white/10 py-2.5 text-sm hover:bg-white/5 disabled:opacity-50"
+              >
+                {continueBusy ? "Saving the last frame…" : "Continue from last frame"}
               </button>
+            )}
+            {ready && extendOffer && onNativeExtend && (
+              <form
+                data-testid="extend-option"
+                className="grid gap-2 rounded-xl border border-white/10 p-2.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const prompt = extendPrompt.trim();
+                  if (!prompt || extendBusy) return;
+                  setExtendBusy(true);
+                  setExtendError(null);
+                  void onNativeExtend(prompt)
+                    .catch((err: unknown) => setExtendError(err instanceof Error ? err.message : "Couldn't extend"))
+                    .finally(() => setExtendBusy(false));
+                }}
+              >
+                <p className="text-sm text-zinc-100">{extendOffer.name}</p>
+                <textarea
+                  aria-label="What happens next"
+                  value={extendPrompt}
+                  onChange={(e) => setExtendPrompt(e.target.value)}
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-sm text-zinc-100 outline-none"
+                />
+                {extendError && <p className="text-xs text-red-300">{extendError}</p>}
+                <button
+                  type="submit"
+                  disabled={extendBusy || !extendPrompt.trim()}
+                  className="rounded-lg bg-white/10 py-2 text-sm hover:bg-white/15 disabled:opacity-40"
+                >
+                  {extendBusy ? "Starting…" : "Extend"}
+                </button>
+              </form>
             )}
             {canReference && (
               <button

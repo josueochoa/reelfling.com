@@ -52,7 +52,7 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 |---|---|---|
 | Models | Seedance 2.0, 1.0 Pro | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini |
 | Seed / watermark / fixed camera | yes | no (rejected upstream, so hidden) |
-| Continue from last frame | yes | no |
+| Continue from last frame | yes | yes |
 | Progress % | no | yes |
 | Cost estimate in UI | yes (token estimate from BytePlus's published formula) | yes (per-second prices) |
 
@@ -107,4 +107,4 @@ Every reference is a file in the user's **Uploads** library (`uploads/` in their
 
 The app shows files through `/api/uploads/file?key=…[&thumb=1]`, which redirects to a short-lived signed URL.
 
-"Continue from last frame" starts a new generation using the previous clip's final frame (`return_last_frame`) as its start frame.
+"Continue from last frame" draws the clip's last frame in the browser, saves that JPEG to Uploads, and uses it as the start frame on whatever route the next generation takes. Models with a native extend endpoint (Grok Imagine, H3 Max, FLUX 3, Gemini Omni) also offer Extend, which sends the source video as a tool job and numbers the parts in the feed.

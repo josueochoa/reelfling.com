@@ -31,7 +31,9 @@ import {
   providerUrl,
   putAsset,
 } from "./storage";
+import { buildExtendBody, extendForm, runnableExtends } from "./extend";
 import { formFor, outputLineage, toolLimitError } from "./registry/tool-forms";
+import { continueSequence } from "./store";
 import { prepareToolInput } from "./toolCatalog";
 import { upscaleResolution } from "./upscaleQuote";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
@@ -61,6 +63,8 @@ export interface FalJob {
   tool?: FalToolJob;
   /** Latest queue position, while fal still has the request. */
   queuePosition?: number;
+  /** Set when the job continues a generation. The new asset is this part. */
+  sequence?: { sequenceId: string; part: number; sourceGenerationId: string };
   outputs: { key: string; contentType: string }[];
   error?: string;
   fields?: FalFieldError[];
@@ -157,6 +161,11 @@ export function publicFalJob(job: FalJob): FalJobView {
     ...(job.tool && {
       tool: { id: job.tool.id, name: job.tool.name, inputAssetIds: job.tool.inputAssetIds },
     }),
+    ...(job.sequence && {
+      sequenceId: job.sequence.sequenceId,
+      part: job.sequence.part,
+      sourceGenerationId: job.sequence.sourceGenerationId,
+    }),
     ...(job.queuePosition !== undefined && { queuePosition: job.queuePosition }),
   };
 }
@@ -194,6 +203,7 @@ export async function createFalJob(
   input: unknown,
   apiKey: string,
   tool?: FalToolJob,
+  sequence?: FalJob["sequence"],
 ) {
   const resolved = await resolveFalInput(userId, input);
   const request = redactSecrets(resolved, apiKey);
@@ -212,6 +222,7 @@ export async function createFalJob(
     request,
     response: submitted.raw,
     ...(tool && { tool }),
+    ...(sequence && { sequence }),
     outputs: [],
     createdAt: now,
     updatedAt: now,
@@ -239,13 +250,16 @@ export async function createToolJob(
   const assetIds = Array.isArray(input.assetIds) ? input.assetIds.filter((id): id is string => typeof id === "string") : [];
   if (assetIds.length !== 1 || !isAssetKey(assetIds[0]))
     throw new ProviderError("Choose one asset from your library.", 400);
-  const prepared = prepareToolInput(input.toolId, assetIds[0], input.params);
+  const extendTool = runnableExtends().find((tool) => tool.id === input.toolId);
+  const prepared = extendTool
+    ? { tool: extendTool, body: buildExtendBody(extendTool.id, assetIds[0], input.params) }
+    : prepareToolInput(input.toolId, assetIds[0], input.params);
   if (!prepared) throw new ProviderError("Unknown tool", 400);
   const asset = await getAsset(userId, assetIds[0]);
   if (!asset) throw new ProviderError("That asset is no longer in your library.", 400);
   if (mediaKind(asset.contentType) !== prepared.tool.accepts)
     throw new ProviderError(prepared.tool.accepts === "image" ? "This tool needs an image." : "This tool needs a video.", 400);
-  const form = formFor(prepared.tool.id);
+  const form = formFor(prepared.tool.id) ?? extendForm(prepared.tool.id);
   if (form) {
     const limit = toolLimitError(
       form,
@@ -256,13 +270,25 @@ export async function createToolJob(
   }
   const params = { ...prepared.body };
   delete params[prepared.tool.inputKey];
-  return createFalJob(userId, prepared.tool.endpoint, prepared.body, apiKey, {
-    id: prepared.tool.id,
-    name: prepared.tool.name,
-    inputAssetIds: [asset.key],
-    params: params as Record<string, string | number | boolean>,
-    route: { provider: "fal", endpoint: prepared.tool.endpoint, mapper: prepared.tool.mapper },
-  });
+  const stamp = extendTool && asset.generationId ? await continueSequence(userId, asset.generationId) : undefined;
+  return createFalJob(
+    userId,
+    prepared.tool.endpoint,
+    prepared.body,
+    apiKey,
+    {
+      id: prepared.tool.id,
+      name: prepared.tool.name,
+      inputAssetIds: [asset.key],
+      params: params as Record<string, string | number | boolean>,
+      route: { provider: "fal", endpoint: prepared.tool.endpoint, mapper: prepared.tool.mapper },
+    },
+    stamp && {
+      sequenceId: stamp.sequenceId,
+      part: stamp.part,
+      sourceGenerationId: stamp.sourceGenerationId,
+    },
+  );
 }
 
 const EXT: Record<string, string> = {

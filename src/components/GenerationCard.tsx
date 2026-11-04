@@ -50,8 +50,7 @@ export function GenerationCard({
   const model = lookupModel(gen.model);
   const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
   const ready = gen.status === "succeeded";
-  // The output is a video, so it can be a reference only once it's stored. Continue-from-last-frame
-  // covers using a clip as the next start; there is no image to offer as a start frame.
+  // The output is a video, so it can be a reference only once it's stored.
   const canReference = ready && !!gen.stored;
 
   return (

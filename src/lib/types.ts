@@ -27,6 +27,8 @@ export interface GenerateRequest {
   referenceOrder?: string[];
   /** Provider route chosen in the picker or restored by Reuse. */
   route?: string;
+  /** Generation this clip continues. The server assigns the sequence and part. */
+  continueFrom?: string;
 }
 
 /** One reference block, stored so Reuse can rebuild the box. */
@@ -87,6 +89,12 @@ export interface Generation {
   routeEndpoint?: string;
   /** Catalog estimate, USD. */
   estimatedCost?: number;
+  /** Shared by every part of an extended clip. */
+  sequenceId?: string;
+  /** 1 is the original. Later parts count up. */
+  part?: number;
+  /** Generation this part was continued from. */
+  continuedFrom?: string;
   /** fal queue URLs. Absent on every other provider. */
   falStatusUrl?: string;
   falResponseUrl?: string;
