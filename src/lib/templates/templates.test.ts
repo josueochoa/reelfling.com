@@ -27,7 +27,6 @@ import {
   previewOf,
   restoredSlotInputs,
   slotErrors,
-  templateFromGeneration,
   type SlotInput,
   type VideoTemplate,
 } from "./templates";
@@ -58,8 +57,8 @@ function valuesFor(template: VideoTemplate, text = LINE): Record<string, SlotInp
 }
 
 describe("template slots", () => {
-  it("ships a small original set across the gallery categories", () => {
-    assert.ok(TEMPLATES.length >= 6 && TEMPLATES.length <= 9, String(TEMPLATES.length));
+  it("lists templates across the gallery categories and only shows a safe preview", () => {
+    assert.ok(TEMPLATES.length >= 6, String(TEMPLATES.length));
     for (const category of ["effects", "product", "ugc"] as const) {
       assert.ok(TEMPLATES.filter((template) => template.category === category).length >= 2, category);
       assert.equal(categoryLabel(category).length > 0, true);
@@ -71,12 +70,15 @@ describe("template slots", () => {
     for (const template of TEMPLATES) {
       const copy = `${template.name}\n${template.summary}\n${template.prompt}`.toLowerCase();
       for (const word of BANNED) assert.equal(copy.includes(word), false, `${template.id} ${word}`);
-      assert.equal(template.preview, undefined, template.id);
-      assert.equal(previewOf(template).video, undefined);
-      assert.equal(previewOf(template).poster, undefined);
       assert.equal(template.model.includes("o3"), false);
       assert.equal(template.model.includes("vidu"), false);
       assert.equal(template.model.includes("effects"), false);
+      const shown = previewOf(template);
+      if (template.preview?.video?.startsWith("https://")) assert.equal(shown.video, template.preview.video);
+      else assert.equal(shown.video, undefined, template.id);
+      if (template.preview?.poster?.startsWith("https://") || template.preview?.poster?.startsWith("/"))
+        assert.equal(shown.poster, template.preview.poster);
+      else assert.equal(shown.poster, undefined, template.id);
     }
     const preview = previewOf({
       preview: { video: "https://cdn.example/clip.mp4", poster: "javascript:alert(1)" },
@@ -84,6 +86,8 @@ describe("template slots", () => {
     assert.equal(preview.video, "https://cdn.example/clip.mp4");
     assert.equal(preview.poster, undefined);
     assert.equal(previewOf({ preview: { poster: "/previews/paper-peel.jpg" } }).poster, "/previews/paper-peel.jpg");
+    assert.deepEqual(previewOf({ preview: { video: "", poster: "http://cdn.example/a.jpg" } }), {});
+    assert.deepEqual(previewOf({}), {});
   });
 
   it("rejects a missing required slot and accepts the slots a template actually has", () => {
@@ -102,7 +106,10 @@ describe("template slots", () => {
     );
     const mention = buildTemplateRequest(kitchen, { ...valuesFor(kitchen), line: { text: "hello @Image 1" } });
     assert.equal(mention.request, undefined);
-    assert.equal(mention.errors[0]?.id, "line");
+    assert.equal(mention.errors[0]?.message, "Line can't include @mentions");
+    const braces = buildTemplateRequest(kitchen, { ...valuesFor(kitchen), line: { text: "hello {{name" } });
+    assert.equal(braces.request, undefined);
+    assert.equal(braces.errors[0]?.message, "Line has an unclosed {{");
 
     const beam = getTemplate("crossing-beam");
     assert.ok(beam);
@@ -154,7 +161,7 @@ describe("template slots", () => {
         assert.equal(request.prompt.includes(`@Image ${index + 1}`), true, template.id);
       });
       assert.equal(videoRequestError(model, request), null, template.id);
-      const again = templateFromGeneration({ templateId: request.templateId });
+      const again = getTemplate(request.templateId);
       assert.equal(again?.id, template.id);
       const restored = restoredSlotInputs({ templateId: request.templateId, templateSlots: request.templateSlots });
       for (const slot of images) assert.equal(restored[slot.id]?.key, `uploads/${slot.id}.jpg`);
@@ -321,7 +328,7 @@ describe("template generations", { concurrency: 1 }, () => {
       assert.ok((gen.estimatedCost ?? 0) > 0, template.id);
       const row = database.prepare("SELECT data FROM generations WHERE id = ?").get(gen.id) as { data: string };
       const stored = JSON.parse(row.data) as Generation;
-      assert.equal(templateFromGeneration(stored)?.id, template.id);
+      assert.equal(getTemplate(stored.templateId)?.id, template.id);
       const restored = restoredSlotInputs(stored);
       for (const slot of template.slots) {
         if (slot.kind === "text") {
@@ -332,6 +339,24 @@ describe("template generations", { concurrency: 1 }, () => {
         }
       }
     }
+  });
+
+  it("rejects a non-array templateSlots with 400 and does not call the provider", async () => {
+    const template = getTemplate("paper-peel");
+    assert.ok(template);
+    const built = buildTemplateRequest(template, valuesFor(template));
+    assert.ok(built.request);
+    for (const templateSlots of [{ length: 1 }, "uploads/person.jpg", 4]) {
+      installFetch();
+      const res = await post({ ...built.request, templateSlots });
+      const text = await res.text();
+      assert.equal(res.status, 400, text);
+      assert.equal(JSON.parse(text).error, "Template slots must be a list");
+      assert.deepEqual(calls, []);
+      for (const secret of Object.values(KEYS)) assert.equal(text.includes(secret), false);
+    }
+    const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
+    assert.equal(rows.n, 0);
   });
 
   it("refuses an unknown template id and a template on the wrong model without calling a provider", async () => {

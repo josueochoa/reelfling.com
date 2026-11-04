@@ -15,7 +15,7 @@ import type { FalInputMap, StudioProviderId, VideoModel } from "@/lib/registry/t
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
-import { templateRecord, templateRouteError } from "@/lib/templates/templates";
+import { templateRecord, templateRouteError, templateSlotsError } from "@/lib/templates/templates";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
@@ -149,6 +149,9 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const req = (await request.json()) as GenerateRequest;
+    // Before keys, storage, or a provider call. A non-list throws inside the slot copy.
+    const slotsError = templateSlotsError((req as { templateSlots?: unknown }).templateSlots);
+    if (slotsError) return Response.json({ error: slotsError }, { status: 400 });
     const model = catalogModel(req.model);
     if (!model || !isVideo(model))
       return Response.json({ error: `Model "${req.model}" isn't available` }, { status: 400 });

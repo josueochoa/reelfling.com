@@ -14,12 +14,12 @@ import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/
 import { assetFileUrl } from "@/lib/uploads";
 import { confirmToast, toast } from "@/components/ui/Toast";
 import type { SavedLook } from "@/lib/registry/looks";
-import { getTemplate, restoredSlotInputs, templateFromGeneration, type SlotInput } from "@/lib/templates/templates";
+import { getTemplate, restoredSlotInputs, type SlotInput } from "@/lib/templates/templates";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 import { TemplateForm } from "./TemplateForm";
-import { TemplateGallery } from "./TemplateGallery";
+import { TemplateGallery, type FilterId } from "./TemplateGallery";
 import type { Library, LibraryItem } from "./library";
 import { UploadsPanel } from "./UploadsPanel";
 import { Viewer } from "./Viewer";
@@ -70,7 +70,7 @@ export function VideoStudio({
   const [extendJobs, setExtendJobs] = useState<FalJobView[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryCategory, setGalleryCategory] = useState<"all" | "effects" | "product" | "ugc">("all");
+  const [galleryCategory, setGalleryCategory] = useState<FilterId>("all");
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [templateInitial, setTemplateInitial] = useState<Record<string, SlotInput> | undefined>(undefined);
   const [templateKey, setTemplateKey] = useState(0);
@@ -185,7 +185,7 @@ export function VideoStudio({
   }
 
   function openTemplateAgain(gen: Generation) {
-    const template = templateFromGeneration(gen);
+    const template = getTemplate(gen.templateId);
     if (!template) return;
     setOpen(null);
     openTemplate(template.id, restoredSlotInputs(gen));
@@ -348,22 +348,8 @@ export function VideoStudio({
             </span>
           )}
         </header>
-        {activeTemplate ? (
-          <TemplateForm
-            key={templateKey}
-            template={activeTemplate}
-            models={models}
-            modelsReady={openRouterModels !== null}
-            keyed={keyed}
-            library={library}
-            initial={templateInitial}
-            onGenerate={generate}
-            onBack={() => setTemplateId(null)}
-            onOpenKeys={onOpenKeys}
-            error={error}
-          />
-        ) : (
-          models.length > 0 && (
+        {models.length > 0 && (
+          <div className={activeTemplate ? "hidden" : "flex min-h-0 min-w-0 flex-1 flex-col"}>
             <ControlPanel
               ref={panel}
               key={me ? preset.key : "pending"}
@@ -385,7 +371,22 @@ export function VideoStudio({
               savedLooks={savedLooks}
               onLooks={onLooks}
             />
-          )
+          </div>
+        )}
+        {activeTemplate && (
+          <TemplateForm
+            key={templateKey}
+            template={activeTemplate}
+            models={models}
+            modelsReady={openRouterModels !== null}
+            keyed={keyed}
+            library={library}
+            initial={templateInitial}
+            onGenerate={generate}
+            onBack={() => setTemplateId(null)}
+            onOpenKeys={onOpenKeys}
+            error={error}
+          />
         )}
       </aside>
 
@@ -478,7 +479,7 @@ export function VideoStudio({
                             onOpen={() => setOpen(item.gen)}
                             onReuse={() => reuse(item.gen)}
                             onUseTemplate={
-                              templateFromGeneration(item.gen) ? () => openTemplateAgain(item.gen) : undefined
+                              getTemplate(item.gen.templateId) ? () => openTemplateAgain(item.gen) : undefined
                             }
                             onUseAsReference={() => void referenceStoredVideo(item.gen)}
                             onDelete={() => remove(item.gen)}
@@ -545,7 +546,7 @@ export function VideoStudio({
               : undefined
           }
           onReuse={() => reuse(open)}
-          onUseTemplate={templateFromGeneration(open) ? () => openTemplateAgain(open) : undefined}
+          onUseTemplate={getTemplate(open.templateId) ? () => openTemplateAgain(open) : undefined}
           onUseAsReference={() => void referenceStoredVideo(open)}
           onContinue={open.status === "succeeded" ? () => void continueFromVideo(generationBytesUrl(open.id), open) : undefined}
           continueBusy={continueBusy}

@@ -228,8 +228,8 @@ export function slotErrors(template: VideoTemplate, values: Readonly<Record<stri
       const max = slot.maxLength ?? 160;
       if (slot.required && !text) errors.push({ id: slot.id, message: `${slot.label} is required` });
       else if (text.length > max) errors.push({ id: slot.id, message: `${slot.label} must be ${max} characters or fewer` });
-      else if (text.includes("@") || text.includes("{{"))
-        errors.push({ id: slot.id, message: `${slot.label} can't include @mentions` });
+      else if (text.includes("{{")) errors.push({ id: slot.id, message: `${slot.label} has an unclosed {{` });
+      else if (text.includes("@")) errors.push({ id: slot.id, message: `${slot.label} can't include @mentions` });
     } else if (slot.required && !values[slot.id]?.image?.trim()) {
       errors.push({ id: slot.id, message: `${slot.label} is required` });
     }
@@ -270,7 +270,7 @@ export function buildTemplateRequest(
   const errors = slotErrors(template, values);
   if (errors.length) return { errors };
   const prompt = fillPrompt(template, values);
-  if (prompt.includes("{{")) return { errors: [{ id: "", message: "This template still has an empty slot." }] };
+  if (prompt.includes("{{")) return { errors: [{ id: "", message: "This template has an unclosed {{" }] };
   const referenceImages: string[] = [];
   const referenceOrder: string[] = [];
   const templateSlots: TemplateSlotFill[] = [];
@@ -320,8 +320,15 @@ export function templateRouteError(req: Pick<GenerateRequest, "templateId" | "mo
   return null;
 }
 
+/** 400 when the field is present and not a list. Absent is fine. */
+export function templateSlotsError(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (!Array.isArray(raw)) return "Template slots must be a list";
+  return null;
+}
+
 function cleanFills(template: VideoTemplate, raw: TemplateSlotFill[] | undefined): TemplateSlotFill[] | undefined {
-  if (!raw?.length) return undefined;
+  if (!Array.isArray(raw) || !raw.length) return undefined;
   const fills: TemplateSlotFill[] = [];
   const seen = new Set<string>();
   for (const item of raw) {
@@ -349,14 +356,9 @@ export function templateRecord(
   return templateSlots ? { templateId: template.id, templateSlots } : { templateId: template.id };
 }
 
-/** The template a generation was started from, if we still ship it. */
-export function templateFromGeneration(gen: { templateId?: string }): VideoTemplate | undefined {
-  return getTemplate(gen.templateId);
-}
-
 /** Slot values Use this template again writes back into the form. */
 export function restoredSlotInputs(gen: { templateId?: string; templateSlots?: TemplateSlotFill[] }): Record<string, SlotInput> {
-  const template = templateFromGeneration(gen);
+  const template = getTemplate(gen.templateId);
   if (!template || !gen.templateSlots) return {};
   const values: Record<string, SlotInput> = {};
   for (const fill of gen.templateSlots) {

@@ -138,12 +138,7 @@ export function TemplateForm({
     if (submitting) return;
     setSubmitting(true);
     setFormError("");
-    try {
-      await Promise.all([...inflight.current]);
-    } catch {
-      setSubmitting(false);
-      return;
-    }
+    await Promise.all([...inflight.current]);
     const latest = draftsRef.current;
     const values: Record<string, SlotInput> = {};
     for (const slot of template.slots) {

@@ -12,7 +12,7 @@ import {
   type VideoTemplate,
 } from "@/lib/templates/templates";
 
-type FilterId = "all" | TemplateCategory;
+export type FilterId = "all" | TemplateCategory;
 
 const FILTERS: { id: FilterId; label: string }[] = [{ id: "all", label: "All" }, ...CATEGORIES];
 
