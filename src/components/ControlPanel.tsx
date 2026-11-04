@@ -13,6 +13,7 @@ import {
   type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
+import { nativeExpansionOf } from "@/lib/enhance";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
@@ -22,6 +23,7 @@ import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
+import { PromptEnhance } from "./PromptEnhance";
 import { PromptEditor, type MentionItem, type PromptEditorHandle } from "./PromptEditor";
 import { ReferenceBox } from "./ReferenceBox";
 
@@ -177,6 +179,7 @@ export function ControlPanel({
   const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
     keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
   );
+  const [nativeOn, setNativeOn] = useState(false);
   const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
@@ -410,6 +413,7 @@ export function ControlPanel({
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
     setCameraMoves((moves) => keptCameraMoves(m, moves));
+    setNativeOn(false);
     setRouteChoice(undefined);
   }
 
@@ -466,6 +470,7 @@ export function ControlPanel({
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
       cameraFixed: showFixed ? cameraFixed : undefined,
+      promptExpansion: nativeOn && nativeExpansionOf(model) ? true : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
@@ -607,6 +612,18 @@ export function ControlPanel({
                 : undefined
             }
             onAddCamera={(id) => changeCamera(id, false)}
+          />
+          <PromptEnhance
+            prompt={prompt}
+            onChange={setPrompt}
+            family={model.family}
+            cameras={cameraMoves}
+            references={mentionItems.map((item) => (item.detail ? `${item.token} (${item.detail})` : item.token))}
+            keyed={keyed}
+            onOpenKeys={onOpenKeys}
+            native={nativeExpansionOf(model)}
+            nativeOn={nativeOn}
+            onNativeOn={setNativeOn}
           />
           {cameraMoves.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
