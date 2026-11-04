@@ -10,6 +10,9 @@ import {
   compileCamera,
   estimateRouteCost,
   keptCameraMoves,
+  keyframeLimitOf,
+  keyframesUsed,
+  ratioForStartFrame,
   type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
@@ -43,6 +46,8 @@ export interface Preset {
   firstFrameKey?: string;
   /** Library key of an end frame to restore. */
   lastFrameKey?: string;
+  /** Library keys of middle keyframes, in order. */
+  middleFrameKeys?: string[];
   /** Library keys of reference blocks, in order. */
   referenceKeys?: string[];
   /** Inline note, for a Reuse that couldn't find every file. */
@@ -136,7 +141,8 @@ const pickResolution = (model: VideoModel, prefer?: string) => {
 
 const pickRatio = (model: VideoModel, prefer?: string, hasFrame?: boolean) => {
   const list = model.capabilities.ratios;
-  if (prefer && list.includes(prefer) && (prefer !== "adaptive" || hasFrame)) return prefer;
+  const wanted = prefer ? ratioForStartFrame(prefer, !!hasFrame) : undefined;
+  if (wanted && list.includes(wanted) && (wanted !== "adaptive" || hasFrame)) return wanted;
   return list.find((ratio) => ratio === "16:9") ?? list.find((ratio) => ratio !== "adaptive") ?? list[0] ?? "16:9";
 };
 
@@ -174,6 +180,13 @@ export function ControlPanel({
     initialFrame(library.items, preset.firstFrameKey, preset.firstFrame),
   );
   const [lastFrame, setLastFrame] = useState<FrameRef | undefined>(() => initialFrame(library.items, preset.lastFrameKey));
+  const [middleFrames, setMiddleFrames] = useState<FrameRef[]>(() =>
+    (preset.middleFrameKeys ?? []).flatMap((key) => {
+      const frame = initialFrame(library.items, key);
+      return frame ? [frame] : [];
+    }),
+  );
+  const keyInput = useRef<HTMLInputElement>(null);
   // References: library item ids, in the order shown. Numbering is per kind.
   const [refIds, setRefIds] = useState<string[]>(() => initialRefIds(library.items, preset.referenceKeys));
   // Latest list for handlers that run after an await.
@@ -200,6 +213,16 @@ export function ControlPanel({
   const effectiveMode: GenerationMode = hasRefs && mode === "references" && routesOpen ? "references" : "frames";
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
+  const keyLimit = keyframeLimitOf(model);
+  const sharedKeys = !!caps.frames.sharedKeyframes;
+  const keyUsed = keyframesUsed(
+    { start: !!firstFrame, end: !!lastFrame, middle: middleFrames.length },
+    sharedKeys,
+  );
+  const keyframesFull = keyLimit > 0 && keyUsed >= keyLimit;
+  const canAddKeyframe = effectiveMode === "frames" && !!firstFrame && keyLimit > 0 && keyUsed < keyLimit;
+  const endFits =
+    !sharedKeys || !keyLimit || keyframesUsed({ start: true, end: true, middle: middleFrames.length }, true) <= keyLimit;
   const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
@@ -297,7 +320,7 @@ export function ControlPanel({
       updateRefs([...refsNow.current, ...added]);
       // Picking a reference means References mode.
       setMode("references");
-      if (ratio === "adaptive") setRatio("16:9");
+      setRatio((current) => ratioForStartFrame(current, false));
     }
     if (skipped.size)
       toast(
@@ -347,7 +370,10 @@ export function ControlPanel({
 
   function setFirstFrame(v: FrameRef | undefined) {
     setFirstFrameRaw(v);
-    if (!v && ratio === "adaptive") setRatio("16:9");
+    if (!v) {
+      setRatio((current) => ratioForStartFrame(current, false));
+      setMiddleFrames([]);
+    }
   }
 
   async function pickFrame(which: "first" | "last", file: File) {
@@ -403,7 +429,7 @@ export function ControlPanel({
   function changeMode(m: GenerationMode) {
     if (!routesOpen) return;
     setMode(m);
-    if (m === "references" && ratio === "adaptive") setRatio("16:9");
+    if (m === "references") setRatio((current) => ratioForStartFrame(current, false));
   }
 
   function changeModel(id: string) {
@@ -413,8 +439,16 @@ export function ControlPanel({
     if (!m.capabilities.ratios.includes(ratio)) setRatio(pickRatio(m));
     setResolution(pickResolution(m, resolution));
     setDuration((d) => clampDuration(d, m));
+    const nextStart = m.capabilities.frames.start ? firstFrame : undefined;
+    const nextEnd = m.capabilities.frames.end ? lastFrame : undefined;
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
+    setMiddleFrames((current) => {
+      const limit = keyframeLimitOf(m);
+      if (!limit || !nextStart) return [];
+      const room = m.capabilities.frames.sharedKeyframes ? limit - 1 - (nextEnd ? 1 : 0) : limit;
+      return current.slice(0, Math.max(0, room));
+    });
     setCameraMoves((moves) => keptCameraMoves(m, moves));
     setNativeOn(false);
     setRouteChoice(undefined);
@@ -429,7 +463,8 @@ export function ControlPanel({
 
   const uploading =
     (refs && refList.some((r) => r.item.status !== "ready")) ||
-    (effectiveMode === "frames" && (framePending(firstFrame) || framePending(lastFrame)));
+    (effectiveMode === "frames" &&
+      (framePending(firstFrame) || framePending(lastFrame) || middleFrames.some((frame) => framePending(frame))));
   const gate = availabilityFor(routeProviders(model.routes), keyed);
   const canSubmit =
     gate.available &&
@@ -457,6 +492,22 @@ export function ControlPanel({
 
   const compiled = moves.length ? compileCamera(model, prompt, cameraMoves) : undefined;
 
+  async function addKeyframeFile(file: File) {
+    if (!canAddKeyframe) return;
+    const { items, errors } = await library.add([file]);
+    if (errors.length) setNotice(errors.join(" "));
+    const item = items[0];
+    if (!item) return;
+    setMiddleFrames((current) => {
+      const usedNow = keyframesUsed(
+        { start: !!firstFrame, end: !!lastFrame, middle: current.length },
+        sharedKeys,
+      );
+      if (!firstFrame || usedNow >= keyLimit) return current;
+      return [...current, { id: item.id }];
+    });
+  }
+
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -479,6 +530,13 @@ export function ControlPanel({
         ? {
             firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
             lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
+            middleFrames:
+              keyLimit > 0 && framePayload(firstFrame)
+                ? middleFrames.flatMap((frame) => {
+                    const value = framePayload(frame);
+                    return value ? [value] : [];
+                  })
+                : undefined,
             ...(caps.frames.start &&
             framePayload(firstFrame) &&
             preset.continueFrom &&
@@ -563,23 +621,66 @@ export function ControlPanel({
 
         {effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (
-            <div className={`grid gap-3 ${caps.frames.start && caps.frames.end ? "grid-cols-2" : "grid-cols-1"}`}>
-              {caps.frames.start && (
-                <ImageSlot
-                  label="Start frame"
-                  value={frameSrc(firstFrame)}
-                  onChange={(v) => !v && setFirstFrame(undefined)}
-                  onFile={(file) => void pickFrame("first", file)}
-                />
-              )}
-              {caps.frames.end && (
-                <ImageSlot
-                  label="End frame"
-                  value={frameSrc(lastFrame)}
-                  onChange={(v) => !v && setLastFrame(undefined)}
-                  onFile={(file) => void pickFrame("last", file)}
-                  disabled={!firstFrame}
-                />
+            <div className="space-y-3">
+              <div className={`grid gap-3 ${caps.frames.start && caps.frames.end ? "grid-cols-2" : "grid-cols-1"}`}>
+                {caps.frames.start && (
+                  <ImageSlot
+                    label="Start frame"
+                    value={frameSrc(firstFrame)}
+                    onChange={(v) => !v && setFirstFrame(undefined)}
+                    onFile={(file) => void pickFrame("first", file)}
+                  />
+                )}
+                {caps.frames.end && (
+                  <ImageSlot
+                    label="End frame"
+                    value={frameSrc(lastFrame)}
+                    onChange={(v) => !v && setLastFrame(undefined)}
+                    onFile={(file) => void pickFrame("last", file)}
+                    disabled={!firstFrame || (!lastFrame && !endFits)}
+                  />
+                )}
+              </div>
+              {keyLimit > 0 && (
+                <div className="space-y-2">
+                  {middleFrames.length > 0 && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {middleFrames.map((frame, index) => (
+                        <ImageSlot
+                          key={`${frame.id ?? frame.url ?? "frame"}-${index}`}
+                          label={`Keyframe ${index + 1}`}
+                          value={frameSrc(frame)}
+                          onChange={(v) => !v && setMiddleFrames((current) => current.filter((_, i) => i !== index))}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!canAddKeyframe}
+                    title={
+                      !firstFrame ? "Add a start frame first" : keyframesFull ? `${model.name} takes up to ${keyLimit} keyframes` : undefined
+                    }
+                    onClick={() => keyInput.current?.click()}
+                    className="w-full rounded-xl border border-dashed border-white/15 py-2 text-xs text-zinc-400 transition hover:border-white/30 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/15 disabled:hover:text-zinc-400"
+                  >
+                    {keyframesFull ? "Limit reached" : "Add keyframe"}
+                  </button>
+                  <p className="text-[10px] text-zinc-500">
+                    {keyUsed} of {keyLimit} keyframes
+                  </p>
+                  <input
+                    ref={keyInput}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) void addKeyframeFile(file);
+                    }}
+                  />
+                </div>
               )}
             </div>
           )

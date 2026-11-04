@@ -172,6 +172,8 @@ function videoUrlOf(job: OpenRouterJob, apiKey: string): string | undefined {
 /** Video request body for POST /api/v1/videos. `endpoint` is the OpenRouter model id. */
 export function buildOpenRouterVideo(req: GenerateRequest, endpoint: string) {
   const frames = req.mode === "frames";
+  // Live GET /api/v1/videos/models (4 Nov 2026, no key) publishes first_frame and
+  // last_frame only. middle_frame is not a supported_frame_images value, so it is not sent.
   const frameImages = frames
     ? [
         req.firstFrame && { type: "image_url", image_url: { url: req.firstFrame }, frame_type: "first_frame" },

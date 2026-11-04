@@ -200,6 +200,7 @@ export function VideoStudio({
       mode: extra?.frameKey ? "frames" : (restored?.mode ?? gen.mode),
       firstFrameKey: extra?.frameKey ?? restored?.firstFrameKey,
       lastFrameKey: extra?.frameKey ? undefined : restored?.lastFrameKey,
+      middleFrameKeys: extra?.frameKey ? undefined : restored?.middleFrameKeys,
       referenceKeys: extra?.frameKey ? undefined : restored?.referenceKeys,
       continueFrom: extra?.continueFrom,
       notice:
@@ -483,6 +484,9 @@ function videoRefs(gen: Generation) {
     if (key) refs.push({ src: assetFileUrl(key), alt: alt || "Reference" });
   };
   add(gen.inputs.firstFrameKey, gen.inputs.firstFrameName ?? "Start frame");
+  for (const [index, frame] of (gen.inputs.middleFrames ?? []).entries()) {
+    add(frame.key, frame.name ?? `Keyframe ${index + 1}`);
+  }
   add(gen.inputs.lastFrameKey, gen.inputs.lastFrameName ?? "End frame");
   for (const block of gen.inputs.blocks ?? []) {
     if (block.kind === "image") add(block.key, block.name ?? "Reference");

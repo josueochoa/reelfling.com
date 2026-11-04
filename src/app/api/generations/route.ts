@@ -159,9 +159,11 @@ export async function POST(request: Request) {
     if (!(caps.camera && caps.camera.fixed)) delete req.cameraFixed;
 
     const frames = req.mode === "frames";
-    const [first, last, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
+    const middleValues = frames && caps.frames.middle ? req.middleFrames : undefined;
+    const [first, last, middle, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
       frames && req.firstFrame ? resolveOne(user.id, req.firstFrame, "image") : undefined,
       frames && req.firstFrame && req.lastFrame ? resolveOne(user.id, req.lastFrame, "image") : undefined,
+      middleValues?.length ? Promise.all(middleValues.map((value) => resolveOne(user.id, value, "image"))) : undefined,
       resolveList(user.id, frames ? undefined : req.referenceImages, "image"),
       resolveList(user.id, frames ? undefined : req.referenceVideos, "video"),
       resolveList(user.id, frames ? undefined : req.referenceAudios, "audio"),
@@ -189,6 +191,7 @@ export async function POST(request: Request) {
       prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
       firstFrame: first?.url,
       lastFrame: last?.url,
+      middleFrames: middle?.map((item) => item.url),
       referenceImages: referenceImages?.map((media) => media.url),
       referenceVideos: referenceVideos?.map((media) => media.url),
       referenceAudios: referenceAudios?.map((media) => media.url),
@@ -232,6 +235,13 @@ export async function POST(request: Request) {
       audios: frames ? 0 : na(req),
       ...frameFields(first, "firstFrameKey"),
       ...frameFields(last, "lastFrameKey"),
+      ...(middle?.some((item) => item.key)
+        ? {
+            middleFrames: middle.flatMap((item) =>
+              item.key ? [{ kind: "image" as const, key: item.key, ...(item.name && { name: item.name }) }] : [],
+            ),
+          }
+        : {}),
       ...(blocks && blocks.length > 0 && { blocks }),
     };
     const gen: Generation = {

@@ -74,7 +74,6 @@ describe("continue from last frame", () => {
     );
     assert.ok(falModels.length > 3);
     for (const model of falModels) {
-      const field = model.inputs?.start ?? "image_url";
       const body = falQueueInput(
         {
           prompt: "keep going",
@@ -85,7 +84,16 @@ describe("continue from last frame", () => {
         },
         model.inputs,
       );
-      assert.equal(body[field], FRAME, model.id);
+      // Flux keyframes has no start field. The uploaded frame is the first keyframe.
+      if (model.inputs?.keyframeShape === "objects" && model.inputs.keyframes) {
+        const frames = body[model.inputs.keyframes] as { image_url: string }[];
+        assert.equal(frames[0]?.image_url, FRAME, model.id);
+        assert.equal(body.image_url, undefined, model.id);
+        assert.equal(body.start_image_url, undefined, model.id);
+      } else {
+        const field = model.inputs?.start ?? "image_url";
+        assert.equal(body[field], FRAME, model.id);
+      }
     }
   });
 

@@ -61,6 +61,40 @@ describe("restoreInputs", () => {
     assert.equal(restored.notice, undefined);
   });
 
+  it("restores middle keyframes that are still in the library and names the ones that are gone", () => {
+    const restored = restoreInputs(
+      gen({
+        mode: "frames",
+        prompt: "Hold the middle",
+        inputs: {
+          ...counts,
+          firstFrame: true,
+          lastFrame: true,
+          firstFrameKey: "uploads/start.jpg",
+          firstFrameName: "start.png",
+          lastFrameKey: "uploads/end.jpg",
+          lastFrameName: "end.png",
+          middleFrames: [
+            { kind: "image", key: "uploads/mid.jpg", name: "mid.png" },
+            { kind: "image", key: "uploads/gone.jpg", name: "gone.png" },
+          ],
+        },
+      }),
+      new Set(["uploads/start.jpg", "uploads/end.jpg", "uploads/mid.jpg"]),
+    );
+    assert.deepEqual(restored.middleFrameKeys, ["uploads/mid.jpg"]);
+    assert.match(restored.notice ?? "", /Keyframe "gone.png"/);
+    const referenced = referencedKeySet([
+      {
+        userId: "u1",
+        data: JSON.stringify({
+          inputs: { middleFrames: [{ kind: "image", key: "uploads/mid.jpg" }] },
+        }),
+      },
+    ]);
+    assert.equal(referenced.has("u1\0uploads/mid.jpg"), true);
+  });
+
   it("names a deleted upload, restores the rest, and keeps the surviving mention pointed at the same file", () => {
     const restored = restoreInputs(
       gen({
