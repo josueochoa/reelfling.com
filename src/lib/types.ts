@@ -1,4 +1,5 @@
 import type { StudioProviderId } from "./registry";
+import type { LookChoice } from "./registry/looks";
 
 export type GenerationMode = "frames" | "references";
 
@@ -18,6 +19,10 @@ export interface GenerateRequest {
   cameraMove?: string;
   /** Up to three preset ids, in chip order. The server compiles them. */
   cameraMoves?: string[];
+  /** Look chips. Auto is omitted. The server compiles them into the provider prompt. */
+  look?: LookChoice;
+  /** Library key of a palette swatch already included in the reference images. */
+  lookSwatch?: string;
   firstFrame?: string;
   lastFrame?: string;
   /** Images between the start and end frames, in order. */
@@ -92,6 +97,10 @@ export interface Generation {
   cameraMove?: string;
   /** Preset ids in chip order. Absent on older records. */
   cameraMoves?: string[];
+  /** Look chips that were on. Reuse puts them back. */
+  look?: LookChoice;
+  /** Palette swatch library key, when one was attached. */
+  lookSwatch?: string;
   /** Provider this generation ran on. */
   route?: string;
   /** Catalog endpoint id that was called. */

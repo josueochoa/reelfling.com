@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ImageModel, VideoModel } from "@/lib/registry";
+import type { SavedLook } from "@/lib/registry/looks";
 import { rememberModels } from "@/lib/registry/lookup";
 import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { apiJson, type Me } from "./api";
@@ -61,6 +62,10 @@ export function Studio() {
   }, []);
 
   const openKeys = () => setKeysOpen(true);
+  function setLooks(next: SavedLook[]) {
+    setMe((current) => (current ? { ...current, looks: next } : current));
+  }
+  const savedLooks = me?.looks ?? [];
   function showToolJob() {
     window.location.hash = "fal";
     fal.current?.reload();
@@ -104,6 +109,8 @@ export function Studio() {
           tools={tools}
           extendOffers={extendOffers}
           onToolJob={showToolJob}
+          savedLooks={savedLooks}
+          onLooks={setLooks}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
@@ -119,6 +126,8 @@ export function Studio() {
           tools={tools}
           onToolJob={showToolJob}
           catalogModels={catalogImages}
+          savedLooks={savedLooks}
+          onLooks={setLooks}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>

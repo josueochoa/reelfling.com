@@ -17,11 +17,14 @@ import {
   type VideoModel,
 } from "@/lib/registry";
 import { nativeExpansionOf } from "@/lib/enhance";
+import { compileLook, keptLook, lookIsEmpty, paletteUsesSwatch, type LookChoice, type SavedLook } from "@/lib/registry/looks";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { toast } from "@/components/ui/Toast";
 import { CameraMoves } from "./CameraMoves";
+import { LookChips } from "./LookChips";
+import { resolvePaletteSwatch, type SwatchMemory } from "./paletteSwatch";
 import { ModelMenu } from "./ModelMenu";
 import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
@@ -56,6 +59,10 @@ export interface Preset {
   cameraMoves?: string[];
   /** One preset from a generation saved before chips. */
   cameraMove?: string;
+  /** Look chips to restore. */
+  look?: LookChoice;
+  /** Palette swatch key, when that generation attached one. */
+  lookSwatch?: string;
   /** Provider this generation ran on. Reuse sends it again. */
   route?: string;
   /** Set when this generation continues another clip. */
@@ -119,6 +126,8 @@ interface Props {
   onOpenKeys: () => void;
   /** Library item id → its mention ("@Image 2"), for showing selection in the Uploads panel. */
   onReferencesChange: (labels: Map<string, string>) => void;
+  savedLooks?: readonly SavedLook[];
+  onLooks?: (next: SavedLook[]) => void;
 }
 
 const KIND: Record<UploadKind, RefKind> = { image: "Image", video: "Video", audio: "Audio" };
@@ -160,6 +169,8 @@ export function ControlPanel({
   onOpenLibrary,
   onOpenKeys,
   onReferencesChange,
+  savedLooks = [],
+  onLooks,
 }: Props) {
   const initialModel = models.find((m) => m.id === preset.model) ?? models[0];
   const [model, setModel] = useState<VideoModel>(initialModel);
@@ -194,6 +205,12 @@ export function ControlPanel({
   const [seed, setSeed] = useState("");
   const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
     keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
+  );
+  const [look, setLook] = useState<LookChoice>(() => keptLook(preset.look));
+  const swatchMemory = useRef<SwatchMemory | undefined>(
+    preset.lookSwatch && preset.look?.colors?.length
+      ? { key: preset.lookSwatch, colors: preset.look.colors.join(",") }
+      : undefined,
   );
   const [nativeOn, setNativeOn] = useState(false);
   const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
@@ -490,7 +507,8 @@ export function ControlPanel({
     setCameraMoves([...cameraMoves, id]);
   }
 
-  const compiled = moves.length ? compileCamera(model, prompt, cameraMoves) : undefined;
+  const compiled = compileCamera(model, compileLook(model, prompt, look).prompt, cameraMoves);
+  const showSent = compiled.prompt.trim() !== prompt.trim() || !!compiled.cameraFixed;
 
   async function addKeyframeFile(file: File) {
     if (!canAddKeyframe) return;
@@ -511,48 +529,93 @@ export function ControlPanel({
   async function submit() {
     if (!canSubmit) return;
     setSubmitting(true);
-    const frames = effectiveMode === "frames";
-    const ok = await onGenerate({
-      model: model.id,
-      prompt,
-      mode: effectiveMode,
-      ratio,
-      resolution,
-      duration,
-      route: routeProvider,
-      generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
-      seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
-      cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
-      cameraFixed: showFixed ? cameraFixed : undefined,
-      promptExpansion: nativeOn && native ? true : undefined,
-      watermark: caps.watermark ? watermark : undefined,
-      ...(frames
-        ? {
-            firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
-            lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
-            middleFrames:
-              keyLimit > 0 && framePayload(firstFrame)
-                ? middleFrames.flatMap((frame) => {
-                    const value = framePayload(frame);
-                    return value ? [value] : [];
-                  })
-                : undefined,
-            ...(caps.frames.start &&
-            framePayload(firstFrame) &&
-            preset.continueFrom &&
-            preset.firstFrameKey &&
-            frameItem(firstFrame)?.key === preset.firstFrameKey
-              ? { continueFrom: preset.continueFrom }
-              : {}),
-          }
-        : {
-            referenceImages: refValues("image"),
-            referenceVideos: refValues("video"),
-            referenceAudios: refValues("audio"),
-            referenceOrder: refList.flatMap((r) => (r.item.key ? [r.item.key] : [])),
-          }),
-    }).finally(() => setSubmitting(false));
-    if (ok) setSeed("");
+    try {
+      const choice = keptLook(look);
+      let modeOut = effectiveMode;
+      let imageRefs = effectiveMode === "references" ? refValues("image") : [];
+      let order = effectiveMode === "references" ? refList.flatMap((r) => (r.item.key ? [r.item.key] : [])) : [];
+      let lookSwatch: string | undefined;
+      if (paletteUsesSwatch(model, choice)) {
+        const bare = imageRefs.flatMap((value) => (value.startsWith("upload:") ? [value.slice("upload:".length)] : []));
+        const resolved = await resolvePaletteSwatch(library, choice, swatchMemory.current, bare, (key) =>
+          library.items.some((item) => item.key === key && item.status === "ready"),
+        );
+        swatchMemory.current = resolved.memory;
+        lookSwatch = resolved.memory?.key;
+        const swatchId = resolved.added?.id ?? library.items.find((item) => item.key === lookSwatch)?.id;
+        if (swatchId) {
+          setRefIds((ids) => (ids.includes(swatchId) ? ids : [...ids, swatchId]));
+          if (effectiveMode === "frames") setMode("references");
+        }
+        const swatchRef = lookSwatch ? `upload:${lookSwatch}` : undefined;
+        if (effectiveMode === "references") {
+          const urls = imageRefs.filter((value) => !value.startsWith("upload:"));
+          imageRefs = [...resolved.keys.map((key) => `upload:${key}`), ...urls];
+          if (lookSwatch && !order.includes(lookSwatch)) order = [...order, lookSwatch];
+        } else if (swatchRef) {
+          const frames = [framePayload(firstFrame), ...middleFrames.map((frame) => framePayload(frame)), framePayload(lastFrame)].flatMap(
+            (value) => (value ? [value] : []),
+          );
+          imageRefs = [...frames.filter((value) => value !== swatchRef), swatchRef];
+          order = imageRefs.flatMap((value) => (value.startsWith("upload:") ? [value.slice("upload:".length)] : []));
+          modeOut = "references";
+        }
+        const videos = modeOut === "references" && effectiveMode === "references" ? refValues("video").length : 0;
+        const audios = modeOut === "references" && effectiveMode === "references" ? refValues("audio").length : 0;
+        if (imageRefs.length > caps.references.image || imageRefs.length + videos + audios > caps.references.total) {
+          setNotice(`${model.name} doesn't have room for the palette swatch. Remove a reference and try again.`);
+          return;
+        }
+      }
+      const frames = modeOut === "frames";
+      const ok = await onGenerate({
+        model: model.id,
+        prompt,
+        mode: modeOut,
+        ratio,
+        resolution,
+        duration,
+        route: routeProvider,
+        generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
+        seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
+        cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
+        cameraFixed: showFixed ? cameraFixed : undefined,
+        promptExpansion: nativeOn && native ? true : undefined,
+        watermark: caps.watermark ? watermark : undefined,
+        ...(!lookIsEmpty(choice) ? { look: choice } : {}),
+        ...(lookSwatch ? { lookSwatch } : {}),
+        ...(frames
+          ? {
+              firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
+              lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
+              middleFrames:
+                keyLimit > 0 && framePayload(firstFrame)
+                  ? middleFrames.flatMap((frame) => {
+                      const value = framePayload(frame);
+                      return value ? [value] : [];
+                    })
+                  : undefined,
+              ...(caps.frames.start &&
+              framePayload(firstFrame) &&
+              preset.continueFrom &&
+              preset.firstFrameKey &&
+              frameItem(firstFrame)?.key === preset.firstFrameKey
+                ? { continueFrom: preset.continueFrom }
+                : {}),
+            }
+          : {
+              referenceImages: imageRefs,
+              referenceVideos: effectiveMode === "references" ? refValues("video") : undefined,
+              referenceAudios: effectiveMode === "references" ? refValues("audio") : undefined,
+              referenceOrder: order,
+            }),
+      });
+      if (ok) setSeed("");
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -756,11 +819,11 @@ export function ControlPanel({
               ))}
             </div>
           )}
-          {compiled && cameraMoves.length > 0 && (
-            <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-zinc-300">
-              <p className="mb-1 text-[10px] font-medium tracking-wide text-zinc-500 uppercase">Prompt sent</p>
-              <p>{compiled.prompt || "—"}</p>
-              {compiled.cameraFixed && <p className="mt-1 text-zinc-500">Static is sent as a fixed camera.</p>}
+          {showSent && (
+            <div className="mt-2 rounded-lg border border-line bg-surface-2 px-3 py-2 text-label leading-relaxed text-fg-muted">
+              <p className="mb-1 text-label tracking-wide text-fg-subtle uppercase">Prompt sent</p>
+              <p data-testid="prompt-preview">{compiled.prompt || "—"}</p>
+              {compiled.cameraFixed && <p className="mt-1 text-fg-subtle">Static is sent as a fixed camera.</p>}
             </div>
           )}
           {badMentions.length > 0 && (
@@ -777,6 +840,10 @@ export function ControlPanel({
             <CameraMoves value={cameraMoves} onToggle={(id) => changeCamera(id, true)} />
           </Section>
         )}
+
+        <Section label="Look">
+          <LookChips value={look} onChange={setLook} looks={savedLooks} onLooks={onLooks ?? (() => {})} />
+        </Section>
 
         {caps.ratios.length > 0 && <Section label="Aspect ratio">
           <div className="flex flex-wrap gap-1.5">

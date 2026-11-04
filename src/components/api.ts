@@ -1,5 +1,6 @@
 import type { AuthMode, User } from "@/lib/auth";
 import type { KeySummary } from "@/lib/keys";
+import type { SavedLook } from "@/lib/registry/looks";
 import type { storageUsage } from "@/lib/storage";
 
 export interface Me {
@@ -8,6 +9,8 @@ export interface Me {
   storage: Awaited<ReturnType<typeof storageUsage>>;
   /** Saved provider per model id. */
   routePreferences?: Record<string, string>;
+  /** Named looks. Absent until /api/me has been read. */
+  looks?: SavedLook[];
   auth: { mode: AuthMode; signOutUrl: string };
 }
 
