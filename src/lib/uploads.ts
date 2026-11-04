@@ -54,13 +54,17 @@ export interface UploadItem {
   createdAt: number;
 }
 
-export type AssetSource = "upload" | "generated";
+export type AssetSource = "upload" | "generated" | "processed";
 
 /** Anything in the user's bucket they'd want to see: uploads plus generated videos and images. */
 export interface AssetItem extends UploadItem {
   source: AssetSource;
   /** For generated assets: what made it. */
   generation?: { id: string; tab: "video" | "image" | "fal"; model: string; prompt: string };
+  /** Asset key this file was made from, when a tool produced it. */
+  parentId?: string;
+  /** Catalog tool id. */
+  tool?: string;
 }
 
 /** Keys of assets the app lists and lets users reference (not thumbnails or old `refs/`). */

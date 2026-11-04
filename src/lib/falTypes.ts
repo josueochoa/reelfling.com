@@ -34,6 +34,13 @@ export interface FalFieldError {
   message: string;
 }
 
+/** A catalog tool run, without the request JSON or the endpoint. */
+export interface FalToolView {
+  id: string;
+  name: string;
+  inputAssetIds: string[];
+}
+
 /** What the browser is allowed to see. Raw request/response JSON stays on the row. */
 export interface FalJobView {
   id: string;
@@ -41,6 +48,10 @@ export interface FalJobView {
   status: FalJobStatus;
   /** Prompt from the input, when it had one. */
   prompt: string;
+  /** Set when the job was started from the Tools menu. */
+  tool?: FalToolView;
+  /** Queue position while fal still has the request, when it reported one. */
+  queuePosition?: number;
   error?: string;
   fields?: FalFieldError[];
   outputs: { key: string; contentType: string }[];

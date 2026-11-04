@@ -4,9 +4,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
+import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
 import type { Library, LibraryItem } from "./library";
+import { ToolsMenu } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { MediaPreview } from "./MediaPreview";
 import { formatBytes } from "./UserMenu";
@@ -21,6 +23,7 @@ const SOURCES: { value: AssetSource | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "generated", label: "Generated" },
   { value: "upload", label: "Uploaded" },
+  { value: "processed", label: "Processed" },
 ];
 
 const modelLabel = (id: string) => lookupModelName(id);
@@ -58,6 +61,8 @@ export function AssetsStudio({
   onUseInImage,
   onUseInVideo,
   onDeleted,
+  tools,
+  onToolJob,
 }: {
   me: Me | null;
   library: Library;
@@ -67,6 +72,9 @@ export function AssetsStudio({
   onUseInVideo: (item: LibraryItem) => void;
   /** Generated assets were deleted, so the Video and Image tabs should refresh. */
   onDeleted: () => void;
+  tools: readonly ToolView[];
+  /** A tool job was created and should show in the feed. */
+  onToolJob: () => void;
 }) {
   const [kind, setKind] = useState<UploadKind | "all">("all");
   const [source, setSource] = useState<AssetSource | "all">("all");
@@ -307,7 +315,11 @@ export function AssetsStudio({
                           }`}
                         />
                         <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-200">
-                          {item.source === "generated" ? `✦ ${modelLabel(item.generation?.model ?? "")}` : "⇪ Upload"}
+                          {item.source === "processed"
+                            ? `✦ ${tools.find((tool) => tool.id === item.tool)?.name ?? item.name}`
+                            : item.source === "generated"
+                              ? `✦ ${modelLabel(item.generation?.model ?? "")}`
+                              : "⇪ Upload"}
                         </span>
                       </div>
                     );
@@ -325,8 +337,18 @@ export function AssetsStudio({
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
           onClose={() => setPreviewId(null)}
+          lineage={lineageFor(previewing, library.items, tools, setPreviewId)}
           actions={
             <>
+              <ToolsMenu
+                kind={previewing.kind}
+                assetKey={previewing.key}
+                tools={tools}
+                onStarted={() => {
+                  setPreviewId(null);
+                  onToolJob();
+                }}
+              />
               <ActionButton onClick={() => download(previewing)}>Download</ActionButton>
               {previewing.kind === "image" && (
                 <ActionButton
@@ -355,6 +377,24 @@ export function AssetsStudio({
       )}
     </div>
   );
+}
+
+function lineageFor(
+  item: LibraryItem,
+  all: LibraryItem[],
+  tools: readonly ToolView[],
+  open: (id: string) => void,
+) {
+  const parent = item.parentId ? all.find((other) => other.key === item.parentId) : undefined;
+  const children = all.filter((other) => other.parentId && other.parentId === item.key);
+  const toolName = tools.find((tool) => tool.id === item.tool)?.name;
+  if (!parent && !children.length && !toolName) return undefined;
+  return {
+    toolName,
+    parent: parent ? { id: parent.id, name: parent.name } : undefined,
+    children: children.map((child) => ({ id: child.id, name: child.name })),
+    onOpen: open,
+  };
 }
 
 function ActionButton({

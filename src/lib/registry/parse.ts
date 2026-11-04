@@ -1,6 +1,6 @@
 import {
-  CAMERA_MOVE_IDS,
   IMAGE_TASKS,
+  NATIVE_CAMERA_PARAMS,
   MAPPER_IDS,
   ROUTE_PROVIDERS,
   SPEECH_TASKS,
@@ -106,14 +106,11 @@ export function parseModel(value: unknown): ModelEntry {
 }
 
 function assertCamera(model: VideoModel) {
-  const camera = model.capabilities.camera;
-  if (!camera || !camera.native) return;
-  for (const [move, binding] of Object.entries(camera.native)) {
-    if (!(CAMERA_MOVE_IDS as readonly string[]).includes(move))
-      throw new Error(`${model.id} maps unknown camera move "${move}"`);
-    const value = binding as { param?: unknown; value?: unknown } | undefined;
-    if (!value || value.param !== "camera_fixed" || typeof value.value !== "boolean")
-      throw new Error(`${model.id} camera move "${move}" is not the camera_fixed boolean`);
+  const params = model.capabilities.camera && model.capabilities.camera.params;
+  if (!params) return;
+  for (const param of params) {
+    if (!(NATIVE_CAMERA_PARAMS as readonly string[]).includes(param))
+      throw new Error(`${model.id} camera parameter "${param}" is not verified`);
   }
 }
 
@@ -158,6 +155,11 @@ export function assertRegistry(models: readonly ModelEntry[]) {
     } else {
       const expected = model.group === "speech" ? "tts" : "tool";
       if (model.task !== expected) throw new Error(`${model.id} task ${model.task} doesn't match ${model.group}`);
+      if (model.group === "tool") {
+        const accepts = model.capabilities.accepts;
+        if (accepts !== undefined && accepts !== "image" && accepts !== "video")
+          throw new Error(`${model.id} accepts "${String(accepts)}", not image or video`);
+      }
     }
   }
 }

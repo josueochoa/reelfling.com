@@ -11,5 +11,6 @@
   { "endpoint": "fal-ai/minimax/speech-2.8-hd", "task": "tts" },
   { "endpoint": "fal-ai/flux/dev", "task": "image" },
   { "endpoint": "fal-ai/flux/dev/image-to-image", "task": "image-edit" },
-  { "endpoint": "fal-ai/bria/background/remove", "task": "tool" }
+  { "endpoint": "fal-ai/bria/background/remove", "task": "tool" },
+  { "endpoint": "fal-ai/birefnet/v2", "task": "tool" }
 ]

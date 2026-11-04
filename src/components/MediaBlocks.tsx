@@ -27,7 +27,9 @@ export function useLazyThumbs(
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    const byId = new Map(items.filter((i) => i.source === "generated" && !i.hasThumb).map((i) => [i.id, i]));
+    const byId = new Map(
+      items.filter((i) => (i.source === "generated" || i.source === "processed") && !i.hasThumb).map((i) => [i.id, i]),
+    );
     if (!byId.size) return;
     const io = new IntersectionObserver(
       (entries) => {

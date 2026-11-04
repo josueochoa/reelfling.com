@@ -25,8 +25,15 @@ export interface AppEnv {
   STORAGE_QUOTA_GB?: string;
 }
 
-/** The current request's Worker env. Only callable while handling a request. */
-export const env = () => getCloudflareContext().env as unknown as AppEnv;
+let envOverride: AppEnv | undefined;
+
+/** Tests inject an env so job code can run without a Worker. Production never sets this. */
+export function setTestEnv(next: AppEnv | undefined) {
+  envOverride = next;
+}
+
+/** The current request's Worker env. Only callable while handling a request, unless a test set one. */
+export const env = () => envOverride ?? (getCloudflareContext().env as unknown as AppEnv);
 
 type Param = string | number | null;
 

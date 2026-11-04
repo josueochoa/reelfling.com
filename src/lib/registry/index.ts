@@ -46,7 +46,15 @@ export function routeFor<T extends ModelEntry>(model: T, provider: string) {
   return model.routes.find((route) => route.provider === provider);
 }
 
-export { cameraMoveLabel, cameraMovesFor, keptCameraMove, CAMERA_MOVES } from "./camera";
+export {
+  CAMERA_MOVE_MAX,
+  cameraMoveLabel,
+  cameraMovesFor,
+  cameraPresets,
+  cameraSummary,
+  compileCamera,
+  keptCameraMoves,
+} from "./camera";
 export { estimateCost, nearestRatio, ratioAllowed } from "./price";
 export { mentionSyntax } from "./syntax";
 export { imageRequestError, videoRequestError } from "./validate";
@@ -63,7 +71,6 @@ export {
 } from "./types";
 export type {
   CameraCapabilities,
-  CameraMove,
   DurationCap,
   EstimateInput,
   ImageCapabilities,

@@ -7,16 +7,18 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { VideoModel } from "@/lib/registry";
 import { rememberModels } from "@/lib/registry/lookup";
+import type { ToolView } from "@/lib/toolTypes";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
 import { FalStudio, type FalTabHandle } from "./FalStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
 import { useLibrary, type LibraryItem } from "./library";
+import { TeamStudio } from "./TeamStudio";
 import { UserMenu } from "./UserMenu";
 import { VideoStudio, type StudioTabHandle } from "./VideoStudio";
 
-const TABS = ["video", "image", "fal", "assets"] as const;
+const TABS = ["video", "image", "fal", "assets", "team"] as const;
 type Tab = (typeof TABS)[number];
 
 // The tab lives in the URL hash (#image, #assets), so reload and Back keep it.
@@ -30,6 +32,7 @@ export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
   const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
+  const [tools, setTools] = useState<ToolView[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const library = useLibrary();
   const video = useRef<StudioTabHandle>(null);
@@ -42,15 +45,20 @@ export function Studio() {
   }, [loadMe]);
   // Slim picker list. The generated catalog stays on the server.
   useEffect(() => {
-    apiJson<{ models: VideoModel[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; tools?: ToolView[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
         setOpenRouterModels(body.models);
+        setTools(body.tools ?? []);
       })
       .catch(() => setOpenRouterModels([]));
   }, []);
 
   const openKeys = () => setKeysOpen(true);
+  function showToolJob() {
+    window.location.hash = "fal";
+    fal.current?.reload();
+  }
   /** From Assets: jump to a tab and attach the asset as a reference there. */
   function sendTo(tab: "video" | "image", item: LibraryItem) {
     window.location.hash = tab;
@@ -87,6 +95,8 @@ export function Studio() {
           library={library}
           onOpenKeys={openKeys}
           openRouterModels={openRouterModels}
+          tools={tools}
+          onToolJob={showToolJob}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
@@ -99,10 +109,15 @@ export function Studio() {
             window.location.hash = "video";
             video.current?.setStartFrame(item);
           }}
+          tools={tools}
+          onToolJob={showToolJob}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
         <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
+      </div>
+      <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
+        <TeamStudio me={me} active={tab === "team"} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio
@@ -117,6 +132,8 @@ export function Studio() {
             fal.current?.reload();
             void loadMe();
           }}
+          tools={tools}
+          onToolJob={showToolJob}
         />
       </div>
 
