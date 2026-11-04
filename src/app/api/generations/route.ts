@@ -4,6 +4,7 @@ import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
 import { falQueueInput, submitFal } from "@/lib/providers/fal";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
+import { applyNativeExpansion } from "@/lib/enhance";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
 import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
@@ -179,8 +180,11 @@ export async function POST(request: Request) {
       0,
       CAMERA_MOVE_MAX,
     );
+    const nativeOn = req.promptExpansion === true;
+    const withoutExpansion = { ...req };
+    delete withoutExpansion.promptExpansion;
     const providerReq = applyCameraMoves(model, {
-      ...req,
+      ...withoutExpansion,
       model: run.endpoint,
       prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
       firstFrame: first?.url,
@@ -194,7 +198,11 @@ export async function POST(request: Request) {
     if (run.provider === "fal") {
       const creds = await getCredentials(user.id, "fal");
       if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
-      const submission = await submitFal(creds.apiKey, run.endpoint, falQueueInput(providerReq, run.inputs));
+      const submission = await submitFal(
+        creds.apiKey,
+        run.endpoint,
+        applyNativeExpansion(falQueueInput(providerReq, run.inputs), model, run, nativeOn),
+      );
       taskId = submission.requestId;
       falUrls = {
         falStatusUrl: submission.statusUrl,

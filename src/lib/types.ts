@@ -27,6 +27,11 @@ export interface GenerateRequest {
   referenceOrder?: string[];
   /** Provider route chosen in the picker or restored by Reuse. */
   route?: string;
+  /**
+   * Ask a model with native expansion to rewrite the prompt.
+   * Enhance is not called on this path. Omitted means leave the provider default.
+   */
+  promptExpansion?: boolean;
 }
 
 /** One reference block, stored so Reuse can rebuild the box. */
