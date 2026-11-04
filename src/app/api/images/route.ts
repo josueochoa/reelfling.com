@@ -5,11 +5,11 @@ import { invalidMentions } from "@/lib/mentions";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import {
   estimateRouteCost,
+  imagePriceMegapixels,
   imageProviderFor,
-  outputMegapixels,
+  imageRequestAspect,
   imageRequestError,
   isImage,
-  ratioAllowed,
   type ImageQuality,
   type ImageResolution,
 } from "@/lib/registry";
@@ -80,21 +80,20 @@ export async function POST(request: Request) {
     const imageProvider = route.provider;
     await assertStorageAvailable(user.id);
 
-    // "auto": the reference's shape if there is one; otherwise the model's own fallback.
-    let aspect: string | undefined = req.ratio;
-    if (req.ratio === "auto")
-      aspect =
-        refs.length && req.autoRatio && ratioAllowed(model, req.autoRatio, req.resolution) && req.autoRatio !== "auto"
-          ? req.autoRatio
-          : model.capabilities.autoFallback;
-    const sized = model.capabilities.resolutions.includes(req.resolution) ? req.resolution : undefined;
+    const priceInput = {
+      ratio: req.ratio,
+      resolution: req.resolution,
+      references: refs.length,
+      autoRatio: req.autoRatio,
+    };
+    const aspect = imageRequestAspect(model, priceInput);
     const estimate =
       estimateRouteCost(model, imageProvider, {
         resolution: req.resolution,
         count: req.count,
         quality: req.quality,
         referenceImages: refs.length,
-        megapixels: outputMegapixels(sized, aspect && aspect !== "auto" ? aspect : "1:1"),
+        megapixels: imagePriceMegapixels(model, priceInput),
       }) ?? 0;
 
     const now = Date.now();
