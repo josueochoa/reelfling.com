@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { cameraSummary } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
+import { Download, RotateCcw, X } from "@/components/ui/Icon";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
 
 export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
@@ -58,7 +60,10 @@ export function GenerationCard({
       <div
         className={`relative w-full cursor-pointer bg-black ${ratioClass[gen.ratio] ?? "aspect-video"} max-h-[70vh]`}
         onClick={onOpen}
-        onMouseEnter={() => videoRef.current?.play().catch(() => {})}
+        onMouseEnter={() => {
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+          videoRef.current?.play().catch(() => {});
+        }}
         onMouseLeave={() => {
           const v = videoRef.current;
           if (v) {
@@ -101,20 +106,21 @@ export function GenerationCard({
             {ready && <Meta>{formatSecs(elapsed)}</Meta>}
           </div>
           <div className="flex shrink-0 gap-1">
-            <IconButton title="Reuse settings" onClick={onReuse}>
-              ↺
+            <IconButton label="Reuse settings" onClick={onReuse}>
+              <RotateCcw className="size-3.5" aria-hidden />
             </IconButton>
             {ready && (
               <a
                 href={`${videoSrc(gen)}?download`}
+                aria-label="Download"
                 title="Download"
-                className="grid size-7 place-items-center rounded-lg text-sm text-zinc-400 hover:bg-white/10 hover:text-white"
+                className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-white"
               >
-                ↓
+                <Download className="size-3.5" aria-hidden />
               </a>
             )}
-            <IconButton title="Delete" onClick={onDelete}>
-              ✕
+            <IconButton label="Delete" onClick={onDelete}>
+              <X className="size-3.5" aria-hidden />
             </IconButton>
           </div>
         </div>
@@ -136,10 +142,10 @@ export function StatusOverlay({ gen, elapsed }: { gen: Generation; elapsed: numb
   }
   return (
     <div className="absolute inset-0 overflow-hidden">
-      <div className="shimmer absolute inset-0" />
+      <Skeleton fill />
       <div className="absolute inset-0 grid place-items-center">
         <div className="flex flex-col items-center gap-2">
-          <span className="size-6 animate-spin rounded-full border-2 border-white/15 border-t-accent" />
+          <span className="size-6 animate-spin rounded-full border-2 border-white/15 border-t-accent motion-reduce:animate-none" />
           <p className="text-xs text-zinc-400 capitalize">
             {gen.status}
             {gen.progress ? ` ${gen.progress}%` : ""} · {formatSecs(elapsed)}
@@ -171,12 +177,14 @@ function TextAction({ onClick, children }: { onClick: () => void; children: Reac
   );
 }
 
-function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
-      title={title}
+      type="button"
+      aria-label={label}
+      title={label}
       onClick={onClick}
-      className="grid size-7 place-items-center rounded-lg text-sm text-zinc-400 hover:bg-white/10 hover:text-white"
+      className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-white"
     >
       {children}
     </button>

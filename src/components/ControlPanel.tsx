@@ -13,15 +13,18 @@ import {
   type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
+import { nativeExpansionOf } from "@/lib/enhance";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
+import { toast } from "@/components/ui/Toast";
 import { CameraMoves } from "./CameraMoves";
 import { ModelMenu } from "./ModelMenu";
 import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
+import { PromptEnhance } from "./PromptEnhance";
 import { PromptEditor, type MentionItem, type PromptEditorHandle } from "./PromptEditor";
 import { ReferenceBox } from "./ReferenceBox";
 
@@ -90,7 +93,7 @@ export interface ControlPanelHandle {
   setStartFrame: (item: LibraryItem) => void;
   /** Switches to References and attaches this item. */
   useAsReference: (item: LibraryItem) => void;
-  /** Inline note in the panel. No alert(). */
+  /** Inline note in the panel. */
   notify: (message: string) => void;
 }
 
@@ -179,6 +182,7 @@ export function ControlPanel({
   const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
     keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
   );
+  const [nativeOn, setNativeOn] = useState(false);
   const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
@@ -238,7 +242,9 @@ export function ControlPanel({
     ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
     : undefined;
   const referenceImages = refs ? refList.filter((r) => r.item.kind === "image").length : undefined;
-  const routeProvider = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider])?.provider;
+  const chosenRoute = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider]);
+  const routeProvider = chosenRoute?.provider;
+  const native = nativeExpansionOf(model, chosenRoute);
   const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds, referenceImages };
   const cost = estimateRouteCost(model, routeProvider, estimateInput);
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
@@ -293,23 +299,22 @@ export function ControlPanel({
       setMode("references");
       if (ratio === "adaptive") setRatio("16:9");
     }
-    if (skipped.size) {
-      const message =
+    if (skipped.size)
+      toast(
         [...skipped]
           .map((k) =>
             limit[k] === 0
               ? `${model.name} doesn't take ${PLURAL[k]} as references.`
               : `${model.name} takes up to ${limit[k]} ${PLURAL[k]} (${caps.references.total} references in total).`,
           )
-          .join(" ") + " The files are still in your Uploads.";
-      setNotice(message);
-    }
+          .join(" ") + " The files are still in your Uploads.",
+      );
     return added;
   }
 
   async function addFiles(files: File[]) {
     const { items, errors } = await library.add(files);
-    if (errors.length) alert(errors.join("\n"));
+    if (errors.length) toast(errors.join("\n"), { tone: "error" });
     const added = addRefs(items);
     return items.filter((i) => added.includes(i.id));
   }
@@ -357,14 +362,14 @@ export function ControlPanel({
   useImperativeHandle(ref, () => ({
     toggle(item) {
       if (!hasRefs) {
-        alert(`${model.name} doesn't take references. Pick a model that does.`);
+        toast(`${model.name} doesn't take references. Pick a model that does.`);
         return;
       }
       if (refsNow.current.includes(item.id)) updateRefs(refsNow.current.filter((x) => x !== item.id));
       else addRefs([item]);
     },
     add(item) {
-      if (!hasRefs) alert(`${model.name} doesn't take references. Pick a model that does.`);
+      if (!hasRefs) toast(`${model.name} doesn't take references. Pick a model that does.`);
       else addRefs([item]);
     },
     forget(id) {
@@ -411,6 +416,7 @@ export function ControlPanel({
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
     setCameraMoves((moves) => keptCameraMoves(m, moves));
+    setNativeOn(false);
     setRouteChoice(undefined);
   }
 
@@ -467,6 +473,7 @@ export function ControlPanel({
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
       cameraFixed: showFixed ? cameraFixed : undefined,
+      promptExpansion: nativeOn && native ? true : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
@@ -615,6 +622,18 @@ export function ControlPanel({
                 : undefined
             }
             onAddCamera={(id) => changeCamera(id, false)}
+          />
+          <PromptEnhance
+            prompt={prompt}
+            onChange={setPrompt}
+            family={model.family}
+            cameras={cameraMoves}
+            references={mentionItems.map((item) => (item.detail ? `${item.token} (${item.detail})` : item.token))}
+            keyed={keyed}
+            onOpenKeys={onOpenKeys}
+            native={native}
+            nativeOn={nativeOn}
+            onNativeOn={setNativeOn}
           />
           {cameraMoves.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">

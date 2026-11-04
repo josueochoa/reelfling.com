@@ -29,6 +29,11 @@ export interface GenerateRequest {
   route?: string;
   /** Generation this clip continues. The server assigns the sequence and part. */
   continueFrom?: string;
+  /**
+   * Ask a model with native expansion to rewrite the prompt.
+   * Enhance is not called on this path. Omitted means leave the provider default.
+   */
+  promptExpansion?: boolean;
 }
 
 /** One reference block, stored so Reuse can rebuild the box. */

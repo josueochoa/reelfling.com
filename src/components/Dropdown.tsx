@@ -3,6 +3,7 @@
 // A compact picker for the image composer: a pill button that opens a menu above it.
 
 import { useEffect, useRef, useState } from "react";
+import { Check } from "@/components/ui/Icon";
 import { UnlockHint } from "./UnlockHint";
 
 export interface DropdownOption<T extends string> {
@@ -117,7 +118,7 @@ export function Dropdown<T extends string>({
                     <span className="block">{o.label}</span>
                     {o.hint && !showUnlock && <span className="block text-xs text-zinc-500">{o.hint}</span>}
                   </span>
-                  {o.value === value && !locked && <span className="text-accent">✓</span>}
+                  {o.value === value && !locked && <Check className="size-3.5 shrink-0 text-accent" aria-hidden />}
                 </button>
                 {showUnlock && onOpenKeys && (
                   <div className="px-2.5 pb-1.5">

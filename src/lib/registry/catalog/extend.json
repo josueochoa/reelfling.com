@@ -1,6 +1,6 @@
 {
   "docs": "https://fal.ai/docs/platform-apis/v1/models",
-  "source": "Hand-checked against GET https://api.fal.ai/v1/models?endpoint_id=…&expand=openapi-3.0 on Nov 4, 2026, with no API key. Not written by catalog:sync. Gemini uses v1.1/extend because the extend-video ids returned no OpenAPI schema.",
+  "source": "Hand-checked against GET https://api.fal.ai/v1/models?endpoint_id=\u2026&expand=openapi-3.0 on Nov 4, 2026, with no API key. Not written by catalog:sync. Gemini uses v1.1/extend because the extend-video ids returned no OpenAPI schema.",
   "models": [
     {
       "capabilities": {
@@ -39,29 +39,6 @@
       "routes": [
         {
           "endpoint": "google/gemini-omni-flash/v1.1/extend",
-          "mapper": "fal.queue",
-          "provider": "fal"
-        }
-      ],
-      "task": "tool",
-      "tasks": [
-        "tool"
-      ]
-    },
-    {
-      "capabilities": {
-        "accepts": "video"
-      },
-      "description": "Adds a text-guided continuation to a source video of 1.625 to 60 seconds.",
-      "family": "MiniMax",
-      "group": "tool",
-      "id": "fal:minimax/h3-max/extend-video",
-      "name": "H3 Max Extend",
-      "promptRequired": false,
-      "refSyntax": "at",
-      "routes": [
-        {
-          "endpoint": "minimax/h3-max/extend-video",
           "mapper": "fal.queue",
           "provider": "fal"
         }

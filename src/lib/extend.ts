@@ -46,8 +46,11 @@ const PROMPT: ToolForm["fields"][number] = {
 function formForSpec(spec: ExtendSpec): ToolForm | undefined {
   const model = catalogModel(spec.id);
   const route = model?.routes.find((item) => item.provider === "fal" && item.mapper === "fal.queue");
-  if (!model || model.group !== "tool" || model.capabilities.accepts !== "video" || !route) return undefined;
-  if (route.endpoint !== spec.id.slice("fal:".length)) return undefined;
+  if (!model || !route || route.endpoint !== spec.id.slice("fal:".length)) return undefined;
+  // MiniMax ships in the video catalog (task extend, family H3). The others are tools.
+  const videoExtend = model.group === "video" && model.task === "extend";
+  const tool = model.group === "tool" && model.capabilities.accepts === "video";
+  if (!videoExtend && !tool) return undefined;
   return {
     id: spec.id,
     accepts: "video",

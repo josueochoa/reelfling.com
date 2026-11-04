@@ -2,8 +2,11 @@
 
 // The Assets tab: everything in the user's bucket, generated and uploaded, in one place.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
+import { Play } from "@/components/ui/Icon";
+import { Select } from "@/components/ui/Select";
+import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
@@ -13,10 +16,10 @@ import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlo
 import { MediaPreview } from "./MediaPreview";
 import { formatBytes } from "./UserMenu";
 
-const KINDS: { value: UploadKind | "all"; label: string; icon: string }[] = [
+const KINDS: { value: UploadKind | "all"; label: string; icon: ReactNode }[] = [
   { value: "all", label: "All assets", icon: "▦" },
   { value: "image", label: "Images", icon: "▣" },
-  { value: "video", label: "Videos", icon: "▶" },
+  { value: "video", label: "Videos", icon: <Play className="size-3.5" aria-hidden /> },
   { value: "audio", label: "Audio", icon: "♪" },
 ];
 const SOURCES: { value: AssetSource | "all"; label: string }[] = [
@@ -136,10 +139,11 @@ export function AssetsStudio({
       (videos
         ? `\n${videos === 1 ? "The generated video's" : `${videos} generated videos'`} generation goes too.`
         : "");
-    if (!confirm(msg)) return;
+    const ok = await confirmToast(msg, { confirmLabel: "Delete" });
+    if (!ok) return;
     setSelected(new Set());
     setPreviewId(null);
-    await library.removeMany(ids).catch((e) => alert((e as Error).message));
+    await library.removeMany(ids).catch((e) => toast((e as Error).message, { tone: "error" }));
     if (list.some((i) => i.source === "generated")) onDeleted();
   }
 
@@ -247,21 +251,15 @@ export function AssetsStudio({
                 ))}
               </div>
               {models.length > 0 && (
-                <select
+                <Select
+                  label="Model"
                   value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  aria-label="Model"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs outline-none"
-                >
-                  <option value="" className="bg-panel">
-                    All models
-                  </option>
-                  {models.map((m) => (
-                    <option key={m} value={m} className="bg-panel">
-                      {modelLabel(m)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setModel}
+                  options={[
+                    { value: "", label: "All models" },
+                    ...models.map((m) => ({ value: m, label: modelLabel(m) })),
+                  ]}
+                />
               )}
               <input
                 value={query}
