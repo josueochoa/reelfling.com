@@ -6,6 +6,7 @@ import { availabilityError, availabilityFor, routeProviders } from "@/lib/regist
 import {
   estimateRouteCost,
   imageProviderFor,
+  outputMegapixels,
   imageRequestError,
   isImage,
   ratioAllowed,
@@ -74,14 +75,6 @@ export async function POST(request: Request) {
       return bad("This model isn't available on the image tab.");
     const imageProvider = route.provider;
     await assertStorageAvailable(user.id);
-    const estimate =
-      estimateRouteCost(model, imageProvider, {
-        resolution: req.resolution,
-        count: req.count,
-        quality: req.quality,
-        referenceImages: refs.length,
-        megapixels: 1,
-      }) ?? 0;
 
     // "auto": the reference's shape if there is one; otherwise the model's own fallback.
     let aspect: string | undefined = req.ratio;
@@ -90,6 +83,15 @@ export async function POST(request: Request) {
         refs.length && req.autoRatio && ratioAllowed(model, req.autoRatio, req.resolution) && req.autoRatio !== "auto"
           ? req.autoRatio
           : model.capabilities.autoFallback;
+    const sized = model.capabilities.resolutions.includes(req.resolution) ? req.resolution : undefined;
+    const estimate =
+      estimateRouteCost(model, imageProvider, {
+        resolution: req.resolution,
+        count: req.count,
+        quality: req.quality,
+        referenceImages: refs.length,
+        megapixels: outputMegapixels(sized, aspect && aspect !== "auto" ? aspect : "1:1"),
+      }) ?? 0;
 
     const now = Date.now();
     const gen: ImageGeneration = {

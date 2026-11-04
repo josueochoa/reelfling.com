@@ -6,6 +6,7 @@ import { useRef } from "react";
 import {
   estimateRouteCost,
   imageModels,
+  outputMegapixels,
   imageProviderFor,
   PROVIDER_INFO,
   ratioAllowed,
@@ -91,8 +92,9 @@ export function ImageComposer({
   const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
+  const megapixels = outputMegapixels(caps.resolutions.includes(resolution) ? resolution : undefined, ratio);
   const cost =
-    estimateRouteCost(model, route, { resolution, count, quality, referenceImages: references.length, megapixels: 1 }) ?? 0;
+    estimateRouteCost(model, route, { resolution, count, quality, referenceImages: references.length, megapixels }) ?? 0;
   const counts = { Image: references.length, Video: 0, Audio: 0 };
   const bad = invalidMentions(prompt, counts);
   const uploading = references.some((r) => r.status !== "ready");
@@ -294,7 +296,7 @@ export function ImageComposer({
                 options={caps.resolutions.map((r) => ({
                   value: r,
                   label: r.toUpperCase(),
-                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: 1 }) ?? 0).toFixed(3)} per image`,
+                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: outputMegapixels(r, ratio) }) ?? 0).toFixed(3)} per image`,
                 }))}
                 onChange={(r) =>
                   onChange({

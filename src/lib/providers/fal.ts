@@ -472,11 +472,6 @@ export function falQueueInput(req: FalMediaInput, map: FalInputMap = SEEDANCE_IN
   return input;
 }
 
-/** Shared fal video body. Field names match the published Seedance queue schema. */
-export function falVideoInput(req: FalMediaInput): Record<string, unknown> {
-  return falQueueInput(req, SEEDANCE_INPUTS);
-}
-
 /** Image queue body. Reference images use the schema's image field (`image_urls`). */
 export function falImageInput(
   req: { prompt: string; ratio?: string; resolution?: string; quality?: string; count?: number; images?: string[]; seed?: number },

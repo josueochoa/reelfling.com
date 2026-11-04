@@ -65,7 +65,7 @@
   {
     "endpoint": "blackforestlabs/flux-3/image-to-video",
     "task": "i2v",
-    "family": "FLUX",
+    "family": "Flux",
     "price": { "type": "per_second", "byResolution": { "720p": 0.17, "1080p": 0.29, "1440p": 0.32, "2160p": 0.47 } }
   },
 

@@ -289,7 +289,7 @@
         "watermark": false
       },
       "description": "FLUX 3 is Black Forest Labs' frontier video model. This endpoint animates a single still image into video, extending one frame into coherent, natural motion.",
-      "family": "FLUX",
+      "family": "Flux",
       "group": "video",
       "id": "fal:blackforestlabs/flux-3/image-to-video",
       "inputs": {

@@ -55,24 +55,55 @@ export function openRouterPickerModels(): VideoModel[] {
     .map((model) => slimVideo(model, "openrouter"));
 }
 
-const STUDIO_TASKS = new Set(["t2v", "i2v", "ref2v"]);
+/**
+ * fal endpoints whose queue body was checked against the published OpenAPI schema
+ * (no key, 4 Nov 2026). Anything else stays out of the picker.
+ * These still do not match a checked body and stay out:
+ * fal-ai/kling-video/v3/pro/text-to-video, fal-ai/wan/v2.2-a14b/text-to-video,
+ * fal-ai/minimax/video-01/image-to-video.
+ * alibaba/wan-3.0/reference-to-video is included: its body uses reference_image_urls,
+ * reference_video_urls, and reference_audio_urls, which is what that schema publishes.
+ */
+const FAL_PICKER_ENDPOINTS = new Set<string>([
+  "kling/v4/text-to-video",
+  "kling/v4/image-to-video",
+  "kling/v4/reference-to-video",
+  "fal-ai/kling-video/v3/pro/image-to-video",
+  "alibaba/wan-3.0/text-to-video",
+  "alibaba/wan-3.0/image-to-video",
+  "alibaba/wan-3.0/reference-to-video",
+  "minimax/h3/text-to-video",
+  "minimax/h3/image-to-video",
+  "minimax/h3/reference-to-video",
+  "blackforestlabs/flux-3/image-to-video",
+  "google/gemini-omni-flash/v1.1/text-to-video",
+  "google/gemini-omni-flash/v1.1/image-to-video",
+  "google/gemini-omni-flash/v1.1/reference-to-video",
+  "xai/grok-imagine-video/v1.5/image-to-video",
+  "luma/agent/ray/v3.2/image-to-video",
+  "bytedance/seedream/v5/pro/text-to-image",
+  "bytedance/seedream/v5/pro/edit",
+  "fal-ai/flux-2-pro",
+  "fal-ai/flux-2-pro/edit",
+  "ideogram/v4.5",
+  "fal-ai/recraft/v4.1/text-to-image",
+  "xai/grok-imagine-image/v2.0/edit",
+  "fal-ai/z-image/turbo",
+]);
 
-/** Image endpoints that were already in the registry and stay off the Image tab. */
-const HIDDEN_FAL_IMAGES = new Set(["fal-ai/flux/dev", "fal-ai/flux/dev/image-to-image"]);
-
-/** fal image models for the Image tab. The catalog JSON stays on the server. */
+/** fal image models whose input mapping was checked. The catalog JSON stays on the server. */
 export function catalogImageModels(): ImageModel[] {
   return ALL_MODELS.filter(isImage)
     .filter((model) =>
-      model.routes.some((route) => route.provider === "fal" && !HIDDEN_FAL_IMAGES.has(route.endpoint)),
+      model.routes.some((route) => route.provider === "fal" && FAL_PICKER_ENDPOINTS.has(route.endpoint)),
     )
     .map(slimImage);
 }
 
-/** OpenRouter videos plus fal text, image, and reference video models for the one picker. */
+/** OpenRouter videos, plus fal models whose input mapping was checked. */
 export function catalogPickerModels(): VideoModel[] {
-  const fal = ALL_MODELS.filter(isVideo).filter(
-    (model) => model.routes.some((route) => route.provider === "fal") && model.tasks.some((task) => STUDIO_TASKS.has(task)),
+  const fal = ALL_MODELS.filter(isVideo).filter((model) =>
+    model.routes.some((route) => route.provider === "fal" && FAL_PICKER_ENDPOINTS.has(route.endpoint)),
   );
   return [...openRouterPickerModels(), ...fal.map((model) => slimVideo(model))];
 }

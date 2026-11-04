@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { falImageInput, falQueueInput } from "../providers/fal";
 import { ALL_MODELS, catalogImageModels, catalogPickerModels } from "./generated";
 import { groupByFamily, modelBadges } from "./badges";
-import { estimateCost, imageRequestError, isImage, isVideo, videoRequestError } from "./index";
+import { estimateCost, imageRequestError, isImage, isVideo, outputMegapixels, videoRequestError } from "./index";
 import { lookupModelName } from "./lookup";
 import { reuseSelection } from "./routing";
 import type { ImageModel, VideoModel } from "./types";
@@ -215,6 +215,16 @@ describe("fal lineup catalog", () => {
       0.1,
     );
     close(estimateCost(image("fal-ai/z-image/turbo"), { megapixels: 1 }), 0.02);
+    const oneMegapixel = outputMegapixels("1k", "1:1");
+    const above = outputMegapixels("2k", "16:9");
+    assert.equal(oneMegapixel, 1);
+    assert.ok(above > 1);
+    const small = estimateCost(image("fal-ai/z-image/turbo"), { megapixels: oneMegapixel });
+    const large = estimateCost(image("fal-ai/z-image/turbo"), { megapixels: above });
+    assert.ok(small !== undefined && large !== undefined && large > small);
+    const fluxSmall = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: oneMegapixel });
+    const fluxLarge = estimateCost(image("fal-ai/flux-2-pro"), { megapixels: above });
+    assert.ok(fluxSmall !== undefined && fluxLarge !== undefined && fluxLarge > fluxSmall);
   });
 
   it("groups the picker by family and badges audio, end frame, references, and duration", () => {
