@@ -1,26 +1,27 @@
 "use client";
 
-// The app shell: top bar with the workspace switcher, the Video / Image / fal / Assets
-// tabs and the account. Everything below the banner belongs to one workspace and is
-// remounted when it changes. Tabs stay mounted, so switching tabs keeps prompts.
+// The app shell: top bar with the Video / Image / Assets tabs, the account, API keys and
+// the assets library (shared by all tabs). Tabs stay mounted, so switching keeps prompts
+// and in-flight polling.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { VideoModel } from "@/lib/registry";
-import type { CatalogTool } from "@/lib/registry/availability";
 import { rememberModels } from "@/lib/registry/lookup";
-import { apiJson, setWorkspace, type Me } from "./api";
+import type { ToolView } from "@/lib/toolTypes";
+import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
 import { FalStudio, type FalTabHandle } from "./FalStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
 import { useLibrary, type LibraryItem } from "./library";
-import { InvitesBanner, TeamDialog, WorkspaceSwitcher } from "./Teams";
+import { TeamStudio } from "./TeamStudio";
 import { UserMenu } from "./UserMenu";
 import { VideoStudio, type StudioTabHandle } from "./VideoStudio";
 
-const TABS = ["video", "image", "fal", "assets"] as const;
+const TABS = ["video", "image", "fal", "assets", "team"] as const;
 type Tab = (typeof TABS)[number];
 
+// The tab lives in the URL hash (#image, #assets), so reload and Back keep it.
 const subscribe = (cb: () => void) => {
   window.addEventListener("hashchange", cb);
   return () => window.removeEventListener("hashchange", cb);
@@ -30,55 +31,53 @@ const readTab = (): Tab => TABS.find((t) => window.location.hash === `#${t}`) ??
 export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
-  const [catalogModels, setCatalogModels] = useState<VideoModel[] | null>(null);
-  const [tools, setTools] = useState<CatalogTool[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
+  const [tools, setTools] = useState<ToolView[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
-  const [teamOpen, setTeamOpen] = useState(false);
+  const library = useLibrary();
+  const video = useRef<StudioTabHandle>(null);
+  const image = useRef<StudioTabHandle>(null);
+  const fal = useRef<FalTabHandle>(null);
 
-  // The server falls back to Personal if the remembered workspace is gone; follow it.
-  const loadMe = useCallback(
-    () =>
-      apiJson<Me>("/api/me").then((next) => {
-        setWorkspace(next.workspace.id);
-        setMe(next);
-      }),
-    [],
-  );
+  const loadMe = useCallback(() => apiJson<Me>("/api/me").then(setMe), []);
   useEffect(() => {
-    void loadMe();
+    loadMe();
   }, [loadMe]);
+  // Slim picker list. The generated catalog stays on the server.
   useEffect(() => {
-    apiJson<{ models: VideoModel[]; tools?: CatalogTool[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; tools?: ToolView[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
-        setCatalogModels(body.models);
+        setOpenRouterModels(body.models);
         setTools(body.tools ?? []);
       })
-      .catch(() => setCatalogModels([]));
+      .catch(() => setOpenRouterModels([]));
   }, []);
 
-  function switchTo(id: string) {
-    setWorkspace(id);
-    setTeamOpen(false);
-    void loadMe();
-  }
-
   const openKeys = () => setKeysOpen(true);
+  function showToolJob() {
+    window.location.hash = "fal";
+    fal.current?.reload();
+  }
+  /** From Assets: jump to a tab and attach the asset as a reference there. */
+  function sendTo(tab: "video" | "image", item: LibraryItem) {
+    window.location.hash = tab;
+    (tab === "video" ? video : image).current?.addReference(item);
+  }
 
   return (
     <div className="flex h-dvh flex-col bg-ink text-zinc-100">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-3 border-b border-white/5 bg-panel px-3 sm:gap-4 sm:px-5">
+      <header className="flex h-14 shrink-0 items-center gap-6 border-b border-white/5 bg-panel px-5">
         <div className="flex items-center gap-2">
           <div className="grid size-7 place-items-center rounded-lg bg-accent font-black text-ink">R</div>
           <span className="font-semibold tracking-tight">ReelFling</span>
         </div>
-        {me && <WorkspaceSwitcher me={me} onSwitch={switchTo} onOpenTeam={() => setTeamOpen(true)} />}
         <nav className="flex gap-1 text-sm">
           {TABS.map((t) => (
             <a
               key={t}
               href={`#${t}`}
-              className={`rounded-full px-3 py-1.5 capitalize transition sm:px-3.5 ${
+              className={`rounded-full px-3.5 py-1.5 capitalize transition ${
                 tab === t ? "bg-white text-ink" : "text-zinc-400 hover:text-white"
               }`}
             >
@@ -89,63 +88,15 @@ export function Studio() {
         <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
       </header>
 
-      {me && me.invites.length > 0 && <InvitesBanner invites={me.invites} onJoined={switchTo} onChanged={() => void loadMe()} />}
-
-      {me && (
-        <WorkspaceView
-          key={me.workspace.id}
-          me={me}
-          tab={tab}
-          catalogModels={catalogModels}
-          tools={tools}
-          onOpenKeys={openKeys}
-          onChanged={loadMe}
-        />
-      )}
-
-      {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={() => void loadMe()} />}
-      {teamOpen && me && me.workspace.kind === "team" && (
-        <TeamDialog me={me} onClose={() => setTeamOpen(false)} onChanged={() => void loadMe()} onLeft={() => switchTo(me.user.id)} />
-      )}
-    </div>
-  );
-}
-
-function WorkspaceView({
-  me,
-  tab,
-  catalogModels,
-  tools,
-  onOpenKeys,
-  onChanged,
-}: {
-  me: Me;
-  tab: Tab;
-  catalogModels: VideoModel[] | null;
-  tools: readonly CatalogTool[];
-  onOpenKeys: () => void;
-  onChanged: () => Promise<void>;
-}) {
-  const library = useLibrary();
-  const video = useRef<StudioTabHandle>(null);
-  const image = useRef<StudioTabHandle>(null);
-  const fal = useRef<FalTabHandle>(null);
-
-  function sendTo(target: "video" | "image", item: LibraryItem) {
-    window.location.hash = target;
-    (target === "video" ? video : image).current?.addReference(item);
-  }
-
-  return (
-    <>
       <div className={`min-h-0 flex-1 ${tab === "video" ? "" : "hidden"}`}>
         <VideoStudio
           ref={video}
           me={me}
           library={library}
-          onOpenKeys={onOpenKeys}
-          catalogModels={catalogModels}
+          onOpenKeys={openKeys}
+          openRouterModels={openRouterModels}
           tools={tools}
+          onToolJob={showToolJob}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "image" ? "" : "hidden"}`}>
@@ -153,15 +104,20 @@ function WorkspaceView({
           ref={image}
           me={me}
           library={library}
-          onOpenKeys={onOpenKeys}
+          onOpenKeys={openKeys}
           onUseAsStartFrame={(item) => {
             window.location.hash = "video";
             video.current?.setStartFrame(item);
           }}
+          tools={tools}
+          onToolJob={showToolJob}
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
-        <FalStudio ref={fal} me={me} onOpenKeys={onOpenKeys} />
+        <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
+      </div>
+      <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
+        <TeamStudio me={me} active={tab === "team"} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio
@@ -174,10 +130,15 @@ function WorkspaceView({
             video.current?.reload();
             image.current?.reload();
             fal.current?.reload();
-            void onChanged();
+            void loadMe();
           }}
+          tools={tools}
+          onToolJob={showToolJob}
+          onOpenKeys={openKeys}
         />
       </div>
-    </>
+
+      {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={loadMe} />}
+    </div>
   );
 }

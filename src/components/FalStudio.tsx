@@ -3,12 +3,11 @@
 // Any fal endpoint: an id plus a JSON input. Field errors from a 422 render here, inline.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
-import { availability, availabilityHint, FAL_ROUTES, keyedForAccount } from "@/lib/registry/availability";
+import { shouldCancelFal, shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
+import { availabilityFor, availabilityHint } from "@/lib/registry/availability";
 import { assetFileUrl } from "@/lib/uploads";
-import { api, withWorkspace, type KeySource, type Me } from "./api";
+import { api, type Me } from "./api";
 import { UnlockHint } from "./UnlockHint";
-import { KeyChoice } from "./Teams";
 
 export interface FalTabHandle {
   reload: () => void;
@@ -23,6 +22,15 @@ const STATUS_LABEL: Record<FalJobView["status"], string> = {
   succeeded: "Succeeded",
   failed: "Failed",
 };
+
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{Math.max(0, Math.round((now - since) / 1000))}s</>;
+}
 
 function FieldErrors({ fields }: { fields?: FalFieldError[] }) {
   if (!fields?.length) return null;
@@ -40,7 +48,7 @@ function FieldErrors({ fields }: { fields?: FalFieldError[] }) {
 }
 
 function OutputPreview({ output }: { output: FalJobView["outputs"][number] }) {
-  const src = withWorkspace(assetFileUrl(output.key));
+  const src = assetFileUrl(output.key);
   if (output.contentType.startsWith("video/"))
     return <video src={src} controls playsInline className="max-h-80 w-full rounded-lg bg-black" />;
   if (output.contentType.startsWith("audio/")) return <audio src={src} controls className="w-full" />;
@@ -50,7 +58,7 @@ function OutputPreview({ output }: { output: FalJobView["outputs"][number] }) {
       <img src={src} alt="" className="max-h-80 w-full rounded-lg object-contain bg-black" />
     );
   return (
-    <a href={withWorkspace(assetFileUrl(output.key, { download: true }))} className="text-xs text-zinc-300 underline">
+    <a href={assetFileUrl(output.key, { download: true })} className="text-xs text-zinc-300 underline">
       Download
     </a>
   );
@@ -77,9 +85,7 @@ export function FalStudio({
     jobsRef.current = jobs;
   }, [jobs]);
 
-  const [keySource, setKeySource] = useState<KeySource>("team");
-  const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
-  const falAvail = me ? availability({ routes: FAL_ROUTES }, keyedForAccount(me)) : null;
+  const falAvail = me ? availabilityFor(["fal"], new Set(me.keys.map((key) => key.provider))) : null;
   const needsKey = !!falAvail && !falAvail.available;
   const falHint = falAvail ? availabilityHint(falAvail.needs) : "";
 
@@ -145,7 +151,7 @@ export function FalStudio({
       const res = await api("/api/fal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpointId, input: parsed, ...(ownKeys ? { keySource } : {}) }),
+        body: JSON.stringify({ endpointId, input: parsed }),
       });
       const body = (await res.json()) as FalJobView & { error?: string; fields?: FalFieldError[] };
       if (res.status === 422) {
@@ -200,15 +206,30 @@ export function FalStudio({
                       >
                         {STATUS_LABEL[job.status]}
                       </span>
-                      <p className="truncate font-mono text-xs text-zinc-400">{job.endpointId}</p>
+                      <p className={`truncate text-xs ${job.tool ? "text-zinc-200" : "font-mono text-zinc-400"}`}>
+                        {job.tool?.name ?? job.endpointId}
+                      </p>
                     </div>
                     {job.prompt && <p className="mt-2 line-clamp-3 text-sm text-zinc-200">{job.prompt}</p>}
+                    {needsPoll(job) && (
+                      <div className="mt-3">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                          <div className="shimmer h-full w-1/2 rounded-full bg-accent/80" />
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-zinc-500">
+                          {STATUS_LABEL[job.status]}
+                          {job.queuePosition !== undefined ? ` · position ${job.queuePosition}` : ""}
+                          {" · "}
+                          <Elapsed since={job.createdAt} />
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={() => void remove(job)}
                     className="shrink-0 rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-red-300"
                   >
-                    Delete
+                    {shouldCancelFal(job.status) ? "Cancel" : "Delete"}
                   </button>
                 </div>
                 {(job.status === "failed" || job.error) && (
@@ -238,11 +259,6 @@ export function FalStudio({
             void submit();
           }}
         >
-          {ownKeys && (
-            <div className="flex justify-end">
-              <KeyChoice value={keySource} onChange={setKeySource} />
-            </div>
-          )}
           {needsKey && (
             <div className="px-1">
               <UnlockHint hint={falHint} onOpen={onOpenKeys} />
@@ -271,7 +287,6 @@ export function FalStudio({
           <div className="flex justify-end">
             <button
               type="submit"
-              data-testid="fal-run"
               disabled={submitting || needsKey || !endpointId.trim()}
               className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed ${
                 needsKey ? "cursor-not-allowed bg-white/10 text-zinc-500" : "bg-accent text-ink disabled:opacity-40"

@@ -901,10 +901,10 @@
           "21:9"
         ],
         "references": {
-          "audio": 0,
-          "image": 0,
-          "total": 0,
-          "video": 0
+          "audio": 50,
+          "image": 50,
+          "total": 50,
+          "video": 50
         },
         "resolutions": [
           "480p",
@@ -923,6 +923,10 @@
           "480p": 0.0000107,
           "720p": 0.0000107
         },
+        "byResolutionWithVideo": {
+          "480p": 0.0000064,
+          "720p": 0.0000064
+        },
         "fps": 24,
         "pixels": {
           "480p": {
@@ -935,7 +939,8 @@
           }
         },
         "type": "tokens",
-        "usdPerToken": 0.0000107
+        "usdPerToken": 0.0000107,
+        "usdPerTokenWithVideo": 0.0000064
       },
       "promptRequired": false,
       "refSyntax": "at",
@@ -949,7 +954,8 @@
       "task": "t2v",
       "tasks": [
         "t2v",
-        "i2v"
+        "i2v",
+        "ref2v"
       ]
     },
     {

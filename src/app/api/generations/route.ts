@@ -1,26 +1,23 @@
-import { errorResponse } from "@/lib/auth";
-import { openGenerationKey, resolveAvailableRoute, runWithCap } from "@/lib/generationKey";
+import { errorResponse, requireUser } from "@/lib/auth";
+import { getCredentials, listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
-import { createProvider } from "@/lib/providers";
-import { modeBlock } from "@/lib/registry/availability";
-import { applyCameraMove } from "@/lib/registry/camera-apply";
+import { providerForUser } from "@/lib/providers";
+import { falVideoEndpoint, falVideoInput, submitFal } from "@/lib/providers/fal";
+import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
+import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel } from "@/lib/registry/generated";
 import { estimateRouteCost, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
-import { falVideoEndpoint, falVideoInput, submitFal } from "@/lib/providers/fal";
-import { mockProviders } from "@/lib/providers/mock";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
-import { requireWorkspace } from "@/lib/workspaces";
-import type { KeySource } from "@/lib/scope";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { workspace } = await requireWorkspace(request);
-    return Response.json(await listGenerations(workspace.id));
+    const user = await requireUser();
+    return Response.json(await listGenerations(user.id));
   } catch (e) {
     return errorResponse(e);
   }
@@ -50,10 +47,10 @@ interface ResolvedMedia {
  * Swaps an `upload:<key>` (an upload or a generated asset) for a link the provider can
  * download, checking it's a file of the right kind. https and data: URLs pass through.
  */
-async function resolveOne(workspaceId: string, value: string, kind: UploadKind): Promise<ResolvedMedia> {
+async function resolveOne(userId: string, value: string, kind: UploadKind): Promise<ResolvedMedia> {
   if (!isUploadRef(value)) return { url: value };
   const key = uploadKeyOf(value);
-  const asset = isAssetKey(key) ? await getAsset(workspaceId, key) : undefined;
+  const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
   const assetKind = asset && (uploadKindOf(asset.contentType) ?? (asset.contentType.startsWith("image/") && "image"));
   if (!asset || assetKind !== kind)
     throw Object.assign(new Error("A reference is no longer in your uploads. Remove it and add it again."), {
@@ -63,9 +60,9 @@ async function resolveOne(workspaceId: string, value: string, kind: UploadKind):
   return { url: await providerUrl(asset), key, name };
 }
 
-async function resolveList(workspaceId: string, items: string[] | undefined, kind: UploadKind) {
+async function resolveList(userId: string, items: string[] | undefined, kind: UploadKind) {
   if (!items) return undefined;
-  return Promise.all(items.map((v) => resolveOne(workspaceId, v, kind)));
+  return Promise.all(items.map((v) => resolveOne(userId, v, kind)));
 }
 
 /** Reference blocks in the order the client showed them. Kind and name come from the files we resolved. */
@@ -94,12 +91,12 @@ function orderedBlocks(order: string[] | undefined, groups: [UploadKind, Resolve
 }
 
 /** Omit when there is no reference video. `0` still selects the with-video rate. */
-async function referenceVideoSecondsOf(workspaceId: string, req: GenerateRequest): Promise<number | undefined> {
+async function referenceVideoSecondsOf(userId: string, req: GenerateRequest): Promise<number | undefined> {
   if (req.mode === "frames" || !req.referenceVideos?.length) return undefined;
   let sum = 0;
   for (const value of req.referenceVideos) {
     if (!isUploadRef(value)) continue;
-    const asset = await getAsset(workspaceId, uploadKeyOf(value));
+    const asset = await getAsset(userId, uploadKeyOf(value));
     sum += asset?.meta?.duration ?? 0;
   }
   return sum;
@@ -113,26 +110,23 @@ function frameFields(media: ResolvedMedia | undefined, keyName: "firstFrameKey" 
 
 export async function POST(request: Request) {
   try {
-    const { user, workspace } = await requireWorkspace(request);
-    const req = (await request.json()) as GenerateRequest & { keySource?: KeySource };
-    const requested = workspace.kind === "team" && req.keySource === "member" ? "member" : workspace.kind === "team" ? "team" : "member";
+    const user = await requireUser();
+    const req = (await request.json()) as GenerateRequest;
     const model = catalogModel(req.model);
     if (!model || !isVideo(model))
       return Response.json({ error: `Model "${req.model}" isn't available` }, { status: 400 });
-    // Saved per-model route, else the old active provider, else the first keyed route.
-    const legacy = requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
+    const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
+    const gate = availabilityFor(routeProviders(model.routes), keyed);
+    if (!gate.available) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
     const saved = await getRoutePreference(user.id, model.id);
     const explicit = typeof req.route === "string" ? req.route : null;
-    const { route, source, keyed } = await resolveAvailableRoute(model, workspace, user.id, {
-      requested,
-      prefer: (held) => preferredRoute(model, held, [explicit, saved, legacy])?.provider,
-    });
-    const modeError = modeBlock(model, req.mode, keyed);
-    if (modeError) return Response.json({ error: modeError }, { status: 400 });
+    const route = preferredRoute(model, keyed, [explicit, saved, user.activeProvider]);
+    if (!route) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
-    await assertStorageAvailable(workspace.id);
-    const referenceVideoSeconds = await referenceVideoSecondsOf(workspace.id, req);
+    // The result will be copied into the user's bucket, so don't start one they can't keep.
+    await assertStorageAvailable(user.id);
+    const referenceVideoSeconds = await referenceVideoSecondsOf(user.id, req);
     const estimate =
       estimateRouteCost(model, route.provider, {
         resolution: req.resolution,
@@ -140,13 +134,6 @@ export async function POST(request: Request) {
         audio: !!req.generateAudio,
         referenceVideoSeconds,
       }) ?? 0;
-    const opened = await openGenerationKey({
-      workspace,
-      userId: user.id,
-      provider: route.provider,
-      requested: source,
-      estimate,
-    });
 
     const caps = model.capabilities;
     if (!caps.audio) delete req.generateAudio;
@@ -156,11 +143,11 @@ export async function POST(request: Request) {
 
     const frames = req.mode === "frames";
     const [first, last, referenceImages, referenceVideos, referenceAudios] = await Promise.all([
-      frames && req.firstFrame ? resolveOne(workspace.id, req.firstFrame, "image") : undefined,
-      frames && req.firstFrame && req.lastFrame ? resolveOne(workspace.id, req.lastFrame, "image") : undefined,
-      resolveList(workspace.id, frames ? undefined : req.referenceImages, "image"),
-      resolveList(workspace.id, frames ? undefined : req.referenceVideos, "video"),
-      resolveList(workspace.id, frames ? undefined : req.referenceAudios, "audio"),
+      frames && req.firstFrame ? resolveOne(user.id, req.firstFrame, "image") : undefined,
+      frames && req.firstFrame && req.lastFrame ? resolveOne(user.id, req.lastFrame, "image") : undefined,
+      resolveList(user.id, frames ? undefined : req.referenceImages, "image"),
+      resolveList(user.id, frames ? undefined : req.referenceVideos, "video"),
+      resolveList(user.id, frames ? undefined : req.referenceAudios, "audio"),
     ]);
     const blocks = frames
       ? undefined
@@ -170,9 +157,13 @@ export async function POST(request: Request) {
           ["audio", referenceAudios],
         ]);
 
-    // The record keeps the prompt as written. applyCameraMove may append a camera
-    // sentence, or set camera_fixed, only on the copy the provider receives.
-    const providerReq = applyCameraMove(model, {
+    // The record keeps the prompt as written and the chip ids. applyCameraMoves
+    // appends each chip's line, or sets a native field, only on the provider copy.
+    const cameraMoves = (req.cameraMoves?.length ? req.cameraMoves : req.cameraMove ? [req.cameraMove] : []).slice(
+      0,
+      CAMERA_MOVE_MAX,
+    );
+    const providerReq = applyCameraMoves(model, {
       ...req,
       model: route.endpoint,
       prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
@@ -183,21 +174,22 @@ export async function POST(request: Request) {
       referenceAudios: referenceAudios?.map((media) => media.url),
     });
     const endpoint = route.provider === "fal" ? falVideoEndpoint(route.endpoint, req.mode, !!first) : route.endpoint;
-    const started = await runWithCap(opened, async () => {
-      if (mockProviders()) return { taskId: `mock-${crypto.randomUUID()}` };
-      if (route.provider === "fal") {
-        const submission = await submitFal(opened.creds.apiKey, endpoint, falVideoInput(providerReq));
-        return {
-          taskId: submission.requestId,
-          falStatusUrl: submission.statusUrl,
-          falResponseUrl: submission.responseUrl,
-          falCancelUrl: submission.cancelUrl,
-        };
-      }
-      const provider = createProvider(route.provider, opened.creds);
-      return provider.createTask(providerReq);
-    });
-    const { taskId } = started;
+    let taskId: string;
+    let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
+    if (route.provider === "fal") {
+      const creds = await getCredentials(user.id, "fal");
+      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
+      const submission = await submitFal(creds.apiKey, endpoint, falVideoInput(providerReq));
+      taskId = submission.requestId;
+      falUrls = {
+        falStatusUrl: submission.statusUrl,
+        falResponseUrl: submission.responseUrl,
+        falCancelUrl: submission.cancelUrl,
+      };
+    } else {
+      const provider = await providerForUser(user.id, route.provider);
+      ({ taskId } = await provider.createTask(providerReq));
+    }
     const now = Date.now();
     const inputs: GenerationInputs = {
       firstFrame: frames && !!first,
@@ -222,24 +214,16 @@ export async function POST(request: Request) {
       duration: req.duration,
       generateAudio: !!req.generateAudio,
       seed: req.seed,
-      ...(req.cameraMove ? { cameraMove: req.cameraMove } : {}),
+      ...(cameraMoves.length ? { cameraMoves } : {}),
       inputs,
-      keySource: opened.source,
       route: route.provider,
       routeEndpoint: endpoint,
-      ...("falStatusUrl" in started
-        ? {
-            falStatusUrl: started.falStatusUrl,
-            falResponseUrl: started.falResponseUrl,
-            falCancelUrl: started.falCancelUrl,
-          }
-        : {}),
       estimatedCost: estimate,
-      keyWorkspaceId: opened.keyWorkspaceId,
+      ...falUrls,
       createdAt: now,
       updatedAt: now,
     };
-    await insertGeneration(workspace.id, gen, user.id);
+    await insertGeneration(user.id, gen);
     return Response.json(gen, { status: 201 });
   } catch (e) {
     return errorResponse(e);

@@ -38,6 +38,16 @@ export function pickerModels<T extends { routes: readonly { provider: string; en
   return out;
 }
 
+/** Null when this provider is a real route of a known catalog model. */
+export function routeChoiceError(
+  model: { routes: readonly { provider: string }[] } | undefined,
+  provider: string,
+): string | null {
+  if (!model) return "Unknown model";
+  if (!model.routes.some((route) => route.provider === provider)) return "That model has no route on this provider";
+  return null;
+}
+
 /**
  * Reuse selects the picker row that owns this generation's route.
  * Older rows stored the provider-specific model id; that id still resolves.

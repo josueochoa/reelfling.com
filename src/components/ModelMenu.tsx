@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { estimateRouteCost, PROVIDER_INFO, type EstimateInput, type RouteProvider, type VideoModel } from "@/lib/registry";
-import { availability, availabilityHint, routeProviders } from "@/lib/registry/availability";
+import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { UnlockHint } from "./UnlockHint";
 
-/** Every video model. Unavailable ones stay in the list, grayed, and can't be chosen. */
 function providerLabel(id: string | undefined) {
   if (id === "modelark" || id === "argolink" || id === "fal" || id === "openrouter") return PROVIDER_INFO[id].label;
   return "";
@@ -16,6 +15,7 @@ function money(amount: number | undefined) {
   return `~$${amount < 0.1 ? amount.toFixed(3) : amount.toFixed(2)}`;
 }
 
+/** Every video model. Unavailable ones stay in the list, grayed, and can't be chosen. */
 export function ModelMenu({
   models,
   value,
@@ -28,9 +28,7 @@ export function ModelMenu({
 }: {
   models: readonly VideoModel[];
   value: string;
-  /** Selected provider for the open model. */
   route?: string;
-  /** Current duration, resolution, audio, and reference-video seconds. */
   estimate?: EstimateInput;
   keyed: ReadonlySet<string>;
   onChange: (id: string) => void;
@@ -47,11 +45,10 @@ export function ModelMenu({
       className="max-h-56 space-y-0.5 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-1"
     >
       {models.map((model) => {
-        const open = availability(model, keyed);
+        const open = availabilityFor(routeProviders(model.routes), keyed);
         const locked = !open.available;
         const hint = availabilityHint(open.needs);
         const selected = model.id === value;
-        const showHint = locked && hover === model.id && !!hint;
         return (
           <div
             key={model.id}
@@ -90,7 +87,7 @@ export function ModelMenu({
               </span>
               {selected && !locked && <span className="text-accent">✓</span>}
             </button>
-            {showHint && (
+            {locked && hover === model.id && hint && (
               <div className="px-2.5 pb-1">
                 <UnlockHint hint={hint} onOpen={onOpenKeys} />
               </div>
@@ -98,11 +95,10 @@ export function ModelMenu({
             {selected && !locked && model.routes.length > 1 && (
               <div data-testid="route-picker" className="space-y-0.5 px-2 pb-1.5">
                 {model.routes.map((item) => {
-                  const choice = availability({ routes: [item] }, keyed);
+                  const choice = availabilityFor([item.provider], keyed);
                   const blocked = !choice.available;
                   const picked = item.provider === route;
                   const cost = estimateRouteCost(model, item.provider, estimate);
-                  const routeHint = availabilityHint(choice.needs);
                   return (
                     <button
                       key={item.provider}
@@ -129,7 +125,6 @@ export function ModelMenu({
                       <span className="min-w-0 flex-1 truncate">{PROVIDER_INFO[item.provider].label}</span>
                       <span className="shrink-0 tabular-nums text-zinc-500">{money(cost)}</span>
                       {picked && !blocked && <span className="text-accent">✓</span>}
-                      {blocked && routeHint && <span className="sr-only">{routeHint}</span>}
                     </button>
                   );
                 })}

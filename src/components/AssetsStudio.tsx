@@ -4,10 +4,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
+import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
-import { withWorkspace, type Me } from "./api";
-import { Avatar } from "./Teams";
+import type { Me } from "./api";
 import type { Library, LibraryItem } from "./library";
+import { BulkUpscale, ToolsMenu } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { MediaPreview } from "./MediaPreview";
 import { formatBytes } from "./UserMenu";
@@ -22,6 +23,7 @@ const SOURCES: { value: AssetSource | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "generated", label: "Generated" },
   { value: "upload", label: "Uploaded" },
+  { value: "processed", label: "Processed" },
 ];
 
 const modelLabel = (id: string) => lookupModelName(id);
@@ -45,7 +47,7 @@ function dayLabel(ts: number, now: number) {
 function download(item: LibraryItem) {
   if (!item.key) return;
   const a = document.createElement("a");
-  a.href = withWorkspace(assetFileUrl(item.key, { download: true }));
+  a.href = assetFileUrl(item.key, { download: true });
   a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
@@ -59,6 +61,9 @@ export function AssetsStudio({
   onUseInImage,
   onUseInVideo,
   onDeleted,
+  tools,
+  onToolJob,
+  onOpenKeys,
 }: {
   me: Me | null;
   library: Library;
@@ -68,12 +73,15 @@ export function AssetsStudio({
   onUseInVideo: (item: LibraryItem) => void;
   /** Generated assets were deleted, so the Video and Image tabs should refresh. */
   onDeleted: () => void;
+  tools: readonly ToolView[];
+  /** A tool job was created and should show in the feed. */
+  onToolJob: () => void;
+  onOpenKeys: () => void;
 }) {
+  const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
   const [kind, setKind] = useState<UploadKind | "all">("all");
   const [source, setSource] = useState<AssetSource | "all">("all");
   const [model, setModel] = useState("");
-  const [creator, setCreator] = useState("");
-  const team = me?.workspace.kind === "team";
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -93,13 +101,11 @@ export function AssetsStudio({
       (kind === "all" || i.kind === kind) &&
       (source === "all" || i.source === source) &&
       (!model || i.generation?.model === model) &&
-      (!creator || i.createdBy?.id === creator) &&
       (!q || i.name.toLowerCase().includes(q) || i.generation?.prompt.toLowerCase().includes(q)),
   );
   useLazyThumbs(grid, shown, library.ensureThumb);
 
   const models = [...new Set(items.flatMap((i) => (i.generation ? [i.generation.model] : [])))];
-  const creators = [...new Map(items.flatMap((i) => (i.createdBy ? [[i.createdBy.id, i.createdBy] as const] : []))).values()];
   const stats = (k: UploadKind | "all") => {
     const list = items.filter((i) => k === "all" || i.kind === k);
     return { count: list.length, bytes: list.reduce((n, i) => n + i.bytes, 0) };
@@ -198,6 +204,24 @@ export function AssetsStudio({
               >
                 Download
               </button>
+              <BulkUpscale
+                items={items
+                  .filter((item) => selected.has(item.id) && item.key)
+                  .map((item) => ({
+                    key: item.key,
+                    kind: item.kind,
+                    width: item.width,
+                    height: item.height,
+                    duration: item.duration,
+                  }))}
+                tools={tools}
+                keyed={keyed}
+                onOpenKeys={onOpenKeys}
+                onStarted={() => {
+                  setSelected(new Set());
+                  onToolJob();
+                }}
+              />
               <button
                 onClick={() => void remove([...selected])}
                 className="rounded-full bg-red-500/15 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/25"
@@ -235,23 +259,6 @@ export function AssetsStudio({
                   {models.map((m) => (
                     <option key={m} value={m} className="bg-panel">
                       {modelLabel(m)}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {team && creators.length > 0 && (
-                <select
-                  value={creator}
-                  onChange={(e) => setCreator(e.target.value)}
-                  aria-label="Created by"
-                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs outline-none"
-                >
-                  <option value="" className="bg-panel">
-                    Everyone
-                  </option>
-                  {creators.map((c) => (
-                    <option key={c.id} value={c.id} className="bg-panel">
-                      {c.id === me?.user.id ? "Me" : (c.name ?? c.email)}
                     </option>
                   ))}
                 </select>
@@ -328,13 +335,12 @@ export function AssetsStudio({
                             selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                           }`}
                         />
-                        {team && item.createdBy && (
-                          <span className="absolute top-2 right-2">
-                            <Avatar person={item.createdBy} size="size-6" />
-                          </span>
-                        )}
                         <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-200">
-                          {item.source === "generated" ? `✦ ${modelLabel(item.generation?.model ?? "")}` : "⇪ Upload"}
+                          {item.source === "processed"
+                            ? `✦ ${tools.find((tool) => tool.id === item.tool)?.name ?? item.name}${item.resolution ? ` · ${item.resolution}` : ""}`
+                            : item.source === "generated"
+                              ? `✦ ${modelLabel(item.generation?.model ?? "")}`
+                              : "⇪ Upload"}
                         </span>
                       </div>
                     );
@@ -352,8 +358,25 @@ export function AssetsStudio({
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
           onClose={() => setPreviewId(null)}
+          lineage={lineageFor(previewing, library.items, tools, setPreviewId)}
           actions={
             <>
+              <ToolsMenu
+                kind={previewing.kind}
+                assetKey={previewing.key}
+                asset={{
+                  width: previewing.width,
+                  height: previewing.height,
+                  duration: previewing.duration,
+                }}
+                tools={tools}
+                keyed={keyed}
+                onOpenKeys={onOpenKeys}
+                onStarted={() => {
+                  setPreviewId(null);
+                  onToolJob();
+                }}
+              />
               <ActionButton onClick={() => download(previewing)}>Download</ActionButton>
               {previewing.kind === "image" && (
                 <ActionButton
@@ -382,6 +405,24 @@ export function AssetsStudio({
       )}
     </div>
   );
+}
+
+function lineageFor(
+  item: LibraryItem,
+  all: LibraryItem[],
+  tools: readonly ToolView[],
+  open: (id: string) => void,
+) {
+  const parent = item.parentId ? all.find((other) => other.key === item.parentId) : undefined;
+  const children = all.filter((other) => other.parentId && other.parentId === item.key);
+  const toolName = tools.find((tool) => tool.id === item.tool)?.name;
+  if (!parent && !children.length && !toolName) return undefined;
+  return {
+    toolName,
+    parent: parent ? { id: parent.id, name: parent.name } : undefined,
+    children: children.map((child) => ({ id: child.id, name: child.name })),
+    onOpen: open,
+  };
 }
 
 function ActionButton({

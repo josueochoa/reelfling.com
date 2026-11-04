@@ -10,7 +10,6 @@
 // are not followed automatically: a 3xx Location is fetched again under the same rule,
 // so the key cannot ride along to a CDN or another host.
 
-import { reportedUsd } from "../reportedCost";
 import type { OpenRouterImageCall } from "../registry/bodies";
 import type { GenerateRequest, TaskStatus } from "../types";
 import { ProviderError, type ProviderFactory, type TaskSnapshot } from "./types";
@@ -199,10 +198,7 @@ export function buildOpenRouterVideo(req: GenerateRequest, endpoint: string) {
   };
 }
 
-export async function generateOpenRouterImages(
-  apiKey: string,
-  call: OpenRouterImageCall,
-): Promise<{ items: OpenRouterImageItem[]; costUsd?: number }> {
+export async function generateOpenRouterImages(apiKey: string, call: OpenRouterImageCall): Promise<OpenRouterImageItem[]> {
   const settled = await Promise.allSettled(
     Array.from({ length: call.times }, () =>
       openRouterJson<{ data?: OpenRouterImageItem[] }>(apiKey, call.path, {
@@ -211,10 +207,8 @@ export async function generateOpenRouterImages(
       }),
     ),
   );
-  const fulfilled = settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
-  const items = fulfilled.flatMap((body) => body.data ?? []);
-  const costs = fulfilled.map((body) => reportedUsd(body)).filter((n): n is number => n !== undefined);
-  if (items.length) return { items, ...(costs.length ? { costUsd: costs.reduce((a, b) => a + b, 0) } : {}) };
+  const items = settled.flatMap((result) => (result.status === "fulfilled" ? (result.value.data ?? []) : []));
+  if (items.length) return items;
   const rejected = settled.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
   throw rejected?.reason ?? new ProviderError("OpenRouter returned no images", 502);
 }
@@ -257,8 +251,6 @@ export const openRouterProvider: ProviderFactory = (creds) => ({
     if (job.error) snap.error = scrub(job.error, creds.apiKey);
     const videoUrl = videoUrlOf(job, creds.apiKey);
     if (videoUrl) snap.videoUrl = videoUrl;
-    const costUsd = reportedUsd(job);
-    if (costUsd !== undefined) snap.costUsd = costUsd;
     return snap;
   },
 

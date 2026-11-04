@@ -1,67 +1,56 @@
-// Generations, scoped per workspace. Rows keep user_id (the person who made them).
-// Finished videos are copied into the workspace's R2 bucket (see storage.ts).
+// Generations, scoped per user. Rows live in D1 (see db.ts); finished videos are
+// copied into the user's R2 bucket (see storage.ts).
 
-import { providerForWorkspace } from "./providers";
-import { getCredentials } from "./keys";
-import { fetchFalOutput, pollFal } from "./providers/fal";
-import { byWorkspace, persistJson, wsArgs } from "./scope";
-import { creatorsIn, deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
 import { all, first, run } from "./db";
+import { getCredentials } from "./keys";
+import { providerForUser, terminalPollUpdate } from "./providers";
+import { fetchFalOutput, pollFal } from "./providers/fal";
+import { staleVideoFailure } from "./staleVideo";
+import { deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
 import { TERMINAL_STATUSES, type Generation } from "./types";
 
-type Row = { data: string; created_by: string | null };
-const parse = (row: Row | undefined) =>
-  row ? ({ ...(JSON.parse(row.data) as Generation), createdBy: row.created_by } as Generation) : undefined;
+const parse = (row: { data: string } | undefined) => (row ? (JSON.parse(row.data) as Generation) : undefined);
 
-export async function listGenerations(workspaceId: string): Promise<Generation[]> {
-  const [rows, creators] = await Promise.all([
-    all<Row>(`SELECT data, created_by FROM generations WHERE ${byWorkspace()} ORDER BY created_at DESC`, ...wsArgs(workspaceId)),
-    creatorsIn("generations", workspaceId),
-  ]);
-  return rows.map((r) => ({ ...parse(r)!, creator: (r.created_by && creators.get(r.created_by)) || undefined }));
-}
-
-export async function getGeneration(workspaceId: string, id: string): Promise<Generation | undefined> {
-  return parse(
-    await first<Row>(`SELECT data, created_by FROM generations WHERE id = ? AND ${byWorkspace()}`, id, ...wsArgs(workspaceId)),
+export async function listGenerations(userId: string): Promise<Generation[]> {
+  const rows = await all<{ data: string }>(
+    "SELECT data FROM generations WHERE user_id = ? ORDER BY created_at DESC",
+    userId,
   );
+  return rows.map((r) => parse(r)!);
 }
 
-export async function insertGeneration(workspaceId: string, gen: Generation, createdBy: string) {
+export async function getGeneration(userId: string, id: string): Promise<Generation | undefined> {
+  return parse(await first<{ data: string }>("SELECT data FROM generations WHERE id = ? AND user_id = ?", id, userId));
+}
+
+export async function insertGeneration(userId: string, gen: Generation) {
   await run(
-    "INSERT INTO generations (id, user_id, workspace_id, created_by, created_at, data, route) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)",
     gen.id,
-    createdBy,
-    workspaceId,
-    createdBy,
+    userId,
     gen.createdAt,
-    persistJson(gen),
+    JSON.stringify(gen),
     gen.route ?? null,
   );
 }
 
-export async function updateGeneration(workspaceId: string, id: string, patch: Partial<Generation>) {
-  const gen = await getGeneration(workspaceId, id);
+export async function updateGeneration(userId: string, id: string, patch: Partial<Generation>) {
+  const gen = await getGeneration(userId, id);
   if (!gen) return undefined;
   const next = { ...gen, ...patch, updatedAt: Date.now() };
-  await run(
-    `UPDATE generations SET data = ? WHERE id = ? AND ${byWorkspace()}`,
-    persistJson(next),
-    id,
-    ...wsArgs(workspaceId),
-  );
+  await run("UPDATE generations SET data = ? WHERE id = ? AND user_id = ?", JSON.stringify(next), id, userId);
   return next;
 }
 
-export async function removeGeneration(workspaceId: string, id: string) {
-  await deleteGenerationAssets(workspaceId, id);
-  await run(`DELETE FROM generations WHERE id = ? AND ${byWorkspace()}`, id, ...wsArgs(workspaceId));
+export async function removeGeneration(userId: string, id: string) {
+  await deleteGenerationAssets(userId, id);
+  await run("DELETE FROM generations WHERE id = ? AND user_id = ?", id, userId);
 }
 
 /** Generations still in flight, or finished but not yet copied to storage — for the cron sweep. */
 export async function unfinishedGenerations(limit: number, maxAgeMs: number) {
-  return all<{ id: string; workspace_id: string }>(
-    `SELECT id, COALESCE(workspace_id, user_id) AS workspace_id FROM generations
+  return all<{ id: string; user_id: string }>(
+    `SELECT id, user_id FROM generations
      WHERE created_at > ?
        AND (json_extract(data, '$.status') IN ('queued', 'running')
             OR (json_extract(data, '$.status') = 'succeeded' AND json_extract(data, '$.stored') IS NOT 1))
@@ -71,75 +60,76 @@ export async function unfinishedGenerations(limit: number, maxAgeMs: number) {
   );
 }
 
-function studioProvider(gen: Generation) {
-  return gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+/** The generation's stored video, copying it from the provider first if needed (their URLs expire). */
+export async function ensureStoredVideo(userId: string, gen: Generation): Promise<Asset> {
+  const key = videoKey(gen.id);
+  let asset = await getAsset(userId, key);
+  if (!asset) {
+    const providerId = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+    const res =
+      (gen.route ?? gen.provider) === "fal"
+        ? await fetchFalOutput(gen.remoteVideoUrl || "")
+        : await (await providerForUser(userId, providerId)).fetchVideo(gen.taskId, { videoUrl: gen.remoteVideoUrl });
+    if (!res.ok) throw new Error(`Video download failed (${res.status})`);
+    asset = await putAsset(userId, { key, source: res, contentType: "video/mp4", generationId: gen.id });
+  }
+  if (!gen.stored) await updateGeneration(userId, gen.id, { stored: true });
+  return asset;
+}
+
+/** Fail every queued or running video that has been open for 2 hours. Returns rows changed. */
+export async function failStaleGenerations(now = Date.now()) {
+  const { sql, params } = staleVideoFailure(now);
+  const res = await run(sql, ...params);
+  return res.meta.changes;
 }
 
 /** fal polls the URLs from submit. Every other provider uses its task id. */
-async function syncTask(keyWorkspace: string, gen: Generation) {
+async function syncTask(userId: string, gen: Generation) {
   if ((gen.route ?? gen.provider) !== "fal") {
-    return (await providerForWorkspace(keyWorkspace, studioProvider(gen))).getTask(gen.taskId);
+    const providerId = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+    return (await providerForUser(userId, providerId)).getTask(gen.taskId);
   }
-  // Mock runs never receive queue URLs, so they stay queued.
   if (!gen.falStatusUrl || !gen.falResponseUrl) return { status: gen.status };
-  const creds = await getCredentials(keyWorkspace, "fal");
+  const creds = await getCredentials(userId, "fal");
   if (!creds) return { status: gen.status };
   const snap = await pollFal(creds.apiKey, { statusUrl: gen.falStatusUrl, responseUrl: gen.falResponseUrl });
   return { status: snap.status, videoUrl: snap.outputs[0]?.url, error: snap.error };
 }
 
-/** The generation's stored video, copying it from the provider first if needed (their URLs expire). */
-export async function ensureStoredVideo(workspaceId: string, gen: Generation): Promise<Asset> {
-  const key = videoKey(gen.id);
-  let asset = await getAsset(workspaceId, key);
-  if (!asset) {
-    const keyWorkspace = gen.keyWorkspaceId || workspaceId;
-    const res =
-      (gen.route ?? gen.provider) === "fal"
-        ? await fetchFalOutput(gen.remoteVideoUrl || "")
-        : await (await providerForWorkspace(keyWorkspace, studioProvider(gen))).fetchVideo(gen.taskId, {
-            videoUrl: gen.remoteVideoUrl,
-          });
-    if (!res.ok) throw new Error(`Video download failed (${res.status})`);
-    asset = await putAsset(workspaceId, {
-      key,
-      source: res,
-      contentType: "video/mp4",
-      generationId: gen.id,
-      createdBy: gen.createdBy,
-    });
-  }
-  if (!gen.stored) await updateGeneration(workspaceId, gen.id, { stored: true });
-  return asset;
-}
-
 /** Pull the latest task state from the provider and persist it. */
-export async function syncGeneration(workspaceId: string, id: string): Promise<Generation | undefined> {
-  let gen = await getGeneration(workspaceId, id);
+export async function syncGeneration(userId: string, id: string): Promise<Generation | undefined> {
+  let gen = await getGeneration(userId, id);
   if (!gen) return undefined;
 
   if (!TERMINAL_STATUSES.includes(gen.status)) {
-    const keyWorkspace = gen.keyWorkspaceId || workspaceId;
-    const task = await syncTask(keyWorkspace, gen);
-    const done = TERMINAL_STATUSES.includes(task.status);
-    gen = await updateGeneration(workspaceId, id, {
-      status: task.status,
-      progress: task.progress,
-      remoteVideoUrl: task.videoUrl,
-      lastFrameUrl: task.lastFrameUrl,
-      error: task.error,
-      seed: task.seed ?? gen.seed,
-      tokens: task.tokens,
-      billedSeconds: task.billedSeconds,
-      ...(task.costUsd !== undefined ? { reportedCost: task.costUsd } : {}),
-      ...(done && { completedAt: Date.now() }),
-    });
-    if (!gen) return undefined;
+    try {
+      const task = await syncTask(userId, gen);
+      const done = TERMINAL_STATUSES.includes(task.status);
+      gen = await updateGeneration(userId, id, {
+        status: task.status,
+        progress: task.progress,
+        remoteVideoUrl: task.videoUrl,
+        lastFrameUrl: task.lastFrameUrl,
+        error: task.error,
+        seed: task.seed ?? gen.seed,
+        tokens: task.tokens,
+        billedSeconds: task.billedSeconds,
+        ...(done && { completedAt: Date.now() }),
+      });
+      if (!gen) return undefined;
+    } catch (e) {
+      // 404 (task not on this key) and a missing key end the job. 429, 5xx, and
+      // network errors are rethrown so the row stays in flight and the next poll retries.
+      const failed = terminalPollUpdate(e);
+      if (!failed) throw e;
+      return updateGeneration(userId, id, { ...failed, completedAt: Date.now() });
+    }
   }
 
   if (gen.status === "succeeded" && !gen.stored) {
-    await ensureStoredVideo(workspaceId, gen).catch((e) => console.error(`[${id}]`, (e as Error).message));
-    return getGeneration(workspaceId, id);
+    await ensureStoredVideo(userId, gen).catch((e) => console.error(`[${id}]`, e));
+    return getGeneration(userId, id);
   }
   return gen;
 }

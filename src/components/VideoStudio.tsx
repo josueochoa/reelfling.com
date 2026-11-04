@@ -5,14 +5,14 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { restoreInputs } from "@/lib/inputs";
 import { isVideo, MODELS, type VideoModel } from "@/lib/registry";
-import { availability, keyedForAccount, sortByAvailability, type CatalogTool } from "@/lib/registry/availability";
+import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { pickerModels, reuseSelection } from "@/lib/registry/routing";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
-import { api, apiJson, type KeySource, type Me } from "./api";
-import { KeyChoice } from "./Teams";
+import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
 import { GenerationCard } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
+import type { ToolView } from "@/lib/toolTypes";
 import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
 
@@ -33,16 +33,18 @@ export function VideoStudio({
   me,
   library,
   onOpenKeys,
-  catalogModels,
+  openRouterModels,
   tools,
+  onToolJob,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
   library: Library;
   onOpenKeys: () => void;
   /** Null until /api/models returns. Empty when that request failed. */
-  catalogModels: VideoModel[] | null;
-  tools: readonly CatalogTool[];
+  openRouterModels: VideoModel[] | null;
+  tools: readonly ToolView[];
+  onToolJob: () => void;
 }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -52,9 +54,7 @@ export function VideoStudio({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
-  const [keySource, setKeySource] = useState<KeySource>("team");
-  const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
-  const defaultProvider = ownKeys && keySource === "member" ? (me?.user.activeProvider ?? null) : (me?.workspace.activeProvider ?? null);
+  const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
   useEffect(() => {
@@ -110,12 +110,7 @@ export function VideoStudio({
   async function generate(req: GenerateRequest) {
     setError(null);
     try {
-      upsert(
-        await apiJson<Generation>("/api/generations", {
-          method: "POST",
-          body: JSON.stringify({ ...req, ...(ownKeys ? { keySource } : {}) }),
-        }),
-      );
+      upsert(await apiJson<Generation>("/api/generations", { method: "POST", body: JSON.stringify(req) }));
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -134,10 +129,15 @@ export function VideoStudio({
     void apiJson("/api/me", { method: "PATCH", body: JSON.stringify({ modelId, provider }) }).catch(() => {});
   }
 
+  function catalog() {
+    const hand = MODELS.filter(isVideo);
+    const extra = (openRouterModels ?? []).filter((model) => !hand.some((item) => item.id === model.id));
+    return pickerModels([...hand, ...extra]);
+  }
+
   function reuse(gen: Generation, asFirstFrame?: string) {
     setOpen(null);
-    const catalog = pickerCatalog();
-    const picked = reuseSelection(catalog, gen.model, gen.route);
+    const picked = reuseSelection(catalog(), gen.model, gen.route);
     if (picked.route) saveRoute(picked.id, picked.route);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // Don't claim files were deleted while the library is still loading.
@@ -152,6 +152,7 @@ export function VideoStudio({
       resolution: gen.resolution,
       duration: gen.duration,
       generateAudio: gen.generateAudio,
+      cameraMoves: gen.cameraMoves,
       cameraMove: gen.cameraMove,
       mode: asFirstFrame ? "frames" : (restored?.mode ?? gen.mode),
       firstFrame: asFirstFrame,
@@ -190,26 +191,17 @@ export function VideoStudio({
     await library.remove(item.id).catch((e) => setError((e as Error).message));
   }
 
-  const keyed = me ? keyedForAccount(me) : new Set<string>();
-  function pickerCatalog() {
-    const hand = MODELS.filter(isVideo);
-    const extra = (catalogModels ?? []).filter((model) => !hand.some((item) => item.id === model.id));
-    // Hand models first so a multi-route Seedance row wins over the duplicate catalog entry.
-    return pickerModels([...hand, ...extra]);
-  }
-  const models = sortByAvailability(pickerCatalog(), (model) => availability(model, keyed).available);
+  const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
+  const models = sortByAvailability(catalog(), (model) => availabilityFor(routeProviders(model.routes), keyed).available);
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
     <div className="flex h-full flex-col lg:flex-row">
       <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
-          <div className="flex items-center gap-2">
-            <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
-              API keys
-            </button>
-            {ownKeys && <KeyChoice value={keySource} onChange={setKeySource} />}
-          </div>
+          <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
+            API keys
+          </button>
           {active > 0 && (
             <span className="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-zinc-400">
               <span className="size-1.5 animate-pulse rounded-full bg-accent" />
@@ -220,7 +212,7 @@ export function VideoStudio({
         {models.length > 0 && (
           <ControlPanel
             ref={panel}
-            key={preset.key}
+            key={me ? preset.key : "pending"}
             library={library}
             onOpenLibrary={() => setLibraryOpen(true)}
             onReferencesChange={setRefLabels}
@@ -229,14 +221,10 @@ export function VideoStudio({
             routePreferences={routePreferences}
             defaultProvider={defaultProvider}
             onSaveRoute={saveRoute}
-            tools={tools}
             preset={preset}
             onGenerate={generate}
             error={error}
             onOpenKeys={onOpenKeys}
-            onUseFal={() => {
-              window.location.hash = "fal";
-            }}
           />
         )}
       </aside>
@@ -283,7 +271,6 @@ export function VideoStudio({
                     onReuse={() => reuse(g)}
                     onUseAsReference={() => void referenceStoredVideo(g)}
                     onDelete={() => remove(g)}
-                    showCreator={me?.workspace.kind === "team"}
                   />
                 ))}
               </div>
@@ -300,6 +287,10 @@ export function VideoStudio({
           onUseAsReference={() => void referenceStoredVideo(open)}
           onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
           onDelete={() => remove(open)}
+          tools={tools}
+          keyed={keyed}
+          onOpenKeys={onOpenKeys}
+          onToolJob={onToolJob}
         />
       )}
     </div>

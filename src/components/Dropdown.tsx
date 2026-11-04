@@ -30,7 +30,6 @@ export function Dropdown<T extends string>({
   onChange: (value: T) => void;
   /** What the button shows; defaults to the selected option's label. */
   display?: React.ReactNode;
-  /** Where an unavailable option's hint goes. */
   onOpenKeys?: () => void;
 }) {
   const [open, setOpen] = useState(false);

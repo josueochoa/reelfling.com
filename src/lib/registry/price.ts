@@ -17,6 +17,15 @@ export function priceFor(
   return route?.price ?? model.price;
 }
 
+/** Estimate for one route. Uses that route's price when the catalog gives it one. */
+export function estimateRouteCost(
+  model: { price?: PriceFormula; routes?: readonly Pick<Route, "provider" | "price">[] },
+  provider: string | null | undefined,
+  input: EstimateInput = {},
+): number | undefined {
+  return estimateCost({ price: priceFor(model, provider) }, input);
+}
+
 /** USD the user's provider is expected to bill. Undefined when the entry has no formula. */
 export function estimateCost(model: Pick<ModelEntry, "price">, input: EstimateInput = {}): number | undefined {
   const price = model.price;
@@ -27,15 +36,6 @@ export function estimateCost(model: Pick<ModelEntry, "price">, input: EstimateIn
   const total = minimum !== undefined ? Math.max(amount, minimum) : amount;
   // Rates are decimal dollars. Snap so 50 × 0.0523 displays as $2.62, not $2.61.
   return Math.round(total * 1e8) / 1e8;
-}
-
-/** Estimate for one route. Uses that route's price when the catalog gives it one. */
-export function estimateRouteCost(
-  model: { price?: PriceFormula; routes?: readonly Pick<Route, "provider" | "price">[] },
-  provider: string | null | undefined,
-  input: EstimateInput = {},
-): number | undefined {
-  return estimateCost({ price: priceFor(model, provider) }, input);
 }
 
 function videoInput(input: EstimateInput) {

@@ -4,22 +4,21 @@
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
-import { keyedForAccount } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
+import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
-import { api, apiJson, withWorkspace, type KeySource, type Me } from "./api";
-import { Avatar } from "./Teams";
-import { KeyChoice } from "./Teams";
+import { api, apiJson, type Me } from "./api";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
+import { ToolsMenu } from "./ToolsMenu";
 import { UploadsPanel } from "./UploadsPanel";
 
 const POLL_MS = 4000;
 const pending = (g: ImageGeneration) => g.status === "queued" || g.status === "running";
 const imageUrl = (g: ImageGeneration, i: number, download = false) =>
-  withWorkspace(`/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`);
+  `/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`;
 const aspectStyle = (ratio?: string) => ({ aspectRatio: (ratio ?? "1:1").replace(":", " / ") });
 
 /** Re-renders every second while something is generating, for the elapsed timers. */
@@ -48,6 +47,8 @@ export function ImageStudio({
   library,
   onOpenKeys,
   onUseAsStartFrame,
+  tools,
+  onToolJob,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -55,6 +56,8 @@ export function ImageStudio({
   onOpenKeys: () => void;
   /** Send a generated image to the Video tab as its start frame. */
   onUseAsStartFrame: (item: LibraryItem) => void;
+  tools: readonly ToolView[];
+  onToolJob: () => void;
 }) {
   const [gens, setGens] = useState<ImageGeneration[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -78,19 +81,15 @@ export function ImageStudio({
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const references = refIds.flatMap((id) => byId.get(id) ?? []);
-  const [keySource, setKeySource] = useState<KeySource>("team");
-  const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
-  const usingOwn = !!ownKeys && keySource === "member";
-  const keyed = me ? keyedForAccount(me) : new Set<string>();
-  const defaultProvider = usingOwn ? (me?.user.activeProvider ?? null) : (me?.workspace.activeProvider ?? null);
+  const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
+  const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
-  const imageKeys = (usingOwn ? me?.personalKeys : me?.keys)?.map((key) => key.provider) ?? [];
   const imageRoute = preferredRoute(state.model, keyed, [
     state.route,
     routePreferences[state.model.id],
-    imageProviderFor(defaultProvider, imageKeys),
+    imageProviderFor(defaultProvider, [...keyed]),
   ])?.provider;
-  const imageProvider = imageRoute && (imageRoute === "argolink" || imageRoute === "openrouter") ? imageRoute : undefined;
+  const imageProvider = imageRoute === "argolink" || imageRoute === "openrouter" ? imageRoute : undefined;
 
   function saveRoute(modelId: string, provider: string) {
     setRoutePreferences((prev) => ({ ...prev, [modelId]: provider }));
@@ -191,7 +190,6 @@ export function ImageStudio({
             count: state.count,
             references: references.map((r) => r.key),
             ...(imageRoute ? { route: imageRoute } : {}),
-            ...(ownKeys ? { keySource } : {}),
           }),
         }),
       );
@@ -282,11 +280,6 @@ export function ImageStudio({
                 key={`${gen.id}-${i}`}
                 className="group relative mb-3 break-inside-avoid overflow-hidden rounded-xl bg-white/[0.04]"
               >
-                {me?.workspace.kind === "team" && gen.creator && (
-                  <span className="absolute top-2 left-2 z-10">
-                    <Avatar person={gen.creator} size="size-6" />
-                  </span>
-                )}
                 {gen.status === "succeeded" ? (
                   <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -362,12 +355,7 @@ export function ImageStudio({
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
-                <div className="pointer-events-auto mx-auto max-w-4xl">
-          {ownKeys && (
-            <div className="mb-2 flex justify-end">
-              <KeyChoice value={keySource} onChange={setKeySource} />
-            </div>
-          )}
+        <div className="pointer-events-auto mx-auto max-w-4xl">
           <ImageComposer
             state={state}
             onChange={(patch) => setState((s) => ({ ...s, ...patch }))}
@@ -418,6 +406,10 @@ export function ImageStudio({
           onUseAsStartFrame={() => void applyGenerated(openTile, open.i, "start")}
           onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
           onDelete={() => remove(openTile)}
+          tools={tools}
+          keyed={keyed}
+          onOpenKeys={onOpenKeys}
+          onToolJob={onToolJob}
         />
       )}
     </div>
@@ -433,6 +425,10 @@ function ImageLightbox({
   onUseAsStartFrame,
   onUseAsReference,
   onDelete,
+  tools,
+  keyed,
+  onOpenKeys,
+  onToolJob,
 }: {
   gen: ImageGeneration;
   index: number;
@@ -440,8 +436,12 @@ function ImageLightbox({
   onClose: () => void;
   onReuse: () => void;
   onUseAsStartFrame: () => void;
-  onUseAsReference: () => void;
   onDelete: () => void;
+  onUseAsReference: () => void;
+  tools: readonly ToolView[];
+  keyed: ReadonlySet<string>;
+  onOpenKeys: () => void;
+  onToolJob: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -504,6 +504,14 @@ function ImageLightbox({
             ))}
           </dl>
           <div className="mt-auto grid gap-2 text-sm">
+            <ToolsMenu
+              kind="image"
+              assetKey={gen.images[index]?.key}
+              tools={tools}
+              keyed={keyed}
+              onOpenKeys={onOpenKeys}
+              onStarted={onToolJob}
+            />
             <a href={imageUrl(gen, index, true)} className="rounded-xl bg-accent py-2 text-center font-medium text-ink">
               Download
             </a>

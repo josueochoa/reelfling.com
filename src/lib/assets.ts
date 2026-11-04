@@ -7,29 +7,28 @@ import { removeGeneration } from "./store";
 import { isAssetKey } from "./uploads";
 
 /**
- * Deletes one asset in a workspace. A generated video takes its generation with it; a
+ * Deletes one of the user's assets. A generated video takes its generation with it; a
  * generated image is removed from its generation, which goes when its last image does.
- * The caller has already checked that this user may modify it.
  */
-export async function deleteWorkspaceAsset(workspaceId: string, key: string) {
+export async function deleteUserAsset(userId: string, key: string) {
   if (!isAssetKey(key)) return;
-  const asset = await getAsset(workspaceId, key);
+  const asset = await getAsset(userId, key);
   if (!asset) return;
-  if (key.startsWith("videos/") && asset.generationId) return removeGeneration(workspaceId, asset.generationId);
+  if (key.startsWith("videos/") && asset.generationId) return removeGeneration(userId, asset.generationId);
   if (key.startsWith("fal/") && asset.generationId) {
-    const job = await getFalJob(workspaceId, asset.generationId);
+    const job = await getFalJob(userId, asset.generationId);
     const rest = job?.outputs.filter((output) => output.key !== key) ?? [];
-    if (!job || !rest.length) return removeFalJob(workspaceId, asset.generationId);
+    if (!job || !rest.length) return removeFalJob(userId, asset.generationId);
     await deleteAsset(asset);
-    await updateFalJob(workspaceId, job.id, { outputs: rest });
+    await updateFalJob(userId, job.id, { outputs: rest });
     return;
   }
   if (key.startsWith("images/") && asset.generationId) {
-    const gen = await getImageGeneration(workspaceId, asset.generationId);
+    const gen = await getImageGeneration(userId, asset.generationId);
     const rest = gen?.images.filter((i) => i.key !== key) ?? [];
-    if (!gen || !rest.length) return removeImageGeneration(workspaceId, asset.generationId);
+    if (!gen || !rest.length) return removeImageGeneration(userId, asset.generationId);
     await deleteAsset(asset);
-    await updateImageGeneration(workspaceId, gen.id, { images: rest });
+    await updateImageGeneration(userId, gen.id, { images: rest });
     return;
   }
   await deleteAsset(asset);

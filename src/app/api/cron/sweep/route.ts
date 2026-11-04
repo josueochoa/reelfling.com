@@ -1,7 +1,7 @@
 import { failAbandonedFalCopies, syncFalJob, unfinishedFalJobs } from "@/lib/falJobs";
 import { failStaleImageJobs } from "@/lib/images";
 import { deleteOrphanUploads } from "@/lib/storage";
-import { syncGeneration, unfinishedGenerations } from "@/lib/store";
+import { failStaleGenerations, syncGeneration, unfinishedGenerations } from "@/lib/store";
 
 const BATCH = 25;
 const CONCURRENCY = 5;
@@ -30,13 +30,19 @@ export async function POST(request: Request) {
   for (let i = 0; i < pending.length; i += CONCURRENCY) {
     await Promise.all(
       pending.slice(i, i + CONCURRENCY).map((g) =>
-        syncGeneration(g.workspace_id, g.id).catch((e) => {
+        syncGeneration(g.user_id, g.id).catch((e) => {
           failed++;
           console.error(`[sweep ${g.id}]`, e);
         }),
       ),
     );
   }
+  // After the sync, so a job the provider just finished is not timed out. Anything
+  // still queued or running 2 hours after it was created is failed for every provider.
+  const staleVideos = await failStaleGenerations().catch((e) => {
+    console.error("[sweep video timeout]", e);
+    return 0;
+  });
   const orphansDeleted = await deleteOrphanUploads("refs/", ORPHAN_UPLOAD_AGE_MS).catch((e) => {
     console.error("[sweep orphans]", e);
     return 0;
@@ -54,7 +60,7 @@ export async function POST(request: Request) {
   for (let i = 0; i < falPending.length; i += CONCURRENCY) {
     await Promise.all(
       falPending.slice(i, i + CONCURRENCY).map((job) =>
-        syncFalJob(job.workspace_id, job.id).catch((e) => {
+        syncFalJob(job.user_id, job.id).catch((e) => {
           falFailed++;
           console.error(`[sweep fal ${job.id}]`, (e as Error).message);
         }),
@@ -64,6 +70,7 @@ export async function POST(request: Request) {
   return Response.json({
     checked: pending.length,
     failed,
+    staleVideos,
     orphansDeleted,
     staleImageJobs,
     falChecked: falPending.length,

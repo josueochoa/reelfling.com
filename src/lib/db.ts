@@ -8,7 +8,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 export interface AppEnv {
   DB: D1Database;
   /** Image generation jobs (see images.ts). */
-  IMAGE_JOBS?: Queue<{ userId: string; workspaceId?: string; id: string }>;
+  IMAGE_JOBS?: Queue<{ userId: string; id: string }>;
   AUTH_MODE?: string;
   AUTH_SECRET?: string;
   ACCESS_TEAM_DOMAIN?: string;
@@ -21,16 +21,20 @@ export interface AppEnv {
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   R2_ENDPOINT?: string;
-  R2_BUCKET_PREFIX?: string;
+  /** Shared bucket. Objects are stored at `<user id>/<key>` inside it. */
+  R2_BUCKET?: string;
   STORAGE_QUOTA_GB?: string;
-  /** "true": new accounts need a team invite. Access stays the sign-in gate either way. */
-  INVITE_ONLY?: string;
-  /** Development only. Skips live provider calls. Ignored when NODE_ENV is production. */
-  MOCK_PROVIDERS?: string;
 }
 
-/** The current request's Worker env. Only callable while handling a request. */
-export const env = () => getCloudflareContext().env as unknown as AppEnv;
+let envOverride: AppEnv | undefined;
+
+/** Tests inject an env so job code can run without a Worker. Production never sets this. */
+export function setTestEnv(next: AppEnv | undefined) {
+  envOverride = next;
+}
+
+/** The current request's Worker env. Only callable while handling a request, unless a test set one. */
+export const env = () => envOverride ?? (getCloudflareContext().env as unknown as AppEnv);
 
 type Param = string | number | null;
 

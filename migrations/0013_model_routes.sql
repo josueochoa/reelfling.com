@@ -1,10 +1,9 @@
 -- Per-model route, and the route each generation actually called.
 --
--- No preference row means the resolver still reads users.active_provider
--- (0010 copied that onto the personal workspace; on main, 0012 copied the
--- personal workspace value back onto the user). The single-provider switch
--- is gone. This file does not write a preference row, because a global
--- provider is not a choice for every model.
+-- No preference row means the resolver still reads users.active_provider.
+-- 0012 copied the personal workspace's provider onto the user. The
+-- single-provider switch is gone. This file does not write a preference
+-- row, because a global provider is not a choice for every model.
 --
 -- `route` is the provider name. Older rows keep it inside data JSON; the
 -- column is filled from that. A second run of the ALTER statements reports

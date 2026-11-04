@@ -1,0 +1,144 @@
+{
+  "docs": "https://fal.ai/docs/platform-apis/v1/models",
+  "source": "Hand-checked against GET https://api.fal.ai/v1/models?endpoint_id=…&expand=openapi-3.0 on Nov 3, 2026. Not written by catalog:sync.",
+  "models": [
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Upscale a video with FlashVSR, from 2× to 4×.",
+      "family": "FlashVSR",
+      "group": "tool",
+      "id": "fal:fal-ai/flashvsr/upscale/video",
+      "name": "FlashVSR",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/flashvsr/upscale/video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "image"
+      },
+      "description": "Crisp upscale for a PNG. The model chooses the scale.",
+      "family": "Recraft",
+      "group": "tool",
+      "id": "fal:fal-ai/recraft/upscale/crisp",
+      "name": "Recraft Crisp",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/recraft/upscale/crisp",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "image"
+      },
+      "description": "Upscale an image with SeedVR2, by scale or to 1080p or 4K.",
+      "family": "SeedVR2",
+      "group": "tool",
+      "id": "fal:fal-ai/seedvr/upscale/image",
+      "name": "SeedVR2",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/seedvr/upscale/image",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Upscale a video with SeedVR2, by scale or to 1080p or 4K.",
+      "family": "SeedVR2",
+      "group": "tool",
+      "id": "fal:fal-ai/seedvr/upscale/video",
+      "name": "SeedVR2",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/seedvr/upscale/video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "image"
+      },
+      "description": "Precision image upscale, up to 4×.",
+      "family": "Topaz",
+      "group": "tool",
+      "id": "fal:topaz/upscale/image/precision",
+      "name": "Topaz Precision",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "topaz/upscale/image/precision",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Precision video upscale, up to 4×. Videos are limited to 5 minutes.",
+      "family": "Topaz",
+      "group": "tool",
+      "id": "fal:topaz/upscale/video/precision",
+      "name": "Topaz Precision",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "topaz/upscale/video/precision",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": [
+        "tool"
+      ]
+    }
+  ]
+}
