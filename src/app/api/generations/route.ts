@@ -9,8 +9,9 @@ import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { applyLook, keptLook, lookIsEmpty } from "@/lib/registry/looks";
 import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
 import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
+import { keyframesError } from "@/lib/registry/frames";
 import { preferredRoute } from "@/lib/registry/routing";
-import type { FalInputMap, StudioProviderId } from "@/lib/registry/types";
+import type { FalInputMap, StudioProviderId, VideoModel } from "@/lib/registry/types";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
@@ -36,6 +37,26 @@ function mentionError(req: GenerateRequest): string | null {
   const bad = invalidMentions(req.prompt ?? "", counts);
   if (bad.length) return `Prompt references ${bad.join(", ")}, which ${bad.length === 1 ? "isn't" : "aren't"} attached`;
   return null;
+}
+
+/** https URL, data URI, or `upload:<asset key>`. */
+function isFrameRef(value: unknown): value is string {
+  if (typeof value !== "string" || !value) return false;
+  if (isUploadRef(value)) return isAssetKey(uploadKeyOf(value));
+  if (value.startsWith("data:") && value.includes(",")) return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Absent, or image refs within the model's keyframe limit. A bad shape is a 400, not a throw. */
+function middleFramesError(model: VideoModel, req: GenerateRequest): string | null {
+  const raw = (req as { middleFrames?: unknown }).middleFrames;
+  if (raw == null) return null;
+  if (!Array.isArray(raw) || !raw.every(isFrameRef)) return "Keyframes must be a list of images";
+  return keyframesError(model, { ...req, middleFrames: raw });
 }
 
 interface ResolvedMedia {
@@ -130,6 +151,9 @@ export async function POST(request: Request) {
     const model = catalogModel(req.model);
     if (!model || !isVideo(model))
       return Response.json({ error: `Model "${req.model}" isn't available` }, { status: 400 });
+    // Before keys, storage, or a provider call. The field checks below assume a string array.
+    const framesError = middleFramesError(model, req);
+    if (framesError) return Response.json({ error: framesError }, { status: 400 });
     const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
     const gate = availabilityFor(routeProviders(model.routes), keyed);
     if (!gate.available) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
