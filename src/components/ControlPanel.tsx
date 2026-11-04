@@ -303,7 +303,6 @@ export function ControlPanel({
           )
           .join(" ") + " The files are still in your Uploads.";
       setNotice(message);
-      alert(message);
     }
     return added;
   }

@@ -8,7 +8,6 @@ import { restoreInputs } from "@/lib/inputs";
 import { extractLastFrame, generationBytesUrl } from "@/lib/lastFrame";
 import { isVideo, MODELS, type VideoModel } from "@/lib/registry";
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
-import { pickerModels, reuseSelection } from "@/lib/registry/routing";
 import { groupFeed, isNumberedSequence } from "@/lib/sequence";
 import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
@@ -168,18 +167,16 @@ export function VideoStudio({
   function catalog() {
     const hand = MODELS.filter(isVideo);
     const extra = (openRouterModels ?? []).filter((model) => !hand.some((item) => item.id === model.id));
-    return pickerModels([...hand, ...extra]);
+    return [...hand, ...extra];
   }
 
   function reuse(gen: Generation, extra?: { frameKey?: string; continueFrom?: string }) {
     setOpen(null);
-    const picked = reuseSelection(catalog(), gen.model, gen.route);
-    if (picked.route) saveRoute(picked.id, picked.route);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // Don't claim files were deleted while the library is still loading.
     const restored = extra?.frameKey || !library.loaded ? undefined : restoreInputs(gen, available);
     const waiting = !extra?.frameKey && !library.loaded;
-    const pickedModel = catalog().find((model) => model.id === picked.id);
+    const pickedModel = catalog().find((model) => model.id === gen.model);
     const frameNote = extra?.frameKey
       ? pickedModel?.capabilities.frames.start
         ? "Last frame saved to Uploads. It's the start frame."
@@ -187,8 +184,8 @@ export function VideoStudio({
       : undefined;
     setPreset((p) => ({
       key: p.key + 1,
-      model: picked.id,
-      route: picked.route,
+      model: gen.model,
+      route: gen.route,
       prompt: restored?.prompt ?? gen.prompt,
       ratio: gen.ratio,
       resolution: gen.resolution,

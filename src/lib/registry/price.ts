@@ -1,5 +1,62 @@
 import type { EstimateInput, ModelEntry, PriceFormula, ReferenceImageFee, Route } from "./types";
 
+/** Long side, in pixels, for a resolution tier. `1080p` is a 16:9 frame's long side. */
+function longSide(resolution: string | undefined): number | undefined {
+  if (!resolution) return undefined;
+  const key = resolution.toLowerCase();
+  if (key === "1k") return 1024;
+  if (key === "1.5k") return 1536;
+  if (key === "2k") return 2048;
+  if (key === "4k") return 4096;
+  const height = /^(\d+)p$/.exec(key);
+  return height ? Math.round((Number(height[1]) * 16) / 9) : undefined;
+}
+
+function aspectParts(ratio: string | undefined): [number, number] {
+  const match = /^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/.exec(ratio ?? "");
+  if (!match) return [1, 1];
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width > 0 && height > 0 ? [width, height] : [1, 1];
+}
+
+/**
+ * fal's named image sizes, used when a model has no resolution tier.
+ * 1 megapixel is 1024×1024, matching fal's published megapixel schedule.
+ */
+const IMAGE_PRESET: Record<string, { width: number; height: number }> = {
+  "1:1": { width: 1024, height: 1024 },
+  "16:9": { width: 1024, height: 576 },
+  "9:16": { width: 576, height: 1024 },
+  "4:3": { width: 1024, height: 768 },
+  "3:4": { width: 768, height: 1024 },
+  "21:9": { width: 1024, height: 440 },
+};
+
+/**
+ * Output megapixels for the resolution and aspect we actually send.
+ * `auto` and `adaptive` use the input image's shape. With no input they use the
+ * model's default square (`square_hd` / a 1:1 frame at that tier).
+ */
+export function outputMegapixels(
+  resolution?: string,
+  ratio?: string,
+  input?: { width: number; height: number } | null,
+): number {
+  const tier = longSide(resolution);
+  const auto = ratio === "auto" || ratio === "adaptive";
+  const box = input && input.width > 0 && input.height > 0 ? input : undefined;
+  if (!tier && !auto) {
+    const preset = IMAGE_PRESET[ratio ?? ""];
+    if (preset) return (preset.width * preset.height) / (1024 * 1024);
+  }
+  const [aspectWidth, aspectHeight] = auto && box ? [box.width, box.height] : aspectParts(auto ? "1:1" : ratio);
+  const long = tier ?? 1024;
+  const width = aspectWidth >= aspectHeight ? long : Math.max(1, Math.round((long * aspectWidth) / aspectHeight));
+  const height = aspectHeight >= aspectWidth ? long : Math.max(1, Math.round((long * aspectHeight) / aspectWidth));
+  return (width * height) / (1024 * 1024);
+}
+
 function rate(table: Readonly<Record<string, number>> | undefined, resolution: string | undefined) {
   if (!table) return undefined;
   if (resolution && table[resolution] !== undefined) return table[resolution];

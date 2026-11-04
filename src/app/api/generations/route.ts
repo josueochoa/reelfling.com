@@ -2,15 +2,15 @@ import { errorResponse, requireUser } from "@/lib/auth";
 import { getCredentials, listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
-import { falQueueInput, falVideoEndpoint, submitFal } from "@/lib/providers/fal";
+import { falQueueInput, submitFal } from "@/lib/providers/fal";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
-import { catalogModel } from "@/lib/registry/generated";
-import { estimateRouteCost, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
+import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
+import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
-import { continueSequence, getGeneration, insertGeneration, listGenerations } from "@/lib/store";
+import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
@@ -121,7 +121,11 @@ export async function POST(request: Request) {
     const saved = await getRoutePreference(user.id, model.id);
     const explicit = typeof req.route === "string" ? req.route : null;
     const route = preferredRoute(model, keyed, [explicit, saved, user.activeProvider]);
-    if (!route) return Response.json({ error: availabilityError(gate.needs) }, { status: 400 });
+    // ModelArk, ArgoLink, and OpenRouter have a studio body. A fal video route is
+    // allowed only when its queue body was checked against that endpoint's schema.
+    const falVideo = !!route && route.provider === "fal" && FAL_VIDEO_ENDPOINTS.has(route.endpoint) && !!model.inputs;
+    if (!route || (!isStudioProvider(route.provider) && !falVideo))
+      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
@@ -173,31 +177,31 @@ export async function POST(request: Request) {
       referenceVideos: referenceVideos?.map((media) => media.url),
       referenceAudios: referenceAudios?.map((media) => media.url),
     });
-    if (typeof req.continueFrom === "string" && req.continueFrom && !(await getGeneration(user.id, req.continueFrom)))
-      return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
-    const endpoint = route.provider === "fal" ? falVideoEndpoint(route.endpoint, req.mode, !!first) : route.endpoint;
-    let taskId: string;
-    let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
-    if (route.provider === "fal") {
-      const creds = await getCredentials(user.id, "fal");
-      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
-      const submission = await submitFal(creds.apiKey, endpoint, falQueueInput(providerReq, model.inputs));
-      taskId = submission.requestId;
-      falUrls = {
-        falStatusUrl: submission.statusUrl,
-        falResponseUrl: submission.responseUrl,
-        falCancelUrl: submission.cancelUrl,
-      };
-    } else {
-      const provider = await providerForUser(user.id, route.provider);
-      ({ taskId } = await provider.createTask(providerReq));
-    }
+    // Before any provider call. A missing source 400s here, so a paid task is never started.
     const continued =
       typeof req.continueFrom === "string" && req.continueFrom
         ? await continueSequence(user.id, req.continueFrom)
         : undefined;
     if (typeof req.continueFrom === "string" && req.continueFrom && !continued)
       return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
+    let taskId: string;
+    let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
+    if (falVideo && model.inputs) {
+      const creds = await getCredentials(user.id, "fal");
+      if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
+      const submission = await submitFal(creds.apiKey, route.endpoint, falQueueInput(providerReq, model.inputs));
+      taskId = submission.requestId;
+      falUrls = {
+        falStatusUrl: submission.statusUrl,
+        falResponseUrl: submission.responseUrl,
+        falCancelUrl: submission.cancelUrl,
+      };
+    } else if (isStudioProvider(route.provider)) {
+      const provider = await providerForUser(user.id, route.provider);
+      ({ taskId } = await provider.createTask(providerReq));
+    } else {
+      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
+    }
     const now = Date.now();
     const inputs: GenerationInputs = {
       firstFrame: frames && !!first,
@@ -225,7 +229,7 @@ export async function POST(request: Request) {
       ...(cameraMoves.length ? { cameraMoves } : {}),
       inputs,
       route: route.provider,
-      routeEndpoint: endpoint,
+      routeEndpoint: route.endpoint,
       estimatedCost: estimate,
       ...(continued && {
         sequenceId: continued.sequenceId,
