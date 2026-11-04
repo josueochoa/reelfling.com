@@ -416,7 +416,10 @@ export function ImageStudio({
           assetKey={openTile.images[open.i]?.key}
           keyed={keyed}
           onOpenKeys={onOpenKeys}
-          onToolJob={onToolJob}
+          onToolJob={() => {
+            setOpen(null);
+            onToolJob();
+          }}
           extra={
             <button
               type="button"

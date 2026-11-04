@@ -304,7 +304,10 @@ export function VideoStudio({
           tools={tools}
           keyed={keyed}
           onOpenKeys={onOpenKeys}
-          onToolJob={onToolJob}
+          onToolJob={() => {
+            setOpen(null);
+            onToolJob();
+          }}
         />
       )}
     </div>

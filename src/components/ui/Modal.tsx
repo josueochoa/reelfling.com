@@ -82,8 +82,8 @@ export function Modal({
 
   return createPortal(
     <div
-      className={`overlay-in fixed inset-0 z-50 flex bg-black/80 ${
-        size === "full" ? "p-0" : "items-center justify-center p-3 sm:p-4"
+      className={`overlay-in fixed inset-0 z-50 flex ${
+        size === "full" ? "bg-ink" : "items-center justify-center bg-black/80 p-3 sm:p-4"
       }`}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -102,7 +102,7 @@ export function Modal({
         onMouseDown={(event) => event.stopPropagation()}
         className={`relative flex flex-col overflow-hidden text-fg outline-none ${SURFACES[surface]} ${
           size === "full"
-            ? "h-full max-h-none w-full"
+            ? "h-dvh max-h-none w-full"
             : `max-h-[min(92dvh,100%)] rounded-xl border border-line shadow-2xl ${SIZES[size]}`
         } ${className}`}
       >
