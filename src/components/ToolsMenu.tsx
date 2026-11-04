@@ -110,7 +110,7 @@ export function ToolsMenu({
   compact?: boolean;
   /** Draw the menu in the inspector instead of a floating panel. */
   inline?: boolean;
-  /** Open this menu name (`Upscale`, `Trim`). Null shows the list. A new key remounts it. */
+  /** Open this menu name (`Upscale`). Null shows the list. A new key remounts it. */
   entry?: string | null;
 }) {
   const available = toolsForKind(tools, kind);

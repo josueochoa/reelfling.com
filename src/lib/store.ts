@@ -7,6 +7,7 @@ import { providerForUser, terminalPollUpdate } from "./providers";
 import { fetchFalOutput, pollFal } from "./providers/fal";
 import { staleVideoFailure } from "./staleVideo";
 import { deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
+import { nextSequencePart, type SequencePlan } from "./sequence";
 import { TERMINAL_STATUSES, type Generation } from "./types";
 
 const parse = (row: { data: string } | undefined) => (row ? (JSON.parse(row.data) as Generation) : undefined);
@@ -97,6 +98,41 @@ async function syncTask(userId: string, gen: Generation) {
   return { status: snap.status, videoUrl: snap.outputs[0]?.url, error: snap.error };
 }
 
+/**
+ * Appends a part to the source clip's sequence and numbers the source part 1
+ * the first time. Returns undefined when that generation is gone.
+ */
+export async function continueSequence(
+  userId: string,
+  sourceId: string,
+): Promise<(SequencePlan & { sourceGenerationId: string }) | undefined> {
+  const source = await getGeneration(userId, sourceId);
+  if (!source) return undefined;
+  const sequenceId = source.sequenceId || source.id;
+  const [gens, jobs] = await Promise.all([
+    all<{ data: string }>(
+      `SELECT data FROM generations
+       WHERE user_id = ? AND (id = ? OR json_extract(data, '$.sequenceId') = ?)`,
+      userId,
+      source.id,
+      sequenceId,
+    ),
+    all<{ data: string }>(
+      `SELECT data FROM fal_jobs
+       WHERE user_id = ? AND json_extract(data, '$.sequence.sequenceId') = ?`,
+      userId,
+      sequenceId,
+    ),
+  ]);
+  const used = [
+    ...gens.map((row) => (JSON.parse(row.data) as Generation).part),
+    ...jobs.map((row) => (JSON.parse(row.data) as { sequence?: { part?: number } }).sequence?.part),
+  ];
+  const plan = nextSequencePart(source, used);
+  if (plan.sourcePatch) await updateGeneration(userId, source.id, plan.sourcePatch);
+  return { ...plan, sourceGenerationId: source.id };
+}
+
 /** Pull the latest task state from the provider and persist it. */
 export async function syncGeneration(userId: string, id: string): Promise<Generation | undefined> {
   let gen = await getGeneration(userId, id);
@@ -110,7 +146,6 @@ export async function syncGeneration(userId: string, id: string): Promise<Genera
         status: task.status,
         progress: task.progress,
         remoteVideoUrl: task.videoUrl,
-        lastFrameUrl: task.lastFrameUrl,
         error: task.error,
         seed: task.seed ?? gen.seed,
         tokens: task.tokens,

@@ -281,6 +281,7 @@ export function ImageStudio({
   );
   const openTile = open && gens.find((g) => g.id === open.id);
   const shown = tiles.filter((t) => t.gen.status === "succeeded");
+  const openAt = open ? shown.findIndex((tile) => tile.gen.id === open.id && tile.i === open.i) : -1;
 
   return (
     <div className="relative h-full">
@@ -435,16 +436,22 @@ export function ImageStudio({
           details={imageDetails(openTile)}
           error={openTile.error}
           onClose={() => setOpen(null)}
-          onPrev={(() => {
-            const at = shown.findIndex((tile) => tile.gen.id === open.id && tile.i === open.i);
-            const prev = shown[at - 1];
-            return prev ? () => setOpen({ id: prev.gen.id, i: prev.i }) : undefined;
-          })()}
-          onNext={(() => {
-            const at = shown.findIndex((tile) => tile.gen.id === open.id && tile.i === open.i);
-            const next = shown[at + 1];
-            return next ? () => setOpen({ id: next.gen.id, i: next.i }) : undefined;
-          })()}
+          onPrev={
+            openAt > 0
+              ? () => {
+                  const prev = shown[openAt - 1];
+                  if (prev) setOpen({ id: prev.gen.id, i: prev.i });
+                }
+              : undefined
+          }
+          onNext={
+            openAt >= 0 && openAt < shown.length - 1
+              ? () => {
+                  const next = shown[openAt + 1];
+                  if (next) setOpen({ id: next.gen.id, i: next.i });
+                }
+              : undefined
+          }
           onReuse={() => reuse(openTile)}
           onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
           onDelete={() => remove(openTile)}

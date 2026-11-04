@@ -254,6 +254,8 @@ export interface Library {
   removeMany: (ids: string[]) => Promise<void>;
   /** Prepares and starts uploading files. Resolves once they're listed (uploads continue). */
   add: (files: File[]) => Promise<{ items: LibraryItem[]; errors: string[] }>;
+  /** Resolves when an upload from `add` is stored, or rejects if it fails. */
+  whenReady: (id: string) => Promise<LibraryItem>;
   rename: (id: string, name: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
@@ -348,6 +350,20 @@ export function useLibrary(): Library {
     } finally {
       aborts.current.delete(id);
     }
+  }
+
+  function whenReady(id: string, timeoutMs = 60_000): Promise<LibraryItem> {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const tick = () => {
+        const item = itemsRef.current.find((entry) => entry.id === id);
+        if (item?.status === "ready" && item.key) return resolve(item);
+        if (item?.status === "error") return reject(new Error(item.error || "Upload failed"));
+        if (Date.now() - start > timeoutMs) return reject(new Error("The frame upload didn't finish"));
+        setTimeout(tick, 200);
+      };
+      tick();
+    });
   }
 
   async function add(files: File[]) {
@@ -448,5 +464,5 @@ export function useLibrary(): Library {
   }
   const remove = (id: string) => removeMany([id]);
 
-  return { items, loaded, reload, ensureThumb, add, rename, remove, removeMany };
+  return { items, loaded, reload, ensureThumb, add, whenReady, rename, remove, removeMany };
 }

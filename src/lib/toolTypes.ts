@@ -40,6 +40,17 @@ export interface ToolAsset {
   duration?: number;
 }
 
+/**
+ * Native extend for one model family. The studio shows it on clips made by `modelIds`.
+ * The endpoint stays on the server; `id` is the catalog id, same as other tools.
+ */
+export interface ExtendOffer {
+  id: string;
+  name: string;
+  description: string;
+  modelIds: string[];
+}
+
 /** Image assets see image tools. Video assets see video tools. Anything else sees none. */
 export function toolsForKind<T extends { accepts: ToolAccepts }>(tools: readonly T[], kind: string): T[] {
   if (kind !== "image" && kind !== "video") return [];

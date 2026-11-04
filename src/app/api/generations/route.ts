@@ -12,7 +12,7 @@ import { preferredRoute } from "@/lib/registry/routing";
 import type { FalInputMap, StudioProviderId } from "@/lib/registry/types";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
-import { insertGeneration, listGenerations } from "@/lib/store";
+import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
 
@@ -193,6 +193,13 @@ export async function POST(request: Request) {
       referenceVideos: referenceVideos?.map((media) => media.url),
       referenceAudios: referenceAudios?.map((media) => media.url),
     });
+    // Before any provider call. A missing source 400s here, so a paid task is never started.
+    const continued =
+      typeof req.continueFrom === "string" && req.continueFrom
+        ? await continueSequence(user.id, req.continueFrom)
+        : undefined;
+    if (typeof req.continueFrom === "string" && req.continueFrom && !continued)
+      return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
     let taskId: string;
     let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
     if (run.provider === "fal") {
@@ -242,6 +249,11 @@ export async function POST(request: Request) {
       route: run.provider,
       routeEndpoint: run.endpoint,
       estimatedCost: estimate,
+      ...(continued && {
+        sequenceId: continued.sequenceId,
+        part: continued.part,
+        continuedFrom: continued.sourceGenerationId,
+      }),
       ...falUrls,
       createdAt: now,
       updatedAt: now,

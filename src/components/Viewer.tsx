@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { toast } from "@/components/ui/Toast";
-import type { ToolView } from "@/lib/toolTypes";
+import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { Waveform } from "./MediaBlocks";
 import { ToolsMenu } from "./ToolsMenu";
 import {
@@ -70,7 +70,10 @@ export function Viewer({
   onDownload,
   downloadHref,
   onDelete,
-  onExtend,
+  onContinue,
+  continueBusy = false,
+  extendOffer,
+  onNativeExtend,
   tools = [],
   toolKind,
   assetKey,
@@ -104,8 +107,12 @@ export function Viewer({
   onDownload?: () => void;
   downloadHref?: string;
   onDelete?: () => void;
-  /** Continue from the last frame. The existing extend flow. */
-  onExtend?: () => void;
+  /** Extract the last frame and use it as the start frame. */
+  onContinue?: () => void;
+  continueBusy?: boolean;
+  /** Set when this clip's model has a native extend endpoint. */
+  extendOffer?: ExtendOffer;
+  onNativeExtend?: (prompt: string) => Promise<void>;
   tools?: readonly ToolView[];
   toolKind?: "image" | "video";
   assetKey?: string;
@@ -291,13 +298,8 @@ export function Viewer({
           </div>
 
           <div className="relative z-10 flex flex-col items-center gap-2 px-4 pb-4">
-            {(onExtend || flags.upscale || flags.more) && (
+            {(flags.upscale || flags.more) && (
               <div className="flex items-center gap-0.5 rounded-full border border-line bg-surface-3/95 p-1">
-                {onExtend && (
-                  <Pill testId="viewer-extend" onClick={onExtend}>
-                    Extend
-                  </Pill>
-                )}
                 {flags.upscale && (
                   <Pill testId="viewer-upscale" onClick={() => openTool("Upscale")}>
                     Upscale
@@ -435,7 +437,22 @@ export function Viewer({
                   </div>
                 )}
               </div>
-              <footer className="flex flex-wrap items-center gap-2 border-t border-line p-3">
+              <footer className="flex flex-col gap-2 border-t border-line p-3">
+                {onContinue && (
+                  <button
+                    type="button"
+                    data-testid="continue-last-frame"
+                    onClick={onContinue}
+                    disabled={continueBusy}
+                    className="w-full rounded-md border border-line px-3 py-2 text-body text-fg disabled:opacity-50"
+                  >
+                    {continueBusy ? "Saving the last frame…" : "Continue from last frame"}
+                  </button>
+                )}
+                {extendOffer && onNativeExtend && (
+                  <NativeExtend offer={extendOffer} initialPrompt={prompt ?? ""} onExtend={onNativeExtend} />
+                )}
+                <div className="flex flex-wrap items-center gap-2">
                 {onReuse && (
                   <button
                     type="button"
@@ -470,10 +487,58 @@ export function Viewer({
                     <Trash2 className="size-4" aria-hidden />
                   </IconButton>
                 )}
+                </div>
               </footer>
         </aside>
       </div>
     </Modal>
+  );
+}
+
+function NativeExtend({
+  offer,
+  initialPrompt,
+  onExtend,
+}: {
+  offer: ExtendOffer;
+  initialPrompt: string;
+  onExtend: (prompt: string) => Promise<void>;
+}) {
+  const [extendPrompt, setExtendPrompt] = useState(initialPrompt);
+  const [extendBusy, setExtendBusy] = useState(false);
+  const [extendError, setExtendError] = useState<string | null>(null);
+  return (
+    <form
+      data-testid="extend-option"
+      className="grid gap-2 rounded-md border border-line p-2.5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const next = extendPrompt.trim();
+        if (!next || extendBusy) return;
+        setExtendBusy(true);
+        setExtendError(null);
+        void onExtend(next)
+          .catch((err: unknown) => setExtendError(err instanceof Error ? err.message : "Couldn't extend"))
+          .finally(() => setExtendBusy(false));
+      }}
+    >
+      <p className="text-body text-fg">{offer.name}</p>
+      <textarea
+        aria-label="What happens next"
+        value={extendPrompt}
+        onChange={(event) => setExtendPrompt(event.target.value)}
+        rows={3}
+        className="w-full resize-none rounded-md border border-line bg-surface-2 px-2 py-1.5 text-body text-fg outline-none"
+      />
+      {extendError && <p className="text-label text-red-200">{extendError}</p>}
+      <button
+        type="submit"
+        disabled={extendBusy || !extendPrompt.trim()}
+        className="rounded-md bg-white/10 py-2 text-body text-fg disabled:opacity-40"
+      >
+        {extendBusy ? "Starting…" : "Extend"}
+      </button>
+    </form>
   );
 }
 
