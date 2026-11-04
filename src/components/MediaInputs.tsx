@@ -70,6 +70,7 @@ export function ImageSlot({
   onChange,
   onFile,
   disabled,
+  testId,
 }: {
   label: string;
   value?: string;
@@ -77,12 +78,13 @@ export function ImageSlot({
   /** When set, a picked file is handed over instead of being read as a data URL. */
   onFile?: (file: File) => void;
   disabled?: boolean;
+  testId?: string;
 }) {
   const picker = useImagePicker((urls) => onChange(urls[0]), onFile);
 
   if (value) {
     return (
-      <div className="group relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
+      <div data-testid={testId} className="group relative aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={value} alt={label} className="size-full object-cover" />
         <span className="absolute top-2 left-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-zinc-300">
@@ -105,6 +107,7 @@ export function ImageSlot({
         disabled={disabled}
         onClick={picker.open}
         {...picker.dropProps}
+        data-testid={testId}
         className={`flex aspect-video flex-col items-center justify-center gap-1 rounded-xl border border-dashed text-xs transition disabled:cursor-not-allowed disabled:opacity-30 ${
           picker.dragging
             ? "border-accent bg-accent/5 text-accent"

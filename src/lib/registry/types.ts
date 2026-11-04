@@ -142,7 +142,16 @@ export interface VideoCapabilities {
   /** Ratios listed here are only legal at these resolutions. */
   ratioResolutions?: Readonly<Record<string, readonly string[]>>;
   audio: false | "optional" | "required";
-  frames: { start: boolean; middle: boolean; end: boolean };
+  frames: {
+    start: boolean;
+    /** The model publishes a middle or keyframe list. */
+    middle: boolean;
+    end: boolean;
+    /** Max images in that list. Absent when `middle` is false. */
+    keyframeLimit?: number;
+    /** Start and end count toward `keyframeLimit` (one keyframes array). */
+    sharedKeyframes?: boolean;
+  };
   references: RefLimits;
   seed: boolean;
   promptExpansion: PromptExpansion;
@@ -277,6 +286,16 @@ interface ModelBase {
 export interface FalInputMap {
   start?: "image_url" | "start_image_url";
   end?: "end_image_url";
+  /** Ordered images between start and end. Only when the schema publishes this array. */
+  middle?: "middle_image_urls";
+  /** One keyframe list instead of start/end fields. */
+  keyframes?: "keyframes";
+  /** Positions companion for a string-array `keyframes` field (Luma). */
+  keyframeIndexes?: "keyframe_indexes";
+  /** `objects` is `{ image_url, frame_index }[]`. `urls` is a string array. */
+  keyframeShape?: "objects" | "urls";
+  /** Published max length of `middle` or `keyframes`. */
+  frameLimit?: number;
   images?: "image_urls" | "reference_image_urls";
   videos?: "video_urls" | "reference_video_urls";
   audios?: "audio_urls" | "reference_audio_urls";

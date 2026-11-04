@@ -335,6 +335,96 @@
     },
     {
       "capabilities": {
+        "audio": "optional",
+        "camera": false,
+        "durations": {
+          "default": 5,
+          "max": 20,
+          "min": 5
+        },
+        "frames": {
+          "end": true,
+          "keyframeLimit": 10,
+          "middle": true,
+          "sharedKeyframes": true,
+          "start": true
+        },
+        "lastFrameOutput": false,
+        "promptExpansion": false,
+        "ratios": [
+          "auto",
+          "21:9",
+          "2:1",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "references": {
+          "audio": 0,
+          "image": 0,
+          "total": 0,
+          "video": 0
+        },
+        "resolutions": [
+          "720p",
+          "1080p",
+          "1440p",
+          "2160p"
+        ],
+        "seed": false,
+        "watermark": false
+      },
+      "description": "FLUX 3 is Black Forest Labs' frontier video model. This endpoint builds video from a sequence of keyframes, generating the motion between each anchor point for precise control over how a shot progresses.",
+      "family": "Flux",
+      "group": "video",
+      "id": "fal:blackforestlabs/flux-3/keyframes-to-video",
+      "inputs": {
+        "aspect": "aspect_ratio",
+        "aspects": [
+          "auto",
+          "21:9",
+          "2:1",
+          "16:9",
+          "4:3",
+          "1:1",
+          "3:4",
+          "9:16"
+        ],
+        "audio": "generate_audio",
+        "duration": "number",
+        "frameLimit": 10,
+        "keyframeShape": "objects",
+        "keyframes": "keyframes",
+        "resolution": "resolution"
+      },
+      "name": "FLUX 3 Keyframes",
+      "price": {
+        "byResolution": {
+          "1080p": 0.29,
+          "1440p": 0.32,
+          "2160p": 0.47,
+          "720p": 0.17
+        },
+        "type": "per_second"
+      },
+      "promptRequired": true,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "blackforestlabs/flux-3/keyframes-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "i2v",
+      "tasks": [
+        "i2v"
+      ]
+    },
+    {
+      "capabilities": {
         "maxImages": 6,
         "promptExpansion": "optional",
         "ratios": [
@@ -1455,6 +1545,7 @@
         },
         "frames": {
           "end": true,
+          "keyframeLimit": 8,
           "middle": true,
           "start": true
         },
@@ -1481,6 +1572,8 @@
       "inputs": {
         "duration": "number",
         "end": "end_image_url",
+        "frameLimit": 8,
+        "middle": "middle_image_urls",
         "resolution": "resolution",
         "start": "start_image_url"
       },
@@ -1517,6 +1610,7 @@
         },
         "frames": {
           "end": true,
+          "keyframeLimit": 8,
           "middle": true,
           "start": true
         },
@@ -1557,7 +1651,9 @@
         ],
         "duration": "number",
         "end": "end_image_url",
+        "frameLimit": 8,
         "images": "image_urls",
+        "middle": "middle_image_urls",
         "resolution": "resolution",
         "start": "start_image_url",
         "videos": "video_urls"
@@ -1672,7 +1768,9 @@
         },
         "frames": {
           "end": true,
-          "middle": false,
+          "keyframeLimit": 64,
+          "middle": true,
+          "sharedKeyframes": true,
           "start": true
         },
         "lastFrameOutput": false,
@@ -1715,6 +1813,10 @@
         ],
         "duration": "suffix",
         "end": "end_image_url",
+        "frameLimit": 64,
+        "keyframeIndexes": "keyframe_indexes",
+        "keyframeShape": "urls",
+        "keyframes": "keyframes",
         "resolution": "resolution",
         "start": "image_url"
       },

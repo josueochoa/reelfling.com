@@ -67,6 +67,7 @@ export {
   ratioAllowed,
 } from "./price";
 export { mentionSyntax } from "./syntax";
+export { keyframeLimitOf, keyframesUsed, ratioForStartFrame, schemaSupportsKeyframes } from "./frames";
 export { imageRequestError, videoRequestError } from "./validate";
 export { assertRegistry, parseModel } from "./parse";
 export {

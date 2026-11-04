@@ -403,9 +403,57 @@ export interface FalMediaInput {
   seed?: number;
   firstFrame?: string;
   lastFrame?: string;
+  /** Images between the start and end frames, in order. */
+  middleFrames?: string[];
   referenceImages?: string[];
   referenceVideos?: string[];
   referenceAudios?: string[];
+}
+
+/**
+ * Evenly spaced frame indexes from 0 through `duration` × 24, inclusive.
+ * Flux and Luma both pin keyframes on a 24 fps timeline and reject duplicates.
+ */
+export function keyframeIndexes(count: number, durationSeconds: number): number[] {
+  if (count <= 0) return [];
+  const last = Math.max(0, Math.round(durationSeconds * 24));
+  if (count === 1) return [0];
+  const raw = Array.from({ length: count }, (_, i) => Math.round((last * i) / (count - 1)));
+  const indexes: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const min = i === 0 ? 0 : indexes[i - 1] + 1;
+    const max = Math.max(min, last - (count - 1 - i));
+    indexes.push(Math.min(max, Math.max(min, raw[i])));
+  }
+  return indexes;
+}
+
+/**
+ * Writes middle images or a keyframe list only when `map` names that field.
+ * A keyframe list replaces start and end fields: Luma's schema forbids both,
+ * and Flux has no start or end field.
+ */
+function applyKeyframeInput(input: Record<string, unknown>, req: FalMediaInput, map: FalInputMap) {
+  const middle = (req.middleFrames ?? []).filter((url) => !!url);
+  const limit = map.frameLimit && map.frameLimit > 0 ? map.frameLimit : undefined;
+  if (map.keyframes && map.keyframeShape) {
+    const listMode = map.keyframeShape === "objects" || middle.length > 0;
+    if (!listMode) return;
+    const urls = [req.firstFrame, ...middle, req.lastFrame].filter((url): url is string => !!url);
+    const capped = limit ? urls.slice(0, limit) : urls;
+    if (!capped.length) return;
+    const indexes = keyframeIndexes(capped.length, req.duration ?? 5);
+    if (map.keyframeShape === "objects") {
+      input[map.keyframes] = capped.map((url, i) => ({ image_url: url, frame_index: indexes[i] }));
+    } else {
+      input[map.keyframes] = capped;
+      if (map.keyframeIndexes) input[map.keyframeIndexes] = indexes;
+    }
+    if (map.start) delete input[map.start];
+    if (map.end) delete input[map.end];
+    return;
+  }
+  if (map.middle && middle.length) input[map.middle] = limit ? middle.slice(0, limit) : middle;
 }
 
 /**
@@ -440,6 +488,7 @@ export function falQueueInput(req: FalMediaInput, map: FalInputMap = SEEDANCE_IN
     images = images.slice(1);
   }
   if (req.lastFrame && map.end) input[map.end] = req.lastFrame;
+  applyKeyframeInput(input, req, map);
 
   if (map.elements) {
     const elements = [

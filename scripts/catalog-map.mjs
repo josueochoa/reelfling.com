@@ -326,6 +326,8 @@ function propertiesOf(openapi) {
       default: resolved.default,
       maxItems: typeof resolved.maxItems === "number" ? resolved.maxItems : undefined,
       description: typeof resolved.description === "string" ? resolved.description : undefined,
+      itemType: typeof item?.type === "string" ? item.type : undefined,
+      itemKeys: item?.properties ? Object.keys(item.properties) : undefined,
       oneVideo: /one element with a video/i.test(videoText),
     };
   }
@@ -387,15 +389,46 @@ function tasksFor(primary, props) {
   return tasks;
 }
 
+/** Middle images or a keyframe list, only when the published item shape is one we can send. */
+function keyframeFields(props) {
+  const middle = props.middle_image_urls;
+  const middleLimit = middle && (middle.maxItems ?? describedMax(middle.description));
+  if (middle && (middle.type === "array" || middleLimit) && middleLimit) {
+    return { middle: "middle_image_urls", frameLimit: middleLimit, shared: false };
+  }
+  const list = props.keyframes;
+  const frameLimit = list && (list.maxItems ?? describedMax(list.description));
+  if (!list || !frameLimit || (list.type !== "array" && list.maxItems == null)) return {};
+  const keys = list.itemKeys ?? [];
+  if (keys.includes("image_url") && keys.includes("frame_index")) {
+    return { keyframes: "keyframes", keyframeShape: "objects", frameLimit, shared: true };
+  }
+  if (list.itemType === "string" && props.keyframe_indexes) {
+    return {
+      keyframes: "keyframes",
+      keyframeShape: "urls",
+      keyframeIndexes: "keyframe_indexes",
+      frameLimit,
+      shared: true,
+    };
+  }
+  return {};
+}
+
 function framesFor(task, tasks, props) {
   const start =
     tasks.includes("i2v") ||
     task === "avatar" ||
     hasKey(props, /^(image_url|start_image_url|first_frame_url|image)$/);
+  const keyframes = keyframeFields(props);
+  const hidden = task === "image" || task === "image-edit" || task === "tool" || task === "tts";
   return {
-    start: task === "image" || task === "image-edit" || task === "tool" || task === "tts" ? false : start,
-    middle: hasKey(props, /middle_image|middle_frame|mid_frame/),
-    end: hasKey(props, /end_image|tail_image|last_frame|end_frame/),
+    start: hidden ? false : start,
+    middle: !hidden && !!keyframes.frameLimit,
+    end: hidden ? false : hasKey(props, /end_image|tail_image|last_frame|end_frame/) || keyframes.shared === true,
+    ...(keyframes.frameLimit && !hidden
+      ? { keyframeLimit: keyframes.frameLimit, ...(keyframes.shared ? { sharedKeyframes: true } : {}) }
+      : {}),
   };
 }
 
@@ -442,6 +475,7 @@ function inputsFor(props, spec) {
   const audios = props.audio_urls ? "audio_urls" : props.reference_audio_urls ? "reference_audio_urls" : undefined;
   const elements = !images && !videos && props.elements ? "elements" : undefined;
   const start = props.start_image_url ? "start_image_url" : props.image_url ? "image_url" : undefined;
+  const keyframes = keyframeFields(props);
   const aspects = enumStrings(props.aspect_ratio);
   const imageSizes = enumStrings(props.image_size);
   const autoSize = {};
@@ -450,6 +484,11 @@ function inputsFor(props, spec) {
   return compact({
     start,
     end: props.end_image_url ? "end_image_url" : undefined,
+    middle: keyframes.middle,
+    frameLimit: keyframes.frameLimit,
+    keyframes: keyframes.keyframes,
+    keyframeIndexes: keyframes.keyframeIndexes,
+    keyframeShape: keyframes.keyframeShape,
     images,
     videos,
     audios,

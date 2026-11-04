@@ -217,4 +217,48 @@ describe("POST /api/generations", () => {
       assert.notDeepEqual(sent, falQueueInput(input));
     }
   });
+
+  it("maps Kling keyframes into the published fields and refuses a model whose schema has none", async () => {
+    const kling = modelFor("kling/v4/image-to-video");
+    const middle = ["https://cdn.example/mid.jpg"];
+    installFetch(false);
+    const res = await post({
+      ...requestFor(kling),
+      lastFrame: "https://cdn.example/end.jpg",
+      middleFrames: middle,
+    });
+    const text = await res.text();
+    assert.equal(res.status, 201, text);
+    assert.equal(text.includes(KEY), false);
+    const sent = JSON.parse(calls[0].body) as Record<string, unknown>;
+    assert.equal(sent.start_image_url, IMAGE_URL);
+    assert.deepEqual(sent.middle_image_urls, middle);
+    assert.equal(sent.end_image_url, "https://cdn.example/end.jpg");
+    assert.equal(calls[0].url.includes(KEY), false);
+
+    const flux = modelFor("blackforestlabs/flux-3/keyframes-to-video");
+    installFetch(false);
+    const fluxRes = await post({
+      ...requestFor(flux),
+      middleFrames: middle,
+      lastFrame: "https://cdn.example/end.jpg",
+    });
+    const fluxText = await fluxRes.text();
+    assert.equal(fluxRes.status, 201, fluxText);
+    const fluxSent = JSON.parse(calls[0].body) as { keyframes?: { image_url: string; frame_index: number }[] };
+    assert.deepEqual(fluxSent.keyframes, [
+      { image_url: IMAGE_URL, frame_index: 0 },
+      { image_url: middle[0], frame_index: 60 },
+      { image_url: "https://cdn.example/end.jpg", frame_index: 120 },
+    ]);
+
+    const wan = modelFor("alibaba/wan-3.0/image-to-video");
+    installFetch(true);
+    const rejected = await post({ ...requestFor(wan), middleFrames: middle });
+    const rejectedText = await rejected.text();
+    assert.equal(rejected.status, 400, rejectedText);
+    assert.match(JSON.parse(rejectedText).error, /doesn't support keyframes/);
+    assert.equal(rejectedText.includes(KEY), false);
+    assert.deepEqual(calls, []);
+  });
 });

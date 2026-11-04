@@ -155,6 +155,7 @@ export function VideoStudio({
       firstFrame: asFirstFrame,
       firstFrameKey: restored?.firstFrameKey,
       lastFrameKey: restored?.lastFrameKey,
+      middleFrameKeys: restored?.middleFrameKeys,
       referenceKeys: restored?.referenceKeys,
       notice: waiting
         ? "Uploads are still loading, so frames and references weren't restored. Try Reuse again in a moment."

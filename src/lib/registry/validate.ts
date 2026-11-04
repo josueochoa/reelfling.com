@@ -1,5 +1,6 @@
 import type { GenerateRequest } from "../types";
 import { CAMERA_MOVE_MAX, cameraMovesFor, isCameraMove } from "./camera";
+import { keyframesError } from "./frames";
 import { ratioAllowed } from "./price";
 import type { ImageModel, ImageQuality, VideoModel } from "./types";
 
@@ -31,6 +32,14 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
     if (req.firstFrame && !caps.frames.start) return `${label} doesn't support a start frame`;
     if (req.lastFrame && !req.firstFrame) return "An end frame needs a start frame";
     if (req.lastFrame && !caps.frames.end) return `${label} doesn't support end frames`;
+    if (req.lastFrame && model.inputs && !model.inputs.end && !model.inputs.keyframes)
+      return `${label} doesn't support end frames`;
+    const keyframeError = keyframesError(model, req);
+    if (keyframeError) return keyframeError;
+    if (model.inputs?.keyframeShape === "objects") {
+      const total = (req.firstFrame ? 1 : 0) + (req.middleFrames?.length ?? 0) + (req.lastFrame ? 1 : 0);
+      if (total < 1) return `${label} needs a start frame`;
+    }
   } else {
     const images = req.referenceImages?.length ?? 0;
     const videos = req.referenceVideos?.length ?? 0;

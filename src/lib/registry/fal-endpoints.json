@@ -68,6 +68,12 @@
     "family": "Flux",
     "price": { "type": "per_second", "byResolution": { "720p": 0.17, "1080p": 0.29, "1440p": 0.32, "2160p": 0.47 } }
   },
+  {
+    "endpoint": "blackforestlabs/flux-3/keyframes-to-video",
+    "task": "i2v",
+    "family": "Flux",
+    "price": { "type": "per_second", "byResolution": { "720p": 0.17, "1080p": 0.29, "1440p": 0.32, "2160p": 0.47 } }
+  },
 
   { "endpoint": "google/gemini-omni-flash/v1.1/text-to-video", "task": "t2v", "family": "Gemini", "price": { "type": "per_second", "byResolution": { "360p": 0.03, "720p": 0.1, "1080p": 0.15, "4k": 0.3 } } },
   { "endpoint": "google/gemini-omni-flash/v1.1/image-to-video", "task": "i2v", "family": "Gemini", "price": { "type": "per_second", "byResolution": { "360p": 0.03, "720p": 0.1, "1080p": 0.15, "4k": 0.3 } } },

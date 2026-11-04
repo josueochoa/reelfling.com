@@ -20,6 +20,8 @@ export interface GenerateRequest {
   cameraMoves?: string[];
   firstFrame?: string;
   lastFrame?: string;
+  /** Images between the start and end frames, in order. */
+  middleFrames?: string[];
   referenceImages?: string[];
   referenceVideos?: string[];
   referenceAudios?: string[];
@@ -52,6 +54,8 @@ export interface GenerationInputs {
   firstFrameName?: string;
   lastFrameKey?: string;
   lastFrameName?: string;
+  /** Middle keyframes that were library files, in order. */
+  middleFrames?: MediaBlock[];
   /** Reference blocks in display order. Absent on older, count-only records. */
   blocks?: MediaBlock[];
 }

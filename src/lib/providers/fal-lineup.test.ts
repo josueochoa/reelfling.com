@@ -18,6 +18,7 @@ const ENDPOINTS = [
   "minimax/h3/image-to-video",
   "minimax/h3/reference-to-video",
   "blackforestlabs/flux-3/image-to-video",
+  "blackforestlabs/flux-3/keyframes-to-video",
   "google/gemini-omni-flash/v1.1/text-to-video",
   "google/gemini-omni-flash/v1.1/image-to-video",
   "google/gemini-omni-flash/v1.1/reference-to-video",

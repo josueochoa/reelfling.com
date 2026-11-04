@@ -64,6 +64,8 @@ export function openRouterPickerModels(): VideoModel[] {
  * fal-ai/minimax/video-01/image-to-video.
  * alibaba/wan-3.0/reference-to-video is included: its body uses reference_image_urls,
  * reference_video_urls, and reference_audio_urls, which is what that schema publishes.
+ * blackforestlabs/flux-3/keyframes-to-video maps frames into its `keyframes` array
+ * (`image_url` + `frame_index`, max 10). Checked the same day, still with no key.
  */
 export const FAL_VIDEO_ENDPOINTS = new Set<string>([
   "kling/v4/text-to-video",
@@ -77,6 +79,7 @@ export const FAL_VIDEO_ENDPOINTS = new Set<string>([
   "minimax/h3/image-to-video",
   "minimax/h3/reference-to-video",
   "blackforestlabs/flux-3/image-to-video",
+  "blackforestlabs/flux-3/keyframes-to-video",
   "google/gemini-omni-flash/v1.1/text-to-video",
   "google/gemini-omni-flash/v1.1/image-to-video",
   "google/gemini-omni-flash/v1.1/reference-to-video",

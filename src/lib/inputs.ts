@@ -12,13 +12,15 @@ export interface RestoreResult {
   prompt: string;
   firstFrameKey?: string;
   lastFrameKey?: string;
+  /** Library keys of middle keyframes that are still available, in order. */
+  middleFrameKeys?: string[];
   /** Library keys of the reference blocks that are still available, in their original order. */
   referenceKeys: string[];
   /** Set when a stored file is gone. Undefined for old count-only records. */
   notice?: string;
 }
 
-function frameLabel(role: "Start frame" | "End frame", name?: string) {
+function frameLabel(role: "Start frame" | "End frame" | "Keyframe", name?: string) {
   const clean = name?.trim();
   return clean ? `${role} "${clean}"` : role;
 }
@@ -49,7 +51,7 @@ export function restoreInputs(
 ): RestoreResult {
   const { inputs } = gen;
   const mode = gen.mode;
-  const storedFrames = !!(inputs.firstFrameKey || inputs.lastFrameKey);
+  const storedFrames = !!(inputs.firstFrameKey || inputs.lastFrameKey || inputs.middleFrames?.length);
   const storedBlocks = !!inputs.blocks;
 
   if (!storedFrames && !storedBlocks) {
@@ -68,7 +70,20 @@ export function restoreInputs(
       if (available.has(inputs.lastFrameKey)) lastFrameKey = inputs.lastFrameKey;
       else missing.push(frameLabel("End frame", inputs.lastFrameName));
     }
-    return { mode, prompt: gen.prompt, firstFrameKey, lastFrameKey, referenceKeys: [], notice: missingNotice(missing) };
+    const middleFrameKeys: string[] = [];
+    for (const frame of inputs.middleFrames ?? []) {
+      if (available.has(frame.key)) middleFrameKeys.push(frame.key);
+      else missing.push(frameLabel("Keyframe", frame.name));
+    }
+    return {
+      mode,
+      prompt: gen.prompt,
+      firstFrameKey,
+      lastFrameKey,
+      ...(middleFrameKeys.length ? { middleFrameKeys } : {}),
+      referenceKeys: [],
+      notice: missingNotice(missing),
+    };
   }
 
   const blocks = inputs.blocks ?? [];
@@ -109,12 +124,17 @@ export function keysInRecord(data: string): string[] {
   }
   if (!parsed || typeof parsed !== "object") return [];
   const row = parsed as {
-    inputs?: { firstFrameKey?: unknown; lastFrameKey?: unknown; blocks?: unknown };
+    inputs?: { firstFrameKey?: unknown; lastFrameKey?: unknown; middleFrames?: unknown; blocks?: unknown };
     references?: unknown;
   };
   const keys: string[] = [];
   pushKey(keys, row.inputs?.firstFrameKey);
   pushKey(keys, row.inputs?.lastFrameKey);
+  if (Array.isArray(row.inputs?.middleFrames)) {
+    for (const frame of row.inputs.middleFrames) {
+      if (frame && typeof frame === "object" && "key" in frame) pushKey(keys, (frame as { key: unknown }).key);
+    }
+  }
   if (Array.isArray(row.inputs?.blocks)) {
     for (const block of row.inputs.blocks) {
       if (block && typeof block === "object" && "key" in block) pushKey(keys, (block as { key: unknown }).key);
