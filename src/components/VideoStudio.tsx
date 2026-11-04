@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { shouldPollFal, type FalJobView } from "@/lib/falTypes";
 import { restoreInputs } from "@/lib/inputs";
-import { extractLastFrame, generationBytesUrl } from "@/lib/lastFrame";
+import { assetBytesUrl, extractLastFrame, generationBytesUrl } from "@/lib/lastFrame";
 import { isVideo, MODELS, type VideoModel } from "@/lib/registry";
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { groupFeed, isNumberedSequence } from "@/lib/sequence";
@@ -206,11 +206,11 @@ export function VideoStudio({
     }));
   }
 
-  async function continueClip(gen: Generation) {
+  async function continueFromVideo(src: string, gen: Generation) {
     setContinueBusy(true);
     setError(null);
     try {
-      const blob = await extractLastFrame(generationBytesUrl(gen.id));
+      const blob = await extractLastFrame(src);
       const file = new File([blob], "Last frame.jpg", { type: "image/jpeg" });
       const { items, errors } = await library.add([file]);
       if (errors[0] || !items[0]) throw new Error(errors[0] || "Couldn't save the frame");
@@ -224,19 +224,22 @@ export function VideoStudio({
     }
   }
 
-  async function nativeExtend(gen: Generation, prompt: string) {
-    const offer = extendOffers.find((item) => item.modelIds.includes(gen.model));
+  async function nativeExtend(modelId: string, assetKey: string, prompt: string) {
+    const offer = extendOffers.find((item) => item.modelIds.includes(modelId));
     if (!offer) throw new Error("This model can't extend a video");
-    const probe = await api(generationBytesUrl(gen.id), { headers: { Range: "bytes=0-1" } });
-    await probe.body?.cancel().catch(() => {});
-    if (!probe.ok) throw new Error("Save the video before extending it");
     const job = await apiJson<FalJobView>("/api/fal", {
       method: "POST",
-      body: JSON.stringify({ toolId: offer.id, assetIds: [`videos/${gen.id}.mp4`], params: { prompt } }),
+      body: JSON.stringify({ toolId: offer.id, assetIds: [assetKey], params: { prompt } }),
     });
     setExtendJobs((prev) => [job, ...prev.filter((item) => item.id !== job.id)]);
     setGenerations(await apiJson<Generation[]>("/api/generations"));
     setOpen(null);
+  }
+
+  async function removeExtend(job: FalJobView) {
+    setExtendJobs((prev) => prev.filter((item) => item.id !== job.id));
+    const res = await api(`/api/fal/${job.id}`, { method: "DELETE" });
+    if (!res.ok) loadJobs();
   }
 
   async function outputItem(gen: Generation) {
@@ -375,7 +378,19 @@ export function VideoStudio({
                           onDelete={() => remove(item.gen)}
                         />
                       ) : (
-                        <ExtendPart job={item.job} />
+                        <ExtendPart
+                          job={item.job}
+                          source={generations.find((gen) => gen.id === item.job.sourceGenerationId)}
+                          canExtend={extendOffers.some((offer) =>
+                            generations.some(
+                              (gen) => gen.id === item.job.sourceGenerationId && offer.modelIds.includes(gen.model),
+                            ),
+                          )}
+                          onContinue={(src, source) => void continueFromVideo(src, source)}
+                          onExtend={(modelId, assetKey, prompt) => nativeExtend(modelId, assetKey, prompt)}
+                          onReuse={(source) => reuse(source)}
+                          onDelete={() => void removeExtend(item.job)}
+                        />
                       )}
                     </div>
                   ));
@@ -411,10 +426,10 @@ export function VideoStudio({
           onClose={() => setOpen(null)}
           onReuse={() => reuse(open)}
           onUseAsReference={() => void referenceStoredVideo(open)}
-          onContinue={open.status === "succeeded" ? () => void continueClip(open) : undefined}
+          onContinue={open.status === "succeeded" ? () => void continueFromVideo(generationBytesUrl(open.id), open) : undefined}
           continueBusy={continueBusy}
           extendOffer={extendOffers.find((offer) => offer.modelIds.includes(open.model))}
-          onNativeExtend={(prompt) => nativeExtend(open, prompt)}
+          onNativeExtend={(prompt) => nativeExtend(open.model, `videos/${open.id}.mp4`, prompt)}
           onDelete={() => remove(open)}
           tools={tools}
           keyed={keyed}
@@ -426,8 +441,27 @@ export function VideoStudio({
   );
 }
 
-function ExtendPart({ job }: { job: FalJobView }) {
+function ExtendPart({
+  job,
+  source,
+  canExtend,
+  onContinue,
+  onExtend,
+  onReuse,
+  onDelete,
+}: {
+  job: FalJobView;
+  source?: Generation;
+  canExtend: boolean;
+  onContinue: (src: string, source: Generation) => void;
+  onExtend: (modelId: string, assetKey: string, prompt: string) => Promise<void>;
+  onReuse: (source: Generation) => void;
+  onDelete: () => void;
+}) {
   const output = job.outputs.find((item) => item.contentType.startsWith("video/"));
+  const [prompt, setPrompt] = useState(job.prompt);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
     <article className="overflow-hidden rounded-2xl border border-white/5 bg-panel">
       <div className="relative grid aspect-video place-items-center bg-black">
@@ -440,10 +474,60 @@ function ExtendPart({ job }: { job: FalJobView }) {
           </p>
         )}
       </div>
-      <div className="space-y-1 p-3.5">
+      <div className="space-y-2 p-3.5">
         <p className="line-clamp-2 text-sm text-zinc-300">{job.prompt || "Extend"}</p>
         <p className="text-[10px] text-zinc-500">{job.tool?.name ?? "Extend"}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {output && source && (
+            <PartButton onClick={() => onContinue(assetBytesUrl(output.key), source)}>Continue</PartButton>
+          )}
+          {source && <PartButton onClick={() => onReuse(source)}>Reuse</PartButton>}
+          <PartButton onClick={onDelete}>Delete</PartButton>
+        </div>
+        {output && source && canExtend && (
+          <form
+            className="grid gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const next = prompt.trim();
+              if (!next || busy) return;
+              setBusy(true);
+              setError(null);
+              void onExtend(source.model, output.key, next)
+                .catch((err: unknown) => setError(err instanceof Error ? err.message : "Couldn't extend"))
+                .finally(() => setBusy(false));
+            }}
+          >
+            <textarea
+              aria-label="What happens next"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={2}
+              className="w-full resize-none rounded-lg border border-white/10 bg-white/[0.03] px-2 py-1.5 text-xs text-zinc-100 outline-none"
+            />
+            {error && <p className="text-xs text-red-300">{error}</p>}
+            <button
+              type="submit"
+              disabled={busy || !prompt.trim()}
+              className="rounded-lg bg-white/10 py-1.5 text-xs hover:bg-white/15 disabled:opacity-40"
+            >
+              {busy ? "Starting…" : "Extend"}
+            </button>
+          </form>
+        )}
       </div>
     </article>
+  );
+}
+
+function PartButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+    >
+      {children}
+    </button>
   );
 }

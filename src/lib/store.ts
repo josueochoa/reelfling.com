@@ -146,7 +146,6 @@ export async function syncGeneration(userId: string, id: string): Promise<Genera
         status: task.status,
         progress: task.progress,
         remoteVideoUrl: task.videoUrl,
-        lastFrameUrl: task.lastFrameUrl,
         error: task.error,
         seed: task.seed ?? gen.seed,
         tokens: task.tokens,

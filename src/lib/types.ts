@@ -101,11 +101,10 @@ export interface Generation {
   falCancelUrl?: string;
   /** Counts, plus the R2 keys of frames and reference blocks when they were saved. */
   inputs: GenerationInputs;
-  /** Temporary signed URL from ModelArk (expires ~24h). */
+  /** Temporary signed URL from the provider (expires ~24h). */
   remoteVideoUrl?: string;
   /** Set once the video has been copied into the user's storage (see storage.ts). */
   stored?: boolean;
-  lastFrameUrl?: string;
   error?: string;
   tokens?: number;
   billedSeconds?: number;

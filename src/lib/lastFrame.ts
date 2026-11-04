@@ -14,6 +14,9 @@ export function lastFrameTime(duration: number): number {
 /** Same-origin MP4. The route streams the file instead of redirecting. */
 export const generationBytesUrl = (id: string) => `/api/generations/${encodeURIComponent(id)}/video?bytes=1`;
 
+/** Same-origin bytes for a library file, including an extend output. */
+export const assetBytesUrl = (key: string) => `/api/assets/file?key=${encodeURIComponent(key)}&bytes=1`;
+
 const jpeg = (canvas: HTMLCanvasElement) =>
   new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't encode the last frame"))), "image/jpeg", 0.92),

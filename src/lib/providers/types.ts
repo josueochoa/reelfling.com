@@ -6,7 +6,6 @@ import type { GenerateRequest, TaskStatus } from "../types";
 export interface TaskSnapshot {
   status: TaskStatus;
   videoUrl?: string;
-  lastFrameUrl?: string;
   error?: string;
   seed?: number;
   /** 0–100, when the provider reports it. */

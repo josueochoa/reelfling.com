@@ -32,7 +32,7 @@ interface ExtendSpec {
 
 const SPECS: readonly ExtendSpec[] = [
   { id: "fal:xai/grok-imagine-video/extend-video", match: "xai/grok-imagine-video/", maxSeconds: 15 },
-  { id: "fal:minimax/h3-max/extend-video", match: "minimax/h3", maxSeconds: 60 },
+  { id: "fal:minimax/h3-max/extend-video", match: "minimax/h3/", maxSeconds: 60 },
   { id: "fal:blackforestlabs/flux-3/extend-video", match: "blackforestlabs/flux-3/", maxSeconds: 15 },
   { id: "fal:google/gemini-omni-flash/v1.1/extend", match: "google/gemini-omni-flash/", maxSeconds: 30 },
 ];

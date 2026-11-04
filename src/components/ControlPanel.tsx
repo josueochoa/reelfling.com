@@ -472,7 +472,11 @@ export function ControlPanel({
         ? {
             firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
             lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
-            ...(caps.frames.start && framePayload(firstFrame) && preset.continueFrom
+            ...(caps.frames.start &&
+            framePayload(firstFrame) &&
+            preset.continueFrom &&
+            preset.firstFrameKey &&
+            frameItem(firstFrame)?.key === preset.firstFrameKey
               ? { continueFrom: preset.continueFrom }
               : {}),
           }

@@ -33,7 +33,7 @@ import {
 } from "./storage";
 import { buildExtendBody, extendForm, runnableExtends } from "./extend";
 import { formFor, outputLineage, toolLimitError } from "./registry/tool-forms";
-import { continueSequence } from "./store";
+import { continueSequence, ensureStoredVideo, getGeneration } from "./store";
 import { prepareToolInput } from "./toolCatalog";
 import { upscaleResolution } from "./upscaleQuote";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
@@ -231,6 +231,26 @@ export async function createFalJob(
   return job;
 }
 
+/** A finished generation whose file was never copied. Extend needs the bytes in the bucket. */
+async function storedGenerationVideo(userId: string, key: string) {
+  const id = /^videos\/([A-Za-z0-9_-]+)\.mp4$/.exec(key)?.[1];
+  if (!id) return undefined;
+  const gen = await getGeneration(userId, id);
+  if (!gen || gen.status !== "succeeded") return undefined;
+  try {
+    return await ensureStoredVideo(userId, gen);
+  } catch {
+    return undefined;
+  }
+}
+
+/** An extend output continues the same sequence as the job that made it. */
+async function extendSourceId(userId: string, generationId: string | null) {
+  if (!generationId) return undefined;
+  const prior = await getFalJob(userId, generationId);
+  return prior?.sequence?.sourceGenerationId ?? generationId;
+}
+
 function mediaKind(contentType: string): "image" | "video" | "audio" | undefined {
   if (contentType.startsWith("image/")) return "image";
   if (contentType.startsWith("video/")) return "video";
@@ -255,7 +275,7 @@ export async function createToolJob(
     ? { tool: extendTool, body: buildExtendBody(extendTool.id, assetIds[0], input.params) }
     : prepareToolInput(input.toolId, assetIds[0], input.params);
   if (!prepared) throw new ProviderError("Unknown tool", 400);
-  const asset = await getAsset(userId, assetIds[0]);
+  const asset = (await getAsset(userId, assetIds[0])) ?? (extendTool ? await storedGenerationVideo(userId, assetIds[0]) : undefined);
   if (!asset) throw new ProviderError("That asset is no longer in your library.", 400);
   if (mediaKind(asset.contentType) !== prepared.tool.accepts)
     throw new ProviderError(prepared.tool.accepts === "image" ? "This tool needs an image." : "This tool needs a video.", 400);
@@ -270,7 +290,8 @@ export async function createToolJob(
   }
   const params = { ...prepared.body };
   delete params[prepared.tool.inputKey];
-  const stamp = extendTool && asset.generationId ? await continueSequence(userId, asset.generationId) : undefined;
+  const sourceId = extendTool ? await extendSourceId(userId, asset.generationId) : undefined;
+  const stamp = sourceId ? await continueSequence(userId, sourceId) : undefined;
   return createFalJob(
     userId,
     prepared.tool.endpoint,

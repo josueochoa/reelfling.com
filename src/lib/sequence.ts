@@ -1,8 +1,6 @@
 // Sequence grouping for extended clips. Pure: no catalog, no database, no secrets.
 // A part number is assigned when a clip is continued. The feed groups parts that share a sequence id.
 
-import type { GenerateRequest } from "./types";
-
 export interface SequenceItem {
   id: string;
   sequenceId?: string;
@@ -66,32 +64,4 @@ export function groupFeed<T extends SequenceItem>(items: readonly T[]): { id: st
 /** Two or more clips share a sequence, so the feed numbers them. */
 export function isNumberedSequence(parts: readonly unknown[]): boolean {
   return parts.length > 1;
-}
-
-/** The next generation. The frame is an upload key on every route; the provider mapper places it. */
-export function continueFromFrame(
-  source: {
-    id: string;
-    model: string;
-    prompt: string;
-    ratio: string;
-    resolution: string;
-    duration: number;
-    generateAudio?: boolean;
-    route?: string;
-  },
-  frameKey: string,
-): GenerateRequest {
-  return {
-    model: source.model,
-    prompt: source.prompt,
-    mode: "frames",
-    ratio: source.ratio,
-    resolution: source.resolution,
-    duration: source.duration,
-    ...(source.generateAudio !== undefined && { generateAudio: source.generateAudio }),
-    ...(source.route && { route: source.route }),
-    firstFrame: `upload:${frameKey}`,
-    continueFrom: source.id,
-  };
 }

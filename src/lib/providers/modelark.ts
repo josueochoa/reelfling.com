@@ -13,7 +13,7 @@ interface ArkTask {
   model: string;
   status: TaskStatus;
   error?: { code: string; message: string } | null;
-  content?: { video_url?: string; last_frame_url?: string };
+  content?: { video_url?: string };
   usage?: { completion_tokens?: number; total_tokens?: number };
   seed?: number;
 }
@@ -63,7 +63,6 @@ export const modelArk: ProviderFactory = (creds) => ({
     return {
       status: task.status,
       videoUrl: task.content?.video_url,
-      lastFrameUrl: task.content?.last_frame_url,
       error: task.error?.message,
       seed: task.seed,
       tokens: task.usage?.completion_tokens,

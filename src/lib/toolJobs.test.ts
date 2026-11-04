@@ -498,6 +498,50 @@ describe("tool jobs", () => {
     assertKeyStayedOnFal();
     await removeFalJob(USER, created.id);
   });
+
+  it("numbers the next part when extending an extend output", async () => {
+    const genId = "gen-chain";
+    const prior = "job-prior";
+    const output = `fal/${prior}/0.mp4`;
+    database.prepare("INSERT INTO generations (id, user_id, created_at, data, route) VALUES (?, ?, ?, ?, ?)").run(
+      genId,
+      USER,
+      6,
+      JSON.stringify({ id: genId, sequenceId: genId, part: 1, status: "succeeded", createdAt: 6, updatedAt: 6 }),
+      "fal",
+    );
+    database.prepare("INSERT INTO fal_jobs (id, user_id, created_at, data) VALUES (?, ?, ?, ?)").run(
+      prior,
+      USER,
+      7,
+      JSON.stringify({
+        id: prior,
+        sequence: { sequenceId: genId, part: 2, sourceGenerationId: genId },
+      }),
+    );
+    database
+      .prepare(
+        "INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(USER, output, "dev-user-1", 4000, "video/mp4", prior, 7, "part-2.mp4");
+    install((call) => (call.method === "POST" ? submitResponse() : new Response(null, { status: 200 })));
+    const created = await createToolJob(
+      USER,
+      { toolId: "fal:xai/grok-imagine-video/extend-video", assetIds: [output], params: { prompt: "Further on." } },
+      KEY,
+    );
+    assert.equal(created.sequence?.sequenceId, genId);
+    assert.equal(created.sequence?.part, 3);
+    assert.equal(created.sequence?.sourceGenerationId, genId);
+    const posted = JSON.parse(calls[0].body!) as { video_url: string };
+    assert.equal(posted.video_url.includes(output), true);
+    assert.equal(JSON.stringify(created).includes(KEY), false);
+    assertKeyStayedOnFal();
+    await removeFalJob(USER, created.id);
+    database.prepare("DELETE FROM fal_jobs WHERE id = ?").run(prior);
+    database.prepare("DELETE FROM generations WHERE id = ?").run(genId);
+    database.prepare("DELETE FROM assets WHERE user_id = ? AND key = ?").run(USER, output);
+  });
 });
 
 function walk(dir: string): string[] {

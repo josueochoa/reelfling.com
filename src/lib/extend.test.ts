@@ -11,7 +11,8 @@ import { buildModelArkVideo } from "./registry/bodies";
 import { ALL_MODELS } from "./registry/generated";
 import { toolLimitError } from "./registry/tool-forms";
 import { isVideo } from "./registry/types";
-import { continueFromFrame, groupFeed, isNumberedSequence, nextSequencePart } from "./sequence";
+import { groupFeed, isNumberedSequence, nextSequencePart } from "./sequence";
+import type { GenerateRequest } from "./types";
 
 const FRAME = "https://cdn.example/frame.jpg";
 const FRAME_KEY = "uploads/frame.jpg";
@@ -35,31 +36,24 @@ const KEPT = [
 
 describe("continue from last frame", () => {
   it("sends the uploaded frame as the start frame on every route", async () => {
-    const request = continueFromFrame(
-      {
-        id: "gen-1",
-        model: "seedance-2.5",
-        prompt: "keep going",
-        ratio: "16:9",
-        resolution: "720p",
-        duration: 5,
-        route: "argolink",
-      },
-      FRAME_KEY,
-    );
-    assert.equal(request.mode, "frames");
+    // The shape ControlPanel submits: one upload key, on whichever route is selected.
+    const request: GenerateRequest = {
+      model: "seedance-2.5",
+      prompt: "keep going",
+      mode: "frames",
+      ratio: "16:9",
+      resolution: "720p",
+      duration: 5,
+      route: "argolink",
+      firstFrame: `upload:${FRAME_KEY}`,
+      continueFrom: "gen-1",
+    };
     assert.equal(request.firstFrame, `upload:${FRAME_KEY}`);
-    assert.equal(request.continueFrom, "gen-1");
-    assert.equal(request.route, "argolink");
     for (const key of ["start_image", "frame_images", "image_url", "video_url", "content"]) {
       assert.equal(key in request, false, key);
     }
 
-    const shared = {
-      ...request,
-      firstFrame: FRAME,
-      model: "seedance-2.5",
-    };
+    const shared = { ...request, firstFrame: FRAME };
     const ark = buildModelArkVideo({ ...shared, model: "dreamina-seedance-2-0-260128" });
     assert.deepEqual(
       ark.content.find((item) => item.type === "image_url"),
@@ -120,7 +114,7 @@ describe("native extend", () => {
       const body = buildExtendBody(tool.id, "videos/clip.mp4", { prompt: "  Continue the scene. " });
       assert.deepEqual(body, { prompt: "Continue the scene.", video_url: "upload:videos/clip.mp4" });
     }
-    assert.throws(() => buildExtendBody(KEPT[0] && runnableExtends()[0].id, "videos/clip.mp4", { prompt: "  " }), /what happens next/);
+    assert.throws(() => buildExtendBody(runnableExtends()[0].id, "videos/clip.mp4", { prompt: "  " }), /what happens next/);
     const grok = extendForm("fal:xai/grok-imagine-video/extend-video");
     assert.ok(grok);
     assert.match(toolLimitError(grok, { contentType: "video/mp4", duration: 16 }, "Grok Imagine Extend") ?? "", /16s/);
