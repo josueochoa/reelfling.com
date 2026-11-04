@@ -43,7 +43,8 @@ describe("migration 0012", () => {
     assert.equal(files.filter((file) => file.startsWith("0012_")).length, 1);
     assert.equal(files.filter((file) => file.startsWith("0013_")).length, 1);
     assert.equal(files.filter((file) => file.startsWith("0014_")).length, 1);
-    assert.equal(files.at(-1), "0014_sequence_parts.sql");
+    assert.equal(files.filter((file) => file.startsWith("0015_")).length, 1);
+    assert.equal(files.at(-1), "0015_saved_looks.sql");
   });
 
   it("copies a personal workspace provider and leaves nulls alone", () => {
@@ -202,5 +203,19 @@ describe("migration 0014", () => {
           .run(),
       /UNIQUE constraint failed: sequence_parts\.sequence_id, sequence_parts\.part/,
     );
+  });
+});
+
+describe("migration 0015", () => {
+  it("adds users.looks and leaves existing rows null", () => {
+    const db = fresh();
+    apply(db, { through: "0014_sequence_parts.sql" });
+    db.exec(`INSERT INTO users (id, email, created_at) VALUES ('u1', 'a@b.c', 1)`);
+    apply(db, { from: "0015_saved_looks.sql", through: "0015_saved_looks.sql" });
+    const row = db.prepare("SELECT looks FROM users WHERE id = 'u1'").get() as { looks: string | null };
+    assert.equal(row.looks, null);
+    db.prepare("UPDATE users SET looks = ? WHERE id = 'u1'").run('[{"id":"l1","name":"Desk"}]');
+    const stored = db.prepare("SELECT looks FROM users WHERE id = 'u1'").get() as { looks: string };
+    assert.equal(JSON.parse(stored.looks)[0].name, "Desk");
   });
 });

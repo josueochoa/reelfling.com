@@ -17,6 +17,7 @@ import { catalogModel, FAL_IMAGE_ENDPOINTS } from "@/lib/registry/generated";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
+import { keptLook, lookIsEmpty, type LookChoice } from "@/lib/registry/looks";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 
 export async function GET() {
@@ -39,6 +40,10 @@ export interface ImageRequest {
   count: number;
   /** Library keys of reference images, in order. */
   references: string[];
+  /** Look chips. Compiled into the provider prompt; the record keeps the selection. */
+  look?: LookChoice;
+  /** Palette swatch key when that image is one of `references`. */
+  lookSwatch?: string;
   /** Provider route chosen in the picker or restored by Reuse. */
   route?: string;
 }
@@ -96,6 +101,8 @@ export async function POST(request: Request) {
         megapixels: imagePriceMegapixels(model, priceInput),
       }) ?? 0;
 
+    const look = keptLook(req.look);
+    const lookSwatch = typeof req.lookSwatch === "string" && refs.includes(req.lookSwatch) ? req.lookSwatch : undefined;
     const now = Date.now();
     const gen: ImageGeneration = {
       id: crypto.randomUUID(),
@@ -109,6 +116,8 @@ export async function POST(request: Request) {
       quality: model.capabilities.qualities ? (req.quality ?? "auto") : undefined,
       count: req.count,
       references: refs,
+      ...(!lookIsEmpty(look) ? { look } : {}),
+      ...(lookSwatch ? { lookSwatch } : {}),
       images: [],
       cost: estimate,
       route: imageProvider,

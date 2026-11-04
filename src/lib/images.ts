@@ -20,6 +20,8 @@ import {
   type ImageQuality,
   type ImageResolution,
 } from "./registry";
+import { compileLook } from "./registry/looks";
+import type { LookChoice } from "./registry/looks";
 import { catalogModel } from "./registry/generated";
 import { isImage } from "./registry/types";
 import { deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
@@ -43,6 +45,10 @@ export interface ImageGeneration {
   count: number;
   /** Library keys of the reference images, in order. */
   references: string[];
+  /** Look chips. The provider prompt is compiled from these; this field is the selection. */
+  look?: LookChoice;
+  /** Palette swatch key, when that image is one of `references`. */
+  lookSwatch?: string;
   images: { key: string; contentType: string }[];
   error?: string;
   /** Estimated USD. */
@@ -158,7 +164,7 @@ export async function runImageJob(userId: string, id: string) {
         return { image_url: await providerUrl(asset) };
       }),
     );
-    const prompt = normalizeMentions(gen.prompt, mentionSyntax(model.refSyntax));
+    const prompt = compileLook(model, normalizeMentions(gen.prompt, mentionSyntax(model.refSyntax)), gen.look).prompt;
     const items =
       provider === "fal"
         ? await falImageFiles(

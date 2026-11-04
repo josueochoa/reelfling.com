@@ -6,6 +6,7 @@ import { falQueueInput, submitFal } from "@/lib/providers/fal";
 import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import { applyNativeExpansion } from "@/lib/enhance";
 import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
+import { applyLook, keptLook, lookIsEmpty } from "@/lib/registry/looks";
 import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
 import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { keyframesError } from "@/lib/registry/frames";
@@ -200,26 +201,34 @@ export async function POST(request: Request) {
           ["audio", referenceAudios],
         ]);
 
-    // The record keeps the prompt as written and the chip ids. applyCameraMoves
-    // appends each chip's line, or sets a native field, only on the provider copy.
+    // The record keeps the prompt as written and the chip ids. applyLook and
+    // applyCameraMoves append each chip's line, or set a native field, only on
+    // the provider copy.
     const cameraMoves = (req.cameraMoves?.length ? req.cameraMoves : req.cameraMove ? [req.cameraMove] : []).slice(
       0,
       CAMERA_MOVE_MAX,
     );
+    const look = keptLook(req.look);
     const nativeOn = req.promptExpansion === true;
-    const withoutExpansion = { ...req };
-    delete withoutExpansion.promptExpansion;
-    const providerReq = applyCameraMoves(model, {
-      ...withoutExpansion,
-      model: run.endpoint,
-      prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
-      firstFrame: first?.url,
-      lastFrame: last?.url,
-      middleFrames: middle?.map((item) => item.url),
-      referenceImages: referenceImages?.map((media) => media.url),
-      referenceVideos: referenceVideos?.map((media) => media.url),
-      referenceAudios: referenceAudios?.map((media) => media.url),
-    });
+    const withoutChips = { ...req };
+    delete withoutChips.promptExpansion;
+    delete withoutChips.look;
+    delete withoutChips.lookSwatch;
+    const providerReq = applyCameraMoves(
+      model,
+      applyLook(model, {
+        ...withoutChips,
+        look,
+        model: run.endpoint,
+        prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
+        firstFrame: first?.url,
+        lastFrame: last?.url,
+        middleFrames: middle?.map((item) => item.url),
+        referenceImages: referenceImages?.map((media) => media.url),
+        referenceVideos: referenceVideos?.map((media) => media.url),
+        referenceAudios: referenceAudios?.map((media) => media.url),
+      }),
+    );
     // A missing fal key would 400 after the part was claimed. Check it first.
     const falCreds = run.provider === "fal" ? await getCredentials(user.id, "fal") : undefined;
     if (run.provider === "fal" && !falCreds)
@@ -282,6 +291,11 @@ export async function POST(request: Request) {
       generateAudio: !!req.generateAudio,
       seed: req.seed,
       ...(cameraMoves.length ? { cameraMoves } : {}),
+      ...(!lookIsEmpty(look) ? { look } : {}),
+      ...(req.lookSwatch &&
+      (referenceImages ?? []).some((media) => media.key === req.lookSwatch)
+        ? { lookSwatch: req.lookSwatch }
+        : {}),
       inputs,
       route: run.provider,
       routeEndpoint: run.endpoint,
