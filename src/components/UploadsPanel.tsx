@@ -6,9 +6,10 @@ import { useRef, useState } from "react";
 import { Trash2, X } from "@/components/ui/Icon";
 import { confirmToast } from "@/components/ui/Toast";
 import type { AssetSource, UploadKind } from "@/lib/uploads";
-import { ACCEPT, type Library, type LibraryItem } from "./library";
-import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
-import { MediaPreview } from "./MediaPreview";
+import { ACCEPT, fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
+import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
+import { Viewer } from "./Viewer";
+import { formatCreated } from "./viewer/model";
 import { formatBytes } from "./UserMenu";
 
 const FILTERS: { value: UploadKind | "all"; label: string }[] = [
@@ -244,13 +245,30 @@ export function UploadsPanel({
       />
 
       {previewing && (
-        <MediaPreview
-          item={previewing}
-          label={selected.get(previewing.id)}
-          onToggle={() => onToggle(previewing)}
+        <Viewer
+          label="Preview"
+          title={previewing.name}
+          kind={previewing.kind}
+          src={fileSrc(previewing)}
+          poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
+          alt={previewing.name}
+          prompt={previewing.generation?.prompt || previewing.name}
+          details={[
+            ...(formatDuration(previewing.duration)
+              ? [{ label: "Duration", value: formatDuration(previewing.duration) }]
+              : []),
+            { label: "Created", value: formatCreated(previewing.createdAt) },
+          ]}
+          peaks={previewing.peaks}
+          onClose={() => setPreviewId(null)}
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
-          onClose={() => setPreviewId(null)}
+          onUseAsReference={() => onToggle(previewing)}
+          referenceLabel={
+            selected.get(previewing.id)
+              ? `Remove ${selected.get(previewing.id)} from references`
+              : "Add to references"
+          }
         />
       )}
     </section>

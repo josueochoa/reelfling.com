@@ -15,10 +15,11 @@ import { assetFileUrl } from "@/lib/uploads";
 import { confirmToast, toast } from "@/components/ui/Toast";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
-import { GenerationCard } from "./GenerationCard";
+import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
-import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
+import { Viewer } from "./Viewer";
+import { videoDetails } from "./viewer/details";
 
 const POLL_MS = 5000;
 
@@ -292,6 +293,10 @@ export function VideoStudio({
         job,
       })),
   ]);
+  const clips = feed.flatMap((group) =>
+    group.parts.flatMap((item) => (item.kind === "generation" ? [item.gen] : [])),
+  );
+  const openIndex = open ? clips.findIndex((item) => item.id === open.id) : -1;
   const models = sortByAvailability(catalog(), (model) => availabilityFor(routeProviders(model.routes), keyed).available);
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
@@ -426,24 +431,132 @@ export function VideoStudio({
       </main>
 
       {open && (
-        <Lightbox
+        <OpenVideo
           key={open.id}
           gen={open}
           onClose={() => setOpen(null)}
+          onPrev={
+            openIndex > 0
+              ? () => {
+                  const prev = clips[openIndex - 1];
+                  if (prev) setOpen(prev);
+                }
+              : undefined
+          }
+          onNext={
+            openIndex >= 0 && openIndex < clips.length - 1
+              ? () => {
+                  const next = clips[openIndex + 1];
+                  if (next) setOpen(next);
+                }
+              : undefined
+          }
           onReuse={() => reuse(open)}
           onUseAsReference={() => void referenceStoredVideo(open)}
           onContinue={open.status === "succeeded" ? () => void continueFromVideo(generationBytesUrl(open.id), open) : undefined}
           continueBusy={continueBusy}
-          extendOffer={extendOffers.find((offer) => offer.modelIds.includes(open.model))}
-          onNativeExtend={(prompt) => nativeExtend(open.model, `videos/${open.id}.mp4`, prompt)}
+          extendOffer={
+            open.status === "succeeded" ? extendOffers.find((offer) => offer.modelIds.includes(open.model)) : undefined
+          }
+          onNativeExtend={
+            open.status === "succeeded"
+              ? (prompt) => nativeExtend(open.model, `videos/${open.id}.mp4`, prompt)
+              : undefined
+          }
           onDelete={() => remove(open)}
           tools={tools}
           keyed={keyed}
           onOpenKeys={onOpenKeys}
-          onToolJob={onToolJob}
+          onToolJob={() => {
+            setOpen(null);
+            onToolJob();
+          }}
         />
       )}
     </div>
+  );
+}
+
+function videoRefs(gen: Generation) {
+  const refs: { src: string; alt: string }[] = [];
+  const add = (key?: string, alt?: string) => {
+    if (key) refs.push({ src: assetFileUrl(key), alt: alt || "Reference" });
+  };
+  add(gen.inputs.firstFrameKey, gen.inputs.firstFrameName ?? "Start frame");
+  add(gen.inputs.lastFrameKey, gen.inputs.lastFrameName ?? "End frame");
+  for (const block of gen.inputs.blocks ?? []) {
+    if (block.kind === "image") add(block.key, block.name ?? "Reference");
+  }
+  return refs;
+}
+
+function OpenVideo({
+  gen,
+  onClose,
+  onPrev,
+  onNext,
+  onReuse,
+  onUseAsReference,
+  onContinue,
+  continueBusy,
+  extendOffer,
+  onNativeExtend,
+  onDelete,
+  tools,
+  keyed,
+  onOpenKeys,
+  onToolJob,
+}: {
+  gen: Generation;
+  onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  onReuse: () => void;
+  onUseAsReference: () => void;
+  onContinue?: () => void;
+  continueBusy?: boolean;
+  extendOffer?: ExtendOffer;
+  onNativeExtend?: (prompt: string) => Promise<void>;
+  onDelete: () => void;
+  tools: readonly ToolView[];
+  keyed: ReadonlySet<string>;
+  onOpenKeys: () => void;
+  onToolJob: () => void;
+}) {
+  const elapsed = useElapsed(gen);
+  const ready = gen.status === "succeeded";
+  const details = videoDetails(gen);
+  return (
+    <Viewer
+      label="Video"
+      title={details.find((row) => row.label === "Model")?.value ?? "Video"}
+      kind="video"
+      src={ready ? videoSrc(gen) : undefined}
+      alt={gen.prompt}
+      prompt={gen.prompt}
+      references={videoRefs(gen)}
+      details={details}
+      error={gen.error}
+      pending={ready ? undefined : <StatusOverlay gen={gen} elapsed={elapsed} />}
+      onClose={onClose}
+      onPrev={onPrev}
+      onNext={onNext}
+      onReuse={onReuse}
+      onUseAsReference={ready && gen.stored ? onUseAsReference : undefined}
+      onContinue={onContinue}
+      continueBusy={continueBusy}
+      extendOffer={extendOffer}
+      onNativeExtend={onNativeExtend}
+      onDelete={onDelete}
+      downloadHref={ready ? `${videoSrc(gen)}?download` : undefined}
+      tools={tools}
+      toolKind="video"
+      assetKey={gen.stored ? `videos/${gen.id}.mp4` : undefined}
+      toolAsset={{ duration: gen.duration }}
+      keyed={keyed}
+      onOpenKeys={onOpenKeys}
+      onToolJob={onToolJob}
+    />
   );
 }
 

@@ -5,10 +5,11 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Play } from "@/components/ui/Icon";
-import { Modal } from "@/components/ui/Modal";
 import type { TeamAsset, TeamAuthor, TeamGeneration, TeamMember, TeamSummary } from "@/lib/teamPolicy";
 import { teamMediaUrl } from "@/lib/teamPolicy";
 import { apiJson, type Me } from "./api";
+import { Viewer } from "./Viewer";
+import { formatCreated } from "./viewer/model";
 import { formatBytes } from "./UserMenu";
 
 const STORAGE_KEY = "reelfling.team";
@@ -52,6 +53,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [openVideo, setOpenVideo] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
   const applyList = useCallback((next: TeamSummary[], prefer: string | null | undefined) => {
@@ -63,6 +65,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
       setDetail(null);
       setFeed(null);
       setInviteUrl(null);
+      setOpenVideo(null);
     }
   }, []);
 
@@ -209,6 +212,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
               onClick={() => {
                 setDenied(false);
                 setSelected(team.id);
+                setOpenVideo(null);
                 sessionStorage.setItem(STORAGE_KEY, team.id);
               }}
               className={`w-full rounded-lg px-2.5 py-2 text-left text-sm ${
@@ -382,11 +386,27 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
               {feed.assets.length === 0 ? (
                 <p className="mt-2 text-sm text-zinc-500">No assets from the people on this team yet.</p>
               ) : (
-                <ul className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-3">
-                  {feed.assets.map((asset) => (
-                    <AssetTile key={`${asset.ownerId}:${asset.key}`} teamId={detail.team.id} asset={asset} meId={meId} />
-                  ))}
-                </ul>
+                <>
+                  <ul className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-3">
+                    {feed.assets.map((asset) => (
+                      <AssetTile
+                        key={`${asset.ownerId}:${asset.key}`}
+                        teamId={detail.team.id}
+                        asset={asset}
+                        meId={meId}
+                        onOpen={asset.kind === "video" ? () => setOpenVideo(`${asset.ownerId}:${asset.key}`) : undefined}
+                      />
+                    ))}
+                  </ul>
+                  <TeamVideo
+                    teamId={detail.team.id}
+                    assets={feed.assets}
+                    openId={openVideo}
+                    meId={meId}
+                    onOpen={setOpenVideo}
+                    onClose={() => setOpenVideo(null)}
+                  />
+                </>
               )}
             </section>
           </div>
@@ -396,8 +416,56 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
   );
 }
 
-function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; meId?: string }) {
-  const [open, setOpen] = useState(false);
+function TeamVideo({
+  teamId,
+  assets,
+  openId,
+  meId,
+  onOpen,
+  onClose,
+}: {
+  teamId: string;
+  assets: TeamAsset[];
+  openId: string | null;
+  meId?: string;
+  onOpen: (id: string) => void;
+  onClose: () => void;
+}) {
+  if (!openId) return null;
+  const videos = assets.filter((item) => item.kind === "video");
+  const at = videos.findIndex((item) => `${item.ownerId}:${item.key}` === openId);
+  const asset = videos[at];
+  if (!asset) return null;
+  const prev = videos[at - 1];
+  const next = videos[at + 1];
+  return (
+    <Viewer
+      label={asset.name}
+      title={who(asset.author, meId)}
+      kind="video"
+      src={teamMediaUrl(teamId, asset.ownerId, asset.key)}
+      poster={asset.hasThumb ? teamMediaUrl(teamId, asset.ownerId, asset.key, true) : undefined}
+      alt={asset.name}
+      prompt={asset.name}
+      details={[{ label: "Created", value: formatCreated(asset.createdAt) }]}
+      onClose={onClose}
+      onPrev={prev ? () => onOpen(`${prev.ownerId}:${prev.key}`) : undefined}
+      onNext={next ? () => onOpen(`${next.ownerId}:${next.key}`) : undefined}
+    />
+  );
+}
+
+function AssetTile({
+  teamId,
+  asset,
+  meId,
+  onOpen,
+}: {
+  teamId: string;
+  asset: TeamAsset;
+  meId?: string;
+  onOpen?: () => void;
+}) {
   const [failed, setFailed] = useState(false);
   const fileUrl = teamMediaUrl(teamId, asset.ownerId, asset.key);
   // The grid never points a <video> at the file. Same as the Assets grid: a thumbnail
@@ -422,7 +490,7 @@ function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; 
         {asset.kind === "video" && (
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={onOpen}
             aria-label={`Play ${asset.name}`}
             data-testid="team-video"
             className="absolute inset-0 grid place-items-center"
@@ -433,18 +501,6 @@ function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; 
           </button>
         )}
       </div>
-      {open && (
-        <Modal size="lg" surface="black" onClose={() => setOpen(false)} label={asset.name}>
-          <video
-            src={fileUrl}
-            controls
-            autoPlay
-            playsInline
-            data-testid="team-video-player"
-            className="max-h-[80dvh] w-full bg-black"
-          />
-        </Modal>
-      )}
       <div className="px-2.5 py-2">
         <p className="truncate text-sm">{asset.name}</p>
         <p className="truncate text-xs text-zinc-500">

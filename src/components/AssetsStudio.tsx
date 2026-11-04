@@ -10,10 +10,11 @@ import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
-import type { Library, LibraryItem } from "./library";
-import { BulkUpscale, ToolsMenu } from "./ToolsMenu";
-import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlocks";
-import { MediaPreview } from "./MediaPreview";
+import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
+import { BulkUpscale } from "./ToolsMenu";
+import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
+import { Viewer } from "./Viewer";
+import { formatCreated, type ViewerDetail } from "./viewer/model";
 import { formatBytes } from "./UserMenu";
 
 const KINDS: { value: UploadKind | "all"; label: string; icon: ReactNode }[] = [
@@ -351,53 +352,50 @@ export function AssetsStudio({
       </main>
 
       {previewing && (
-        <MediaPreview
-          item={previewing}
+        <Viewer
+          label="Preview"
+          title={previewing.name}
+          kind={previewing.kind}
+          src={fileSrc(previewing)}
+          poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
+          alt={previewing.name}
+          prompt={previewing.generation?.prompt || previewing.name}
+          details={libraryDetails(previewing)}
+          peaks={previewing.peaks}
+          onClose={() => setPreviewId(null)}
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
-          onClose={() => setPreviewId(null)}
+          onUseAsReference={() => {
+            setPreviewId(null);
+            onUseInVideo(previewing);
+          }}
+          referenceLabel="Use in Video"
+          onDownload={() => download(previewing)}
+          onDelete={() => void remove([previewing.id])}
+          tools={tools}
+          toolKind={previewing.kind === "image" || previewing.kind === "video" ? previewing.kind : undefined}
+          assetKey={previewing.key}
+          toolAsset={{ width: previewing.width, height: previewing.height, duration: previewing.duration }}
+          keyed={keyed}
+          onOpenKeys={onOpenKeys}
+          onToolJob={() => {
+            setPreviewId(null);
+            onToolJob();
+          }}
           lineage={lineageFor(previewing, library.items, tools, setPreviewId)}
-          actions={
-            <>
-              <ToolsMenu
-                kind={previewing.kind}
-                assetKey={previewing.key}
-                asset={{
-                  width: previewing.width,
-                  height: previewing.height,
-                  duration: previewing.duration,
-                }}
-                tools={tools}
-                keyed={keyed}
-                onOpenKeys={onOpenKeys}
-                onStarted={() => {
-                  setPreviewId(null);
-                  onToolJob();
-                }}
-              />
-              <ActionButton onClick={() => download(previewing)}>Download</ActionButton>
-              {previewing.kind === "image" && (
-                <ActionButton
-                  onClick={() => {
-                    setPreviewId(null);
-                    onUseInImage(previewing);
-                  }}
-                >
-                  Use in Image
-                </ActionButton>
-              )}
-              <ActionButton
+          extra={
+            previewing.kind === "image" ? (
+              <button
+                type="button"
                 onClick={() => {
                   setPreviewId(null);
-                  onUseInVideo(previewing);
+                  onUseInImage(previewing);
                 }}
+                className="mt-3 w-full rounded-md border border-line py-2 text-body text-fg"
               >
-                Use in Video
-              </ActionButton>
-              <ActionButton danger onClick={() => void remove([previewing.id])}>
-                Delete
-              </ActionButton>
-            </>
+                Use in Image
+              </button>
+            ) : undefined
           }
         />
       )}
@@ -423,23 +421,13 @@ function lineageFor(
   };
 }
 
-function ActionButton({
-  onClick,
-  danger,
-  children,
-}: {
-  onClick: () => void;
-  danger?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-xl border border-white/10 px-3 py-2 text-sm whitespace-nowrap hover:bg-white/5 ${
-        danger ? "text-red-300" : "text-zinc-200"
-      }`}
-    >
-      {children}
-    </button>
-  );
+function libraryDetails(item: LibraryItem): ViewerDetail[] {
+  const rows: ViewerDetail[] = [];
+  if (item.generation?.model) rows.push({ label: "Model", value: lookupModelName(item.generation.model) });
+  const size = item.resolution ?? (item.width && item.height ? `${item.width}×${item.height}` : undefined);
+  if (size) rows.push({ label: "Resolution", value: size });
+  const duration = formatDuration(item.duration);
+  if (duration) rows.push({ label: "Duration", value: duration });
+  rows.push({ label: "Created", value: formatCreated(item.createdAt) });
+  return rows;
 }

@@ -82,9 +82,21 @@ body {
   to { background-position: -200% 0; }
 }
 
+/* Blurred media behind the viewer. The blur is a static filter, not a transition. */
+.viewer-backdrop {
+  filter: blur(28px);
+  transform: scale(1.08);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .overlay-in,
   .skeleton::after {
     animation: none;
+  }
+
+  .viewer-backdrop {
+    transition: none;
+    animation: none;
+    transform: none;
   }
 }
