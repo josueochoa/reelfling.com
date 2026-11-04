@@ -388,6 +388,8 @@ export function ImageStudio({
           onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
           onDelete={() => remove(openTile)}
           tools={tools}
+          keyed={keyed}
+          onOpenKeys={onOpenKeys}
           onToolJob={onToolJob}
         />
       )}
@@ -405,6 +407,8 @@ function ImageLightbox({
   onUseAsReference,
   onDelete,
   tools,
+  keyed,
+  onOpenKeys,
   onToolJob,
 }: {
   gen: ImageGeneration;
@@ -413,9 +417,11 @@ function ImageLightbox({
   onClose: () => void;
   onReuse: () => void;
   onUseAsStartFrame: () => void;
-  onUseAsReference: () => void;
   onDelete: () => void;
+  onUseAsReference: () => void;
   tools: readonly ToolView[];
+  keyed: ReadonlySet<string>;
+  onOpenKeys: () => void;
   onToolJob: () => void;
 }) {
   useEffect(() => {
@@ -479,7 +485,14 @@ function ImageLightbox({
             ))}
           </dl>
           <div className="mt-auto grid gap-2 text-sm">
-            <ToolsMenu kind="image" assetKey={gen.images[index]?.key} tools={tools} onStarted={onToolJob} />
+            <ToolsMenu
+              kind="image"
+              assetKey={gen.images[index]?.key}
+              tools={tools}
+              keyed={keyed}
+              onOpenKeys={onOpenKeys}
+              onStarted={onToolJob}
+            />
             <a href={imageUrl(gen, index, true)} className="rounded-xl bg-accent py-2 text-center font-medium text-ink">
               Download
             </a>

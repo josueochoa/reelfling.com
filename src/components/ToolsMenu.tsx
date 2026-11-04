@@ -4,15 +4,21 @@
 // Upscale models that share a menu name collapse into one item with a model picker.
 
 import { useState } from "react";
+import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { toolsForKind, type ToolAsset, type ToolFieldView, type ToolView } from "@/lib/toolTypes";
 import { formatUpscaleCost, planBulkToolJobs, upscaleCost } from "@/lib/upscaleQuote";
 import { api } from "./api";
+import { UnlockHint } from "./UnlockHint";
 
 interface MenuEntry {
   id: string;
   name: string;
   description: string;
   tools: ToolView[];
+}
+
+function entryProviders(tools: readonly ToolView[]) {
+  return routeProviders(tools.flatMap((tool) => (tool.providers ?? []).map((provider) => ({ provider }))));
 }
 
 function menuEntries(tools: readonly ToolView[]): MenuEntry[] {
@@ -77,6 +83,8 @@ export function ToolsMenu({
   asset,
   assets,
   tools,
+  keyed = new Set<string>(),
+  onOpenKeys,
   onStarted,
   placement = "up",
   label = "Tools",
@@ -90,6 +98,9 @@ export function ToolsMenu({
   /** Bulk run: one job per asset. */
   assets?: readonly ToolAsset[];
   tools: readonly ToolView[];
+  /** Providers this user has a key for. Names only. */
+  keyed?: ReadonlySet<string>;
+  onOpenKeys?: () => void;
   /** The job is in the feed. */
   onStarted: () => void;
   placement?: "up" | "down";
@@ -104,6 +115,7 @@ export function ToolsMenu({
   const [values, setValues] = useState<Record<string, string | boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
 
   if (available.length === 0) return null;
 
@@ -279,20 +291,47 @@ export function ToolsMenu({
               </button>
             </form>
           ) : (
-            entries.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="menuitem"
-                onClick={() => openEntry(item)}
-                className="block w-full rounded-lg px-2 py-2 text-left hover:bg-white/5"
-              >
-                <span className="block text-sm text-zinc-100">{item.name}</span>
-                {item.description && (
-                  <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">{item.description}</span>
-                )}
-              </button>
-            ))
+            entries.map((item) => {
+              const providers = entryProviders(item.tools);
+              const open = availabilityFor(providers, keyed);
+              const locked = providers.length > 0 && !open.available;
+              const hint = availabilityHint(open.needs);
+              return (
+                <div
+                  key={item.id}
+                  onMouseEnter={() => setHover(item.id)}
+                  onMouseLeave={() => setHover((current) => (current === item.id ? null : current))}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid={`tool-${item.id}`}
+                    data-available={locked ? "false" : "true"}
+                    aria-disabled={locked}
+                    onClick={() => {
+                      if (locked) {
+                        setHover(item.id);
+                        return;
+                      }
+                      openEntry(item);
+                    }}
+                    className={`block w-full rounded-lg px-2 py-2 text-left ${
+                      locked ? "cursor-not-allowed text-zinc-500" : "hover:bg-white/5"
+                    }`}
+                  >
+                    <span className={`block text-sm ${locked ? "text-zinc-500" : "text-zinc-100"}`}>{item.name}</span>
+                    {item.description && (
+                      <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">{item.description}</span>
+                    )}
+                  </button>
+                  {locked && hover === item.id && hint && onOpenKeys && (
+                    <div className="px-2 pb-1">
+                      <UnlockHint hint={hint} onOpen={onOpenKeys} />
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}
@@ -304,10 +343,14 @@ export function ToolsMenu({
 export function BulkUpscale({
   items,
   tools,
+  keyed,
+  onOpenKeys,
   onStarted,
 }: {
   items: readonly ToolAsset[];
   tools: readonly ToolView[];
+  keyed?: ReadonlySet<string>;
+  onOpenKeys?: () => void;
   onStarted: () => void;
 }) {
   const kinds = new Set(items.map((item) => item.kind));
@@ -324,6 +367,8 @@ export function BulkUpscale({
       kind={kind}
       assets={items}
       tools={available}
+      keyed={keyed}
+      onOpenKeys={onOpenKeys}
       onStarted={onStarted}
       placement="down"
       label="Upscale"

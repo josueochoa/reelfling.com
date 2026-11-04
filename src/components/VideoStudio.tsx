@@ -278,6 +278,8 @@ export function VideoStudio({
           onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
           onDelete={() => remove(open)}
           tools={tools}
+          keyed={keyed}
+          onOpenKeys={onOpenKeys}
           onToolJob={onToolJob}
         />
       )}

@@ -57,13 +57,18 @@ describe("availability", () => {
   });
 
   it("uses the providers on real upscale routes", () => {
-    const providers = routeProviders(
-      ALL_MODELS.filter((model) => model.task === "upscale").flatMap((model) => model.routes),
-    );
+    // Fal upscalers live in catalog/upscale.json as tools. OpenRouter keeps task "upscale".
+    const models = ALL_MODELS.filter((model) => model.task === "upscale" || model.id.includes("upscale"));
+    const providers = routeProviders(models.flatMap((model) => model.routes));
+    assert.ok(models.some((model) => model.routes.some((route) => route.provider === "fal")));
+    assert.ok(models.some((model) => model.routes.some((route) => route.provider === "openrouter")));
     assert.deepEqual(providers, ["fal", "openrouter"]);
     const none = availabilityFor(providers, new Set());
     assert.equal(none.available, false);
     assert.equal(availabilityHint(none.needs), "needs a fal or OpenRouter key");
+    const falOnly = models.find((model) => model.routes.every((route) => route.provider === "fal"));
+    assert.ok(falOnly);
+    assert.equal(availabilityHint(availabilityFor(routeProviders(falOnly.routes), new Set()).needs), "needs a fal key");
     assert.equal(availabilityFor(providers, new Set(["fal"])).available, true);
     assert.equal(availabilityFor(providers, new Set(["argolink"])).available, false);
   });

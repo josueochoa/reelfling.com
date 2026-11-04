@@ -16,6 +16,8 @@ export function Lightbox({
   onExtend,
   onDelete,
   tools,
+  keyed,
+  onOpenKeys,
   onToolJob,
 }: {
   gen: Generation;
@@ -25,6 +27,8 @@ export function Lightbox({
   onExtend?: () => void;
   onDelete: () => void;
   tools: readonly ToolView[];
+  keyed: ReadonlySet<string>;
+  onOpenKeys: () => void;
   onToolJob: () => void;
 }) {
   const elapsed = useElapsed(gen);
@@ -108,6 +112,8 @@ export function Lightbox({
               kind="video"
               assetKey={gen.stored ? `videos/${gen.id}.mp4` : undefined}
               tools={tools}
+              keyed={keyed}
+              onOpenKeys={onOpenKeys}
               onStarted={onToolJob}
             />
             {ready && (

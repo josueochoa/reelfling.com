@@ -63,6 +63,7 @@ export function AssetsStudio({
   onDeleted,
   tools,
   onToolJob,
+  onOpenKeys,
 }: {
   me: Me | null;
   library: Library;
@@ -75,7 +76,9 @@ export function AssetsStudio({
   tools: readonly ToolView[];
   /** A tool job was created and should show in the feed. */
   onToolJob: () => void;
+  onOpenKeys: () => void;
 }) {
+  const keyed = new Set(me?.keys.map((key) => key.provider) ?? []);
   const [kind, setKind] = useState<UploadKind | "all">("all");
   const [source, setSource] = useState<AssetSource | "all">("all");
   const [model, setModel] = useState("");
@@ -212,6 +215,8 @@ export function AssetsStudio({
                     duration: item.duration,
                   }))}
                 tools={tools}
+                keyed={keyed}
+                onOpenKeys={onOpenKeys}
                 onStarted={() => {
                   setSelected(new Set());
                   onToolJob();
@@ -365,6 +370,8 @@ export function AssetsStudio({
                   duration: previewing.duration,
                 }}
                 tools={tools}
+                keyed={keyed}
+                onOpenKeys={onOpenKeys}
                 onStarted={() => {
                   setPreviewId(null);
                   onToolJob();
