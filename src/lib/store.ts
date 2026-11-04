@@ -2,7 +2,6 @@
 // copied into the user's R2 bucket (see storage.ts).
 
 import { all, first, run } from "./db";
-import { isDevMockTask } from "./devMock";
 import { getCredentials } from "./keys";
 import { providerForUser, terminalPollUpdate } from "./providers";
 import { fetchFalOutput, pollFal } from "./providers/fal";
@@ -103,7 +102,7 @@ export async function syncGeneration(userId: string, id: string): Promise<Genera
   let gen = await getGeneration(userId, id);
   if (!gen) return undefined;
 
-  if (!TERMINAL_STATUSES.includes(gen.status) && !isDevMockTask(gen.taskId)) {
+  if (!TERMINAL_STATUSES.includes(gen.status)) {
     try {
       const task = await syncTask(userId, gen);
       const done = TERMINAL_STATUSES.includes(task.status);

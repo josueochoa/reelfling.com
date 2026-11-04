@@ -434,7 +434,6 @@ export function ImageStudio({
           })}
           details={imageDetails(openTile)}
           error={openTile.error}
-          loading={!library.loaded}
           onClose={() => setOpen(null)}
           onPrev={(() => {
             const at = shown.findIndex((tile) => tile.gen.id === open.id && tile.i === open.i);

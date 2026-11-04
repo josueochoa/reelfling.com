@@ -59,6 +59,7 @@ export function VideoStudio({
   const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
+  const openIndex = open ? generations.findIndex((item) => item.id === open.id) : -1;
   useEffect(() => {
     gensRef.current = generations;
   }, [generations]);
@@ -284,22 +285,19 @@ export function VideoStudio({
       {open && (
         <OpenVideo
           gen={open}
-          loading={!library.loaded}
           onClose={() => setOpen(null)}
           onPrev={
-            generations.findIndex((item) => item.id === open.id) > 0
+            openIndex > 0
               ? () => {
-                  const index = generations.findIndex((item) => item.id === open.id);
-                  const prev = generations[index - 1];
+                  const prev = generations[openIndex - 1];
                   if (prev) setOpen(prev);
                 }
               : undefined
           }
           onNext={
-            generations.findIndex((item) => item.id === open.id) < generations.length - 1
+            openIndex >= 0 && openIndex < generations.length - 1
               ? () => {
-                  const index = generations.findIndex((item) => item.id === open.id);
-                  const next = generations[index + 1];
+                  const next = generations[openIndex + 1];
                   if (next) setOpen(next);
                 }
               : undefined
@@ -336,7 +334,6 @@ function videoRefs(gen: Generation) {
 
 function OpenVideo({
   gen,
-  loading,
   onClose,
   onPrev,
   onNext,
@@ -350,7 +347,6 @@ function OpenVideo({
   onToolJob,
 }: {
   gen: Generation;
-  loading: boolean;
   onClose: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -377,7 +373,7 @@ function OpenVideo({
       references={videoRefs(gen)}
       details={details}
       error={gen.error}
-      loading={loading}
+      poster={gen.lastFrameUrl}
       pending={ready ? undefined : <StatusOverlay gen={gen} elapsed={elapsed} />}
       onClose={onClose}
       onPrev={onPrev}

@@ -444,6 +444,7 @@ function TeamVideo({
       title={who(asset.author, meId)}
       kind="video"
       src={teamMediaUrl(teamId, asset.ownerId, asset.key)}
+      poster={asset.hasThumb ? teamMediaUrl(teamId, asset.ownerId, asset.key, true) : undefined}
       alt={asset.name}
       prompt={asset.name}
       details={[{ label: "Created", value: formatCreated(asset.createdAt) }]}

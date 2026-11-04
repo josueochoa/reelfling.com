@@ -11,7 +11,6 @@
 // A bad key against GET https://api.fal.ai/v1/models is 401
 // `{ error: { type: "authorization_error", message } }`.
 
-import { devMockProviders } from "../devMock";
 import type { FalFieldError, FalJobStatus } from "../falTypes";
 import type { FalInputMap } from "../registry/types";
 import { ProviderError } from "./types";
@@ -185,27 +184,12 @@ function httpFailure(status: number, body: unknown, apiKey: string): FalValidati
 
 /** Confirms the key with a single catalog request. */
 export async function verifyFalKey(apiKey: string): Promise<{ detail?: string }> {
-  if (devMockProviders()) return {};
   const { status, body } = await falCall(apiKey, VERIFY_URL);
   if (status < 200 || status >= 300) throw httpFailure(status, body, apiKey);
   return {};
 }
 
 export async function submitFal(apiKey: string, endpointId: string, input: unknown): Promise<FalSubmission> {
-  if (devMockProviders()) {
-    const requestId = `devmock-${crypto.randomUUID()}`;
-    const statusUrl = `https://queue.fal.run/devmock/status/${requestId}`;
-    const responseUrl = `https://queue.fal.run/devmock/response/${requestId}`;
-    const cancelUrl = `https://queue.fal.run/devmock/cancel/${requestId}`;
-    // The stand-in body has no key and no copy of the caller's input.
-    return {
-      requestId,
-      statusUrl,
-      responseUrl,
-      cancelUrl,
-      raw: { request_id: requestId, status: "IN_QUEUE" },
-    };
-  }
   const { status, body } = await falCall(apiKey, endpointUrl(endpointId), {
     method: "POST",
     body: JSON.stringify(input ?? {}),
@@ -242,9 +226,6 @@ export async function pollFal(
   apiKey: string,
   urls: { statusUrl: string; responseUrl: string },
 ): Promise<FalSnapshot> {
-  if (devMockProviders() && (urls.statusUrl.includes("/devmock/") || urls.responseUrl.includes("/devmock/"))) {
-    return { status: "queued", response: { status: "IN_QUEUE" }, outputs: [] };
-  }
   const statusRes = await falCall(apiKey, urls.statusUrl);
   if (statusRes.status < 200 || statusRes.status >= 300) throw httpFailure(statusRes.status, statusRes.body, apiKey);
   const statusBody = asRecord(statusRes.body);
@@ -285,7 +266,6 @@ export async function pollFal(
 
 /** PUT the cancel URL fal returned. 400/404 mean it already finished or never existed. */
 export async function cancelFal(apiKey: string, cancelUrl: string): Promise<void> {
-  if (devMockProviders() && cancelUrl.includes("/devmock/")) return;
   const { status, body } = await falCall(apiKey, cancelUrl, { method: "PUT" });
   if (status === 200 || status === 202 || status === 400 || status === 404) return;
   throw httpFailure(status, body, apiKey);

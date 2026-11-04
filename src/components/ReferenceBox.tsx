@@ -5,7 +5,7 @@
 
 import { useRef, useState } from "react";
 import { X } from "@/components/ui/Icon";
-import { ACCEPT, fileSrc, type LibraryItem } from "./library";
+import { ACCEPT, fileSrc, thumbSrc, type LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, usePlayer } from "./MediaBlocks";
 import { Viewer } from "./Viewer";
 
@@ -161,6 +161,7 @@ export function ReferenceBox({
           title={previewing.label}
           kind={previewing.item.kind}
           src={fileSrc(previewing.item)}
+          poster={previewing.item.kind === "video" ? thumbSrc(previewing.item) : undefined}
           alt={previewing.item.name}
           prompt={previewing.item.generation?.prompt || previewing.item.name}
           peaks={previewing.item.peaks}

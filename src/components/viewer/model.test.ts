@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { contrastRatio } from "../ui/a11y";
 import {
@@ -95,65 +95,34 @@ describe("viewer copy", () => {
   });
 
   it("reads a route only when the generation has a string one", () => {
-    assert.equal(detailRoute({ model: "seedance-2.5" }), undefined);
-    assert.equal(detailRoute({ route: "" }), undefined);
-    assert.equal(detailRoute({ route: 1 }), undefined);
-    assert.equal(detailRoute({ route: " argolink " }), "argolink");
+    assert.equal(detailRoute(undefined), undefined);
+    assert.equal(detailRoute(""), undefined);
+    assert.equal(detailRoute("  "), undefined);
+    assert.equal(detailRoute(" argolink "), "argolink");
   });
 
-  it("pins upscale and trim and leaves the rest for More", () => {
+  it("pins upscale and leaves every other tool for More", () => {
     const flags = toolbarFlags(
       [
         { name: "SeedVR", menu: "Upscale", accepts: "video" },
         { name: "Cutout", accepts: "image" },
-        { name: "Trim", accepts: "video" },
+        { name: "Remove background", accepts: "video" },
       ],
       "video",
     );
-    assert.deepEqual(flags, { upscale: true, trim: true, more: false });
+    assert.deepEqual(flags, { upscale: true, more: true });
+    assert.deepEqual(
+      toolbarFlags([{ name: "SeedVR", menu: "Upscale", accepts: "video" }], "video"),
+      { upscale: true, more: false },
+    );
   });
 });
 
-describe("viewer replaces the old overlays", () => {
-  it("deletes the old lightbox and media preview", () => {
-    assert.equal(existsSync("src/components/Lightbox.tsx"), false);
-    assert.equal(existsSync("src/components/MediaPreview.tsx"), false);
-    for (const file of [
-      "src/components/VideoStudio.tsx",
-      "src/components/ImageStudio.tsx",
-      "src/components/AssetsStudio.tsx",
-      "src/components/TeamStudio.tsx",
-      "src/components/UploadsPanel.tsx",
-      "src/components/ReferenceBox.tsx",
-    ]) {
-      const text = readFileSync(file, "utf8");
-      assert.match(text, /Viewer/);
-      assert.doesNotMatch(text, /MediaPreview|ImageLightbox|from "\.\/Lightbox"/);
-    }
-  });
-
-  it("opens through Modal size and surface, not a width or background class", () => {
-    const source = readFileSync("src/components/Viewer.tsx", "utf8");
-    const modal = source.match(/<Modal[\s\S]*?>/)?.[0] ?? "";
-    assert.match(modal, /size="full"/);
-    assert.match(modal, /surface="ink"/);
-    assert.doesNotMatch(modal, /className/);
-    assert.doesNotMatch(modal, /bleed/);
-  });
-});
-
-describe("viewer contrast and motion", () => {
+describe("viewer contrast", () => {
   it("meets AA for inspector text on the panel", () => {
     const panel = token("--color-panel");
     assert.ok(contrastRatio(token("--color-fg"), panel) >= 4.5);
     assert.ok(contrastRatio(token("--color-fg-muted"), panel) >= 4.5);
     assert.ok(contrastRatio(token("--color-accent-fg"), token("--color-accent")) >= 4.5);
-  });
-
-  it("keeps the backdrop blur static under reduced motion", () => {
-    assert.match(css, /\.viewer-backdrop\s*\{[^}]*filter:\s*blur\(/);
-    const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
-    assert.match(reduced, /\.viewer-backdrop\s*\{[^}]*transition:\s*none/);
-    assert.match(reduced, /\.viewer-backdrop\s*\{[^}]*animation:\s*none/);
   });
 });

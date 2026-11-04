@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { Trash2, X } from "@/components/ui/Icon";
 import { confirmToast } from "@/components/ui/Toast";
 import type { AssetSource, UploadKind } from "@/lib/uploads";
-import { ACCEPT, fileSrc, type Library, type LibraryItem } from "./library";
+import { ACCEPT, fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { Viewer } from "./Viewer";
 import { formatCreated } from "./viewer/model";
@@ -250,6 +250,7 @@ export function UploadsPanel({
           title={previewing.name}
           kind={previewing.kind}
           src={fileSrc(previewing)}
+          poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
           alt={previewing.name}
           prompt={previewing.generation?.prompt || previewing.name}
           details={[

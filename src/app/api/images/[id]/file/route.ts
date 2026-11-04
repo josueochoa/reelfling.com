@@ -12,10 +12,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/images/[id]/
   const asset = image && (await getAsset(user.id, image.key));
   if (!asset) return new Response("Not found", { status: 404 });
   const ext = image.key.split(".").pop();
-  return serveAsset(asset, {
-    range: request.headers.get("range"),
-    ...(params.has("download")
-      ? { downloadName: `image-${id.slice(0, 8)}-${params.get("i") ?? 0}.${ext}` }
-      : {}),
-  });
+  return serveAsset(
+    asset,
+    params.has("download") ? { downloadName: `image-${id.slice(0, 8)}-${params.get("i") ?? 0}.${ext}` } : {},
+  );
 }

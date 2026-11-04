@@ -24,6 +24,7 @@ import { Dropdown } from "./Dropdown";
 import { UnlockHint } from "./UnlockHint";
 import { thumbSrc, type LibraryItem } from "./library";
 import { UploadOverlay } from "./MediaBlocks";
+import { PromptEnhance } from "./PromptEnhance";
 import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
 
 export interface ComposerState {
@@ -199,6 +200,17 @@ export function ImageComposer({
                 ? "Change the broccoli in @Image 1 for… (type @ to reference)"
                 : "Describe the image you want…"
             }
+          />
+          <PromptEnhance
+            prompt={prompt}
+            onChange={(next) => onChange({ prompt: next })}
+            family={model.family}
+            references={references.map((item, i) => {
+              const token = mentionToken("Image", i + 1);
+              return item.name ? `${token} (${item.name})` : token;
+            })}
+            keyed={keyed}
+            onOpenKeys={onOpenKeys}
           />
           {bad.length > 0 && (
             <p className="px-1 text-xs text-red-300">

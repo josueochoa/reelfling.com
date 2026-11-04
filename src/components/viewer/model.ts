@@ -103,14 +103,10 @@ export function keyTargetOf(el: EventTarget | null): KeyTarget {
   return "other";
 }
 
-/**
- * The route string from a generation, when one is stored.
- * The field is optional and is not part of the Generation type here.
- */
-export function detailRoute(record: object): string | undefined {
-  if (!("route" in record)) return undefined;
-  const value = (record as { route?: unknown }).route;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+/** Provider route stored on a generation. Empty values stay off the details list. */
+export function detailRoute(route: string | undefined): string | undefined {
+  const value = route?.trim();
+  return value ? value : undefined;
 }
 
 export interface ViewerDetail {
@@ -128,14 +124,13 @@ export function formatCreated(ms: number): string {
   }).format(ms);
 }
 
-const PILL = ["upscale", "trim"] as const;
-
-/** Which pill buttons the toolbar should show for this asset kind. */
+/** Upscale gets its own pill. Every other tool for this kind sits behind More. */
 export function toolbarFlags(tools: readonly { name: string; menu?: string; accepts: string }[], kind: string) {
-  const labels = new Set(
-    tools.filter((tool) => tool.accepts === kind).map((tool) => (tool.menu ?? tool.name).toLowerCase()),
-  );
-  const pinned = new Set<string>(PILL.filter((name) => labels.has(name)));
-  const more = tools.some((tool) => tool.accepts === kind && !pinned.has((tool.menu ?? tool.name).toLowerCase()));
-  return { upscale: pinned.has("upscale"), trim: pinned.has("trim"), more };
+  const labels = tools
+    .filter((tool) => tool.accepts === kind)
+    .map((tool) => (tool.menu ?? tool.name).toLowerCase());
+  return {
+    upscale: labels.includes("upscale"),
+    more: labels.some((label) => label !== "upscale"),
+  };
 }

@@ -10,7 +10,7 @@ import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
-import { fileSrc, type Library, type LibraryItem } from "./library";
+import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { BulkUpscale } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { Viewer } from "./Viewer";
@@ -357,6 +357,7 @@ export function AssetsStudio({
           title={previewing.name}
           kind={previewing.kind}
           src={fileSrc(previewing)}
+          poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
           alt={previewing.name}
           prompt={previewing.generation?.prompt || previewing.name}
           details={libraryDetails(previewing)}

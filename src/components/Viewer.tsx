@@ -19,7 +19,6 @@ import {
   X,
 } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { Waveform } from "./MediaBlocks";
@@ -59,9 +58,9 @@ export function Viewer({
   references = [],
   details = [],
   error,
-  loading = false,
   pending,
   peaks,
+  poster,
   onClose,
   onPrev,
   onNext,
@@ -91,11 +90,11 @@ export function Viewer({
   references?: ViewerReference[];
   details?: ViewerDetail[];
   error?: string;
-  /** Skeletons fill the inspector while details are still loading. */
-  loading?: boolean;
   /** Shown in place of the file when it isn't ready. */
   pending?: React.ReactNode;
   peaks?: number[];
+  /** Still image for the video element and the blurred backdrop. Never a second video. */
+  poster?: string;
   onClose: () => void;
   onPrev?: () => void;
   onNext?: () => void;
@@ -126,12 +125,13 @@ export function Viewer({
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1);
   const [full, setFull] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const playable = (kind === "video" || kind === "audio") && !!src && !pending;
   const flags = toolbarFlags(tools, toolKind ?? kind);
+  const onKeyRef = useRef<(event: KeyboardEvent) => void>(() => {});
   const showTools = !!toolKind && tools.length > 0;
 
   function close() {
@@ -206,12 +206,11 @@ export function Viewer({
   }, []);
 
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
+    onKeyRef.current = (event: KeyboardEvent) => {
       const root = rootRef.current;
       const target = event.target;
       const dialog = root?.closest("[role='dialog']");
-      const inside =
-        target instanceof Node && (root?.contains(target) || target === dialog);
+      const inside = target instanceof Node && (root?.contains(target) || target === dialog);
       if (!inside) return;
       const action = viewerKeyAction({
         key: event.key,
@@ -219,8 +218,7 @@ export function Viewer({
         target: keyTargetOf(event.target),
       });
       if (action.type === "ignore" || action.type === "close") return;
-      if (action.type === "play" && !playable) return;
-      if (action.type === "seek" && !playable) return;
+      if ((action.type === "play" || action.type === "seek") && !playable) return;
       event.preventDefault();
       if (action.type === "play") togglePlay();
       else if (action.type === "step") {
@@ -229,9 +227,13 @@ export function Viewer({
       } else if (action.type === "seek") seekBy(action.seconds);
       else if (action.type === "fullscreen") toggleFull();
     };
+  });
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => onKeyRef.current(event);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   const aria = scrubberAria(time, duration);
   const pct = duration > 0 ? Math.min(100, (time / duration) * 100) : 0;
@@ -240,7 +242,7 @@ export function Viewer({
     <Modal size="full" surface="ink" onClose={close} label={label} showClose={false}>
       <div ref={rootRef} data-testid="viewer" className="flex h-full min-h-0 flex-col bg-ink lg:flex-row">
         <div ref={stageRef} className="relative flex min-h-[42dvh] min-w-0 flex-1 flex-col bg-ink">
-          <Backdrop kind={kind} src={kind === "image" ? src : undefined} videoSrc={kind === "video" ? src : undefined} />
+          <Backdrop src={kind === "image" ? src : poster} />
           <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-14 py-4">
             {pending ? (
               pending
@@ -254,8 +256,8 @@ export function Viewer({
                   mediaRef.current = node;
                 }}
                 src={src}
+                poster={poster}
                 playsInline
-                muted
                 preload="metadata"
                 className="max-h-full max-w-full object-contain"
                 onPlay={() => setPlaying(true)}
@@ -289,7 +291,7 @@ export function Viewer({
           </div>
 
           <div className="relative z-10 flex flex-col items-center gap-2 px-4 pb-4">
-            {(onExtend || flags.upscale || flags.trim || flags.more) && (
+            {(onExtend || flags.upscale || flags.more) && (
               <div className="flex items-center gap-0.5 rounded-full border border-line bg-surface-3/95 p-1">
                 {onExtend && (
                   <Pill testId="viewer-extend" onClick={onExtend}>
@@ -299,11 +301,6 @@ export function Viewer({
                 {flags.upscale && (
                   <Pill testId="viewer-upscale" onClick={() => openTool("Upscale")}>
                     Upscale
-                  </Pill>
-                )}
-                {flags.trim && (
-                  <Pill testId="viewer-trim" onClick={() => openTool("Trim")}>
-                    Trim
                   </Pill>
                 )}
                 {flags.more && (
@@ -361,10 +358,6 @@ export function Viewer({
         </div>
 
         <aside className="flex h-[46%] w-full shrink-0 flex-col border-t border-line bg-panel lg:h-full lg:w-[320px] lg:border-t-0 lg:border-l">
-          {loading ? (
-            <InspectorSkeleton />
-          ) : (
-            <>
               <header className="flex items-start justify-between gap-3 px-4 pt-4">
                 <h2 className="min-w-0 truncate text-title text-fg">{title || "Details"}</h2>
                 <IconButton label="Close" onClick={close}>
@@ -478,25 +471,19 @@ export function Viewer({
                   </IconButton>
                 )}
               </footer>
-            </>
-          )}
         </aside>
       </div>
     </Modal>
   );
 }
 
-function Backdrop({ kind, src, videoSrc }: { kind: string; src?: string; videoSrc?: string }) {
+function Backdrop({ src }: { src?: string }) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      {kind === "image" && src ? (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden bg-ink">
+      {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" className="viewer-backdrop size-full object-cover" />
-      ) : kind === "video" && videoSrc ? (
-        <video src={videoSrc} muted playsInline preload="metadata" className="viewer-backdrop size-full object-cover" />
-      ) : (
-        <div className="size-full bg-ink" />
-      )}
+      ) : null}
       <div className="absolute inset-0 bg-ink/75" />
     </div>
   );
@@ -684,23 +671,6 @@ function Lineage({ lineage }: { lineage: ViewerLineage }) {
           ))}
         </p>
       )}
-    </div>
-  );
-}
-
-function InspectorSkeleton() {
-  return (
-    <div className="space-y-3 p-4" aria-busy="true" aria-label="Loading details">
-      <Skeleton className="h-4 w-28" />
-      <Skeleton className="h-8 w-full" />
-      <Skeleton className="h-20 w-full" />
-      <div className="flex gap-2">
-        <Skeleton className="size-12" />
-        <Skeleton className="size-12" />
-      </div>
-      <Skeleton className="h-3 w-full" />
-      <Skeleton className="h-3 w-4/5" />
-      <Skeleton className="h-24 w-full" />
     </div>
   );
 }

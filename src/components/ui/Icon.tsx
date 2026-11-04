@@ -9,7 +9,6 @@ export {
   Lock,
   Maximize2,
   Minimize2,
-  MoreHorizontal,
   Pause,
   Play,
   RotateCcw,
