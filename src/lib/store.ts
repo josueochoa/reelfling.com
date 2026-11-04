@@ -2,6 +2,8 @@
 // Finished videos are copied into the workspace's R2 bucket (see storage.ts).
 
 import { providerForWorkspace } from "./providers";
+import { getCredentials } from "./keys";
+import { fetchFalOutput, pollFal } from "./providers/fal";
 import { byWorkspace, persistJson, wsArgs } from "./scope";
 import { creatorsIn, deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
 import { all, first, run } from "./db";
@@ -27,13 +29,14 @@ export async function getGeneration(workspaceId: string, id: string): Promise<Ge
 
 export async function insertGeneration(workspaceId: string, gen: Generation, createdBy: string) {
   await run(
-    "INSERT INTO generations (id, user_id, workspace_id, created_by, created_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO generations (id, user_id, workspace_id, created_by, created_at, data, route) VALUES (?, ?, ?, ?, ?, ?, ?)",
     gen.id,
     createdBy,
     workspaceId,
     createdBy,
     gen.createdAt,
     persistJson(gen),
+    gen.route ?? null,
   );
 }
 
@@ -68,14 +71,35 @@ export async function unfinishedGenerations(limit: number, maxAgeMs: number) {
   );
 }
 
+function studioProvider(gen: Generation) {
+  return gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+}
+
+/** fal polls the URLs from submit. Every other provider uses its task id. */
+async function syncTask(keyWorkspace: string, gen: Generation) {
+  if ((gen.route ?? gen.provider) !== "fal") {
+    return (await providerForWorkspace(keyWorkspace, studioProvider(gen))).getTask(gen.taskId);
+  }
+  // Mock runs never receive queue URLs, so they stay queued.
+  if (!gen.falStatusUrl || !gen.falResponseUrl) return { status: gen.status };
+  const creds = await getCredentials(keyWorkspace, "fal");
+  if (!creds) return { status: gen.status };
+  const snap = await pollFal(creds.apiKey, { statusUrl: gen.falStatusUrl, responseUrl: gen.falResponseUrl });
+  return { status: snap.status, videoUrl: snap.outputs[0]?.url, error: snap.error };
+}
+
 /** The generation's stored video, copying it from the provider first if needed (their URLs expire). */
 export async function ensureStoredVideo(workspaceId: string, gen: Generation): Promise<Asset> {
   const key = videoKey(gen.id);
   let asset = await getAsset(workspaceId, key);
   if (!asset) {
     const keyWorkspace = gen.keyWorkspaceId || workspaceId;
-    const provider = await providerForWorkspace(keyWorkspace, gen.provider ?? "modelark");
-    const res = await provider.fetchVideo(gen.taskId, { videoUrl: gen.remoteVideoUrl });
+    const res =
+      (gen.route ?? gen.provider) === "fal"
+        ? await fetchFalOutput(gen.remoteVideoUrl || "")
+        : await (await providerForWorkspace(keyWorkspace, studioProvider(gen))).fetchVideo(gen.taskId, {
+            videoUrl: gen.remoteVideoUrl,
+          });
     if (!res.ok) throw new Error(`Video download failed (${res.status})`);
     asset = await putAsset(workspaceId, {
       key,
@@ -96,7 +120,7 @@ export async function syncGeneration(workspaceId: string, id: string): Promise<G
 
   if (!TERMINAL_STATUSES.includes(gen.status)) {
     const keyWorkspace = gen.keyWorkspaceId || workspaceId;
-    const task = await (await providerForWorkspace(keyWorkspace, gen.provider ?? "modelark")).getTask(gen.taskId);
+    const task = await syncTask(keyWorkspace, gen);
     const done = TERMINAL_STATUSES.includes(task.status);
     gen = await updateGeneration(workspaceId, id, {
       status: task.status,

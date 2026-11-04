@@ -1,4 +1,4 @@
-import type { CameraCapabilities, ImageModel, ImageResolution, VideoModel } from "./types";
+import type { CameraCapabilities, ImageModel, ImageResolution, PerSecondPrice, TokenPrice, VideoModel } from "./types";
 
 const RATIOS = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"] as const;
 
@@ -55,6 +55,27 @@ function image(model: ImageModel & { price: NonNullable<ImageModel["price"]> }):
 
 const perImage = (price: Record<ImageResolution, number>) => ({ type: "per_image" as const, byResolution: price });
 
+/** Per-second price with ArgoLink's reference-video billing (floor seconds, 5/3 minimum). */
+function argolinkSeconds(
+  byResolution: PerSecondPrice["byResolution"],
+  byResolutionWithVideo: PerSecondPrice["byResolution"],
+): PerSecondPrice {
+  return { type: "per_second", byResolution, byResolutionWithVideo, referenceBilling: "argolink" };
+}
+
+const SEEDANCE_PIXELS_4K = { ...SEEDANCE_2_PIXELS, "4K": { width: 3840, height: 2160 } } as const;
+
+/** OpenRouter live SKUs, Nov 2026: video_tokens and video_tokens_with_video_input. */
+function openRouterTokens(
+  usdPerToken: number,
+  usdPerTokenWithVideo: number,
+  byResolution: Record<string, number>,
+  byResolutionWithVideo: Record<string, number>,
+  pixels: TokenPrice["pixels"],
+): TokenPrice {
+  return { type: "tokens", usdPerToken, usdPerTokenWithVideo, byResolution, byResolutionWithVideo, fps: 24, pixels };
+}
+
 /** ModelArk and ArgoLink. Edited by hand; fal and OpenRouter come from catalog:sync. */
 export const HAND_MODELS: Array<VideoModel | ImageModel> = [
   video({
@@ -65,7 +86,37 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     group: "video",
     task: "t2v",
     tasks: ["t2v", "i2v", "ref2v"],
-    routes: [{ provider: "modelark", endpoint: "dreamina-seedance-2-0-260128", mapper: "modelark.video" }],
+    routes: [
+      { provider: "modelark", endpoint: "dreamina-seedance-2-0-260128", mapper: "modelark.video" },
+      {
+        provider: "argolink",
+        endpoint: "seedance-2.0",
+        mapper: "argolink.video",
+        price: argolinkSeconds(
+          { "480p": 0.0598, "720p": 0.129, "1080p": 0.318, "4k": 0.661 },
+          { "480p": 0.0367, "720p": 0.0792, "1080p": 0.194, "4k": 0.397 },
+        ),
+      },
+      {
+        provider: "openrouter",
+        endpoint: "bytedance/seedance-2.0",
+        mapper: "openrouter.video",
+        price: openRouterTokens(
+          0.000007,
+          0.0000043,
+          { "480p": 0.000007, "720p": 0.000007, "1080p": 0.0000077, "4K": 0.000004 },
+          { "480p": 0.0000043, "720p": 0.0000043, "1080p": 0.0000047, "4K": 0.0000024 },
+          SEEDANCE_PIXELS_4K,
+        ),
+      },
+      {
+        // fal publishes with-audio per-second prices only.
+        provider: "fal",
+        endpoint: "bytedance/seedance-2.0/text-to-video",
+        mapper: "fal.queue",
+        price: { type: "per_second", byResolution: { "720p": 0.3034, "1080p": 0.682 }, byResolutionWithAudio: { "720p": 0.3034, "1080p": 0.682 } },
+      },
+    ],
     promptRequired: false,
     refSyntax: "brackets",
     capabilities: {
@@ -78,11 +129,15 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       frames: { start: true, middle: false, end: true },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    // $7.00 / M tokens at 480p and 720p, $7.70 / M at 1080p, no video input.
+    // Without video: $7.00 / M tokens at 480p and 720p, $7.70 / M at 1080p.
+    // With video: $4.30 / M at 480p and 720p, $4.70 / M at 1080p. Input video seconds
+    // are added to the token count; reference images and audio are free.
     price: {
       type: "tokens",
       usdPerToken: 0.000007,
+      usdPerTokenWithVideo: 0.0000043,
       byResolution: { "480p": 0.000007, "720p": 0.000007, "1080p": 0.0000077 },
+      byResolutionWithVideo: { "480p": 0.0000043, "720p": 0.0000043, "1080p": 0.0000047 },
       fps: 24,
       pixels: SEEDANCE_2_PIXELS,
     },
@@ -128,7 +183,37 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     group: "video",
     task: "t2v",
     tasks: ["t2v", "i2v", "ref2v"],
-    routes: [{ provider: "argolink", endpoint: "seedance-2.5", mapper: "argolink.video" }],
+    routes: [
+      { provider: "argolink", endpoint: "seedance-2.5", mapper: "argolink.video" },
+      {
+        provider: "openrouter",
+        endpoint: "bytedance/seedance-2.5",
+        mapper: "openrouter.video",
+        price: openRouterTokens(
+          0.0000107,
+          0.0000064,
+          { "480p": 0.0000107, "720p": 0.0000107 },
+          { "480p": 0.0000064, "720p": 0.0000064 },
+          SEEDANCE_2_PIXELS,
+        ),
+      },
+      {
+        // fal: $0.0214 / 1k tokens at 480p and 720p. Input video seconds are added.
+        // 480p frame is fal's published 16:9 size (864×496).
+        provider: "fal",
+        endpoint: "bytedance/seedance-2.5/text-to-video",
+        mapper: "fal.queue",
+        price: {
+          type: "tokens",
+          usdPerToken: 0.0000214,
+          usdPerTokenWithVideo: 0.0000214,
+          byResolution: { "480p": 0.0000214, "720p": 0.0000214 },
+          byResolutionWithVideo: { "480p": 0.0000214, "720p": 0.0000214 },
+          fps: 24,
+          pixels: { "480p": { width: 864, height: 496 }, "720p": { width: 1280, height: 720 } },
+        },
+      },
+    ],
     promptRequired: true,
     refSyntax: "at",
     capabilities: {
@@ -137,7 +222,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 30, default: 5 },
       references: { image: 30, video: 10, audio: 10, total: 50 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0874, "720p": 0.196, "1080p": 0.483 } },
+    // https://argolink.io/en/models/seedance-2.5 — with-video rates are the lower tier.
+    price: argolinkSeconds(
+      { "480p": 0.0874, "720p": 0.196, "1080p": 0.483 },
+      { "480p": 0.0523, "720p": 0.117, "1080p": 0.289 },
+    ),
   }),
   video({
     id: "seedance-2.0",
@@ -156,7 +245,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 15, default: 5 },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0598, "720p": 0.129, "1080p": 0.318, "4k": 0.661 } },
+    // https://argolink.io/en/models/seedance-2.0 — kept so older generations still resolve this id.
+    price: argolinkSeconds(
+      { "480p": 0.0598, "720p": 0.129, "1080p": 0.318, "4k": 0.661 },
+      { "480p": 0.0367, "720p": 0.0792, "1080p": 0.194, "4k": 0.397 },
+    ),
   }),
   video({
     id: "seedance-2.0-fast",
@@ -166,7 +259,27 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     group: "video",
     task: "t2v",
     tasks: ["t2v", "i2v", "ref2v"],
-    routes: [{ provider: "argolink", endpoint: "seedance-2.0-fast", mapper: "argolink.video" }],
+    routes: [
+      { provider: "argolink", endpoint: "seedance-2.0-fast", mapper: "argolink.video" },
+      {
+        provider: "openrouter",
+        endpoint: "bytedance/seedance-2.0-fast",
+        mapper: "openrouter.video",
+        price: openRouterTokens(
+          0.0000042,
+          0.000002475,
+          { "480p": 0.0000042, "720p": 0.0000042 },
+          { "480p": 0.000002475, "720p": 0.000002475 },
+          SEEDANCE_2_PIXELS,
+        ),
+      },
+      {
+        provider: "fal",
+        endpoint: "bytedance/seedance-2.0/fast/text-to-video",
+        mapper: "fal.queue",
+        price: { type: "per_second", byResolution: { "720p": 0.2419 }, byResolutionWithAudio: { "720p": 0.2419 } },
+      },
+    ],
     promptRequired: true,
     refSyntax: "at",
     capabilities: {
@@ -175,7 +288,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 15, default: 5 },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0478, "720p": 0.103 } },
+    // https://argolink.io/en/models/seedance-2.0-fast
+    price: argolinkSeconds(
+      { "480p": 0.0478, "720p": 0.103 },
+      { "480p": 0.0282, "720p": 0.0607 },
+    ),
   }),
   video({
     id: "seedance-2.0-mini",
@@ -185,7 +302,21 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     group: "video",
     task: "t2v",
     tasks: ["t2v", "i2v", "ref2v"],
-    routes: [{ provider: "argolink", endpoint: "seedance-2.0-mini", mapper: "argolink.video" }],
+    routes: [
+      { provider: "argolink", endpoint: "seedance-2.0-mini", mapper: "argolink.video" },
+      {
+        provider: "openrouter",
+        endpoint: "bytedance/seedance-2.0-mini",
+        mapper: "openrouter.video",
+        price: openRouterTokens(
+          0.0000035,
+          0.0000021,
+          { "480p": 0.0000035, "720p": 0.0000035 },
+          { "480p": 0.0000021, "720p": 0.0000021 },
+          SEEDANCE_2_PIXELS,
+        ),
+      },
+    ],
     promptRequired: true,
     refSyntax: "at",
     capabilities: {
@@ -194,7 +325,11 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       durations: { min: 4, max: 15, default: 5 },
       references: { image: 9, video: 3, audio: 3, total: 15 },
     },
-    price: { type: "per_second", byResolution: { "480p": 0.0299, "720p": 0.0643 } },
+    // https://argolink.io/en/models/seedance-2.0-mini
+    price: argolinkSeconds(
+      { "480p": 0.0299, "720p": 0.0643 },
+      { "480p": 0.0179, "720p": 0.0386 },
+    ),
   }),
   image({
     id: "nano-banana-2.1",
@@ -206,8 +341,15 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     task: "image",
     tasks: ["image", "image-edit"],
     routes: [
-      { provider: "argolink", endpoint: "nano-banana-2.1", mapper: "argolink.image.google" },
-      { provider: "openrouter", endpoint: "google/gemini-nano-banana-2.1", mapper: "openrouter.image" },
+      { provider: "argolink", endpoint: "nano-banana-2.1", mapper: "argolink.image.google", price: perImage({ "1k": 0.02, "2k": 0.02, "4k": 0.025 }) },
+      {
+        // Live OpenRouter endpoint bills $0.00003 per output-image token.
+        // Token counts per resolution are the existing estimate (~1120 / 1680 / 2520).
+        provider: "openrouter",
+        endpoint: "google/gemini-nano-banana-2.1",
+        mapper: "openrouter.image",
+        price: perImage({ "1k": 0.034, "2k": 0.05, "4k": 0.076 }),
+      },
     ],
     promptRequired: true,
     refSyntax: "plain",
@@ -250,8 +392,14 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
     task: "image",
     tasks: ["image", "image-edit"],
     routes: [
-      { provider: "argolink", endpoint: "gpt-image-2.5-sunburst", mapper: "argolink.image.openai" },
-      { provider: "openrouter", endpoint: "openai/gpt-image-2.5-sunburst", mapper: "openrouter.image" },
+      { provider: "argolink", endpoint: "gpt-image-2.5-sunburst", mapper: "argolink.image.openai", price: perImage({ "1k": 0.015, "2k": 0.015, "4k": 0.02 }) },
+      {
+        // Same $0.00003 output-token rate. Counts are the medium-quality estimate.
+        provider: "openrouter",
+        endpoint: "openai/gpt-image-2.5-sunburst",
+        mapper: "openrouter.image",
+        price: perImage({ "1k": 0.04, "2k": 0.08, "4k": 0.16 }),
+      },
     ],
     promptRequired: true,
     refSyntax: "plain",

@@ -4,7 +4,7 @@ import { enqueueImageJob, insertImageGeneration, listImageGenerations, type Imag
 import { invalidMentions } from "@/lib/mentions";
 import type { KeySource } from "@/lib/scope";
 import {
-  estimateCost,
+  estimateRouteCost,
   getImageModel,
   imageProviderFor,
   imageRequestError,
@@ -15,6 +15,8 @@ import {
 } from "@/lib/registry";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
+import { preferredRoute } from "@/lib/registry/routing";
+import { getRoutePreference } from "@/lib/routes";
 import { requireWorkspace } from "@/lib/workspaces";
 
 export async function GET(request: Request) {
@@ -37,6 +39,8 @@ export interface ImageRequest {
   count: number;
   /** Library keys of reference images, in order. */
   references: string[];
+  /** Provider route chosen in the picker or restored by Reuse. */
+  route?: string;
 }
 
 const bad = (error: string) => Response.json({ error }, { status: 400 });
@@ -62,16 +66,19 @@ export async function POST(request: Request) {
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
     const requested: KeySource =
       workspace.kind === "team" && req.keySource === "member" ? "member" : workspace.kind === "team" ? "team" : "member";
-    const active = requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
+    const legacy = requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
+    const saved = await getRoutePreference(user.id, model.id);
+    const explicit = typeof req.route === "string" ? req.route : null;
     const { route, source } = await resolveAvailableRoute(model, workspace, user.id, {
       requested,
-      prefer: (keyed) => imageProviderFor(active, [...keyed]),
+      // imageProviderFor is the fallback: active image key, else any image key.
+      prefer: (keyed) => preferredRoute(model, keyed, [explicit, saved, imageProviderFor(legacy, [...keyed])])?.provider,
     });
     if (route.provider !== "argolink" && route.provider !== "openrouter")
       return bad("This model isn't available on the image tab.");
     const imageProvider: ImageKeyProvider = route.provider;
     await assertStorageAvailable(workspace.id);
-    const estimate = estimateCost(model, { resolution: req.resolution, count: req.count }) ?? 0;
+    const estimate = estimateRouteCost(model, imageProvider, { resolution: req.resolution, count: req.count }) ?? 0;
     const opened = await openGenerationKey({
       workspace,
       userId: user.id,

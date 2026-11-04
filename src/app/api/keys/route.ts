@@ -1,10 +1,10 @@
 import { errorResponse } from "@/lib/auth";
-import { deleteKey, listKeys, savedKeyBody, saveKey, scrubSecret } from "@/lib/keys";
+import { deleteKey, savedKeyBody, saveKey, scrubSecret } from "@/lib/keys";
 import { mockProviders } from "@/lib/providers/mock";
-import { isStudioProvider, MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
+import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { createProvider } from "@/lib/providers";
 import { verifyFalKey } from "@/lib/providers/fal";
-import { requireKeyManager, requireWorkspace, setActiveProvider } from "@/lib/workspaces";
+import { requireKeyManager, requireWorkspace } from "@/lib/workspaces";
 
 /** { provider, apiKey, baseUrl? } — verifies the key, then stores it encrypted. */
 export async function PUT(request: Request) {
@@ -31,24 +31,19 @@ export async function PUT(request: Request) {
     }
 
     await saveKey(workspace.id, body.provider, apiKey, baseUrl, user.id, { team: workspace.kind === "team" });
-    if (!workspace.activeProvider && isStudioProvider(body.provider)) await setActiveProvider(workspace, body.provider);
     return Response.json(savedKeyBody(apiKey, detail));
   } catch (e) {
     return errorResponse(e);
   }
 }
 
-/** ?provider=… — forget a key. Falls back to another studio key, if any. */
+/** ?provider=… — forget a key. Generations pick another keyed route on their own. */
 export async function DELETE(request: Request) {
   try {
     const { workspace } = await requireWorkspace(request);
     requireKeyManager(workspace);
     const provider = new URL(request.url).searchParams.get("provider") as ProviderId;
     await deleteKey(workspace.id, provider);
-    if (workspace.activeProvider === provider) {
-      const next = (await listKeys(workspace.id)).map((k) => k.provider).find(isStudioProvider) ?? null;
-      await setActiveProvider(workspace, next);
-    }
     return new Response(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

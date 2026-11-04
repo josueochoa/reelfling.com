@@ -82,18 +82,18 @@ describe("availability", () => {
     const model = getModel("seedance-2.5");
     assert.ok(model);
     const teamOnly = keyedForAccount({
-      keys: [{ provider: "fal" }],
+      keys: [{ provider: "modelark" }],
       personalKeys: [{ provider: "argolink" }],
       workspace: { kind: "team", memberKeys: false },
     });
     assert.equal(teamOnly.has("argolink"), false);
     assert.equal(availability(model, teamOnly).available, false);
     const allowed = keyedForAccount({
-      keys: [{ provider: "fal" }],
+      keys: [{ provider: "modelark" }],
       personalKeys: [{ provider: "argolink" }],
       workspace: { kind: "team", memberKeys: true },
     });
-    assert.equal(allowed.has("fal"), true);
+    assert.equal(allowed.has("argolink"), true);
     assert.equal(availability(model, allowed).available, true);
     const personal = keyedForAccount({
       keys: [{ provider: "argolink" }],
@@ -124,7 +124,7 @@ describe("availability", () => {
     assert.ok(withRefs && isVideo(withRefs));
     assert.ok(noRefs && isVideo(noRefs));
     assert.equal(availability({ routes: modeRoutes(withRefs, "references") }, new Set(["argolink"])).available, true);
-    assert.equal(modeBlock(withRefs, "references", new Set()), "This needs an argolink key.");
+    assert.equal(modeBlock(withRefs, "references", new Set()), "This needs an argolink, fal or openrouter key.");
     assert.equal(modeRoutes(noRefs, "references").length, 0);
     assert.equal(modeBlock(noRefs, "references", new Set(["modelark"])), null);
     assert.equal(modeBlock(noRefs, "frames", new Set()), "This needs a modelark key.");

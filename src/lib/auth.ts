@@ -103,10 +103,6 @@ export async function upsertUser(profile: Identity, { admit = false } = {}): Pro
   return user;
 }
 
-export async function setActiveProvider(userId: string, provider: StudioProviderId | null) {
-  await run("UPDATE users SET active_provider = ? WHERE id = ?", provider, userId);
-}
-
 // ---------------------------------------------------------------- Cloudflare Access
 
 /** Accepts "https://team.cloudflareaccess.com" or just "team". */

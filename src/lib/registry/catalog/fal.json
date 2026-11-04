@@ -271,6 +271,11 @@
       "group": "video",
       "id": "fal:fal-ai/kling-video/v3/pro/text-to-video",
       "name": "Kling Video v3 Text to Video [Pro]",
+      "price": {
+        "byResolution": { "*": 0.112 },
+        "byResolutionWithAudio": { "*": 0.168 },
+        "type": "per_second"
+      },
       "promptRequired": true,
       "refSyntax": "at",
       "routes": [

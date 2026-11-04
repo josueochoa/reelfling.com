@@ -49,7 +49,7 @@ export function routeFor<T extends { routes: readonly Route[] }>(model: T, provi
 }
 
 export { cameraMoveLabel, cameraMovesFor, keptCameraMove, CAMERA_MOVES } from "./camera";
-export { estimateCost, nearestRatio, ratioAllowed } from "./price";
+export { estimateCost, estimateRouteCost, nearestRatio, ratioAllowed } from "./price";
 export { mentionSyntax } from "./syntax";
 export { imageRequestError, videoRequestError } from "./validate";
 export { assertRegistry, parseModel } from "./parse";

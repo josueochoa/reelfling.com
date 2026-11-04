@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { getImageModel, imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed } from "@/lib/registry";
 import { keyedForAccount } from "@/lib/registry/availability";
+import { preferredRoute } from "@/lib/registry/routing";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
@@ -81,12 +82,20 @@ export function ImageStudio({
   const ownKeys = me?.workspace.kind === "team" && me.workspace.memberKeys;
   const usingOwn = !!ownKeys && keySource === "member";
   const keyed = me ? keyedForAccount(me) : new Set<string>();
-  const imageProvider = me
-    ? imageProviderFor(
-        usingOwn ? me.user.activeProvider : me.workspace.activeProvider,
-        (usingOwn ? me.personalKeys : me.keys).map((key) => key.provider),
-      )
-    : undefined;
+  const defaultProvider = usingOwn ? (me?.user.activeProvider ?? null) : (me?.workspace.activeProvider ?? null);
+  const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
+  const imageKeys = (usingOwn ? me?.personalKeys : me?.keys)?.map((key) => key.provider) ?? [];
+  const imageRoute = preferredRoute(state.model, keyed, [
+    state.route,
+    routePreferences[state.model.id],
+    imageProviderFor(defaultProvider, imageKeys),
+  ])?.provider;
+  const imageProvider = imageRoute && (imageRoute === "argolink" || imageRoute === "openrouter") ? imageRoute : undefined;
+
+  function saveRoute(modelId: string, provider: string) {
+    setRoutePreferences((prev) => ({ ...prev, [modelId]: provider }));
+    void apiJson("/api/me", { method: "PATCH", body: JSON.stringify({ modelId, provider }) }).catch(() => {});
+  }
   const now = useNow(gens.some(pending));
 
   const upsert = useCallback((gen: ImageGeneration) => {
@@ -181,6 +190,7 @@ export function ImageStudio({
             quality: model.capabilities.qualities ? state.quality : undefined,
             count: state.count,
             references: references.map((r) => r.key),
+            ...(imageRoute ? { route: imageRoute } : {}),
             ...(ownKeys ? { keySource } : {}),
           }),
         }),
@@ -225,6 +235,7 @@ export function ImageStudio({
   /** Back into the composer: prompt, settings and the reference images still in Uploads. */
   function reuse(gen: ImageGeneration) {
     const model = getImageModel(gen.model) ?? state.model;
+    if (gen.route) saveRoute(model.id, gen.route);
     setState({
       model,
       prompt: gen.prompt,
@@ -232,6 +243,7 @@ export function ImageStudio({
       resolution: gen.resolution,
       quality: gen.quality ?? state.quality,
       count: gen.count,
+      route: gen.route,
     });
     setRefIds(gen.references.filter((k) => byId.has(k)));
     setOpen(null);
@@ -367,6 +379,9 @@ export function ImageStudio({
             submitting={submitting}
             error={error}
             keyed={keyed}
+            routePreferences={routePreferences}
+            defaultProvider={defaultProvider}
+            onSaveRoute={saveRoute}
             onOpenKeys={onOpenKeys}
           />
         </div>

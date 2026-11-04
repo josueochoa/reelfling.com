@@ -1,9 +1,9 @@
 import { authMode, errorResponse, signOutUrl } from "@/lib/auth";
 import { listKeys } from "@/lib/keys";
-import { isStudioProvider, type ProviderId } from "@/lib/registry";
 import { memberCap, monthSpend } from "@/lib/spend";
 import { storageUsage } from "@/lib/storage";
-import { invitesForEmail, listWorkspaces, requireKeyManager, requireWorkspace, setActiveProvider } from "@/lib/workspaces";
+import { isRouteProvider, listRoutePreferences, setRoutePreference } from "@/lib/routes";
+import { invitesForEmail, listWorkspaces, requireWorkspace } from "@/lib/workspaces";
 
 /**
  * The signed-in user, the workspace this tab is in (masked keys, route, storage),
@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       personalKeys,
       storage,
       cap: workspace.kind === "team" ? { usd: cap, monthUsd } : null,
+      routePreferences: await listRoutePreferences(user.id),
       auth: { mode: authMode(), signOutUrl: signOutUrl(), dev: process.env.NODE_ENV === "development" },
     });
   } catch (e) {
@@ -38,16 +39,15 @@ export async function GET(request: Request) {
   }
 }
 
-/** { activeProvider } — which of this workspace's keys generations use. */
+/** { modelId, provider } — this user's route for one model. */
 export async function PATCH(request: Request) {
   try {
-    const { workspace } = await requireWorkspace(request);
-    requireKeyManager(workspace);
-    const { activeProvider } = (await request.json()) as { activeProvider: ProviderId };
-    if (!isStudioProvider(activeProvider)) return Response.json({ error: "Unknown provider" }, { status: 400 });
-    if (!(await listKeys(workspace.id)).some((k) => k.provider === activeProvider))
-      return Response.json({ error: "Add a key for that provider first" }, { status: 400 });
-    await setActiveProvider(workspace, activeProvider);
+    const { user } = await requireWorkspace(request);
+    const body = (await request.json()) as { modelId?: string; provider?: string };
+    const modelId = body.modelId?.trim() ?? "";
+    if (!modelId || modelId.length > 200) return Response.json({ error: "Unknown model" }, { status: 400 });
+    if (!body.provider || !isRouteProvider(body.provider)) return Response.json({ error: "Unknown provider" }, { status: 400 });
+    await setRoutePreference(user.id, modelId, body.provider);
     return Response.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

@@ -17,6 +17,8 @@ export interface Me {
   storage: Awaited<ReturnType<typeof storageUsage>>;
   /** Team only: this member's cap and month-to-date team-key spend. */
   cap: { usd: number | null; monthUsd: number } | null;
+  /** This user's saved provider per model id. */
+  routePreferences?: Record<string, string>;
   auth: { mode: AuthMode; signOutUrl: string; dev?: boolean };
 }
 

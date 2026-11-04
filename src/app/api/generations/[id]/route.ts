@@ -1,5 +1,7 @@
 import { errorResponse } from "@/lib/auth";
+import { getCredentials } from "@/lib/keys";
 import { providerForWorkspace } from "@/lib/providers";
+import { cancelFal } from "@/lib/providers/fal";
 import { getGeneration, removeGeneration, syncGeneration } from "@/lib/store";
 import { requireCanModify, requireWorkspace } from "@/lib/workspaces";
 
@@ -23,9 +25,18 @@ export async function DELETE(request: Request, ctx: RouteContext<"/api/generatio
     const gen = await getGeneration(workspace.id, id);
     if (!gen) return Response.json({ error: "Not found" }, { status: 404 });
     requireCanModify(workspace, user, gen.createdBy);
-    await providerForWorkspace(gen.keyWorkspaceId || workspace.id, gen.provider ?? "modelark")
-      .then((p) => p.deleteTask(gen.taskId))
-      .catch(() => {});
+    const keyWorkspace = gen.keyWorkspaceId || workspace.id;
+    if ((gen.route ?? gen.provider) === "fal") {
+      if (gen.falCancelUrl) {
+        const creds = await getCredentials(keyWorkspace, "fal");
+        if (creds) await cancelFal(creds.apiKey, gen.falCancelUrl).catch(() => {});
+      }
+    } else {
+      const provider = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+      await providerForWorkspace(keyWorkspace, provider)
+        .then((p) => p.deleteTask(gen.taskId))
+        .catch(() => {});
+    }
     await removeGeneration(workspace.id, id);
     return new Response(null, { status: 204 });
   } catch (e) {

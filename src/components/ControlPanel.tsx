@@ -5,11 +5,13 @@ import { invalidMentions, mentionToken, remapMentions, type RefCounts, type RefK
 import {
   cameraMoveLabel,
   cameraMovesFor,
-  estimateCost,
+  estimateRouteCost,
   keptCameraMove,
   type CameraMove,
+  type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
+import { preferredRoute } from "@/lib/registry/routing";
 import {
   availability,
   availabilityHint,
@@ -49,6 +51,8 @@ export interface Preset {
   notice?: string;
   /** Camera preset to restore. A move this model ignores is dropped. */
   cameraMove?: string;
+  /** Provider this generation ran on. Reuse sends it again. */
+  route?: string;
 }
 
 /** A frame is a library item, or a one-off URL that isn't in the library. */
@@ -96,6 +100,11 @@ interface Props {
   models: VideoModel[];
   /** Providers the active workspace can run on. Names only, never key material. */
   keyed: ReadonlySet<string>;
+  /** Saved provider per model id. */
+  routePreferences?: Readonly<Record<string, string>>;
+  /** users.active_provider, used only when this model has no saved route. */
+  defaultProvider?: string | null;
+  onSaveRoute?: (modelId: string, provider: string) => void;
   tools: readonly CatalogTool[];
   preset: Preset;
   onGenerate: (req: GenerateRequest) => Promise<boolean>;
@@ -140,6 +149,9 @@ export function ControlPanel({
   ref,
   models,
   keyed,
+  routePreferences,
+  defaultProvider,
+  onSaveRoute,
   tools,
   preset,
   onGenerate,
@@ -177,6 +189,7 @@ export function ControlPanel({
   const [cameraMove, setCameraMove] = useState<CameraMove | undefined>(() =>
     keptCameraMove(initialModel, preset.cameraMove),
   );
+  const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
   const [cameraFixed, setCameraFixed] = useState(false);
   const [watermark, setWatermark] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -197,7 +210,6 @@ export function ControlPanel({
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
   const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
-  const cost = estimateCost(model, { resolution, duration, audio: audioOn });
 
   const byId = new Map(library.items.map((i) => [i.id, i]));
   const frameItem = (frame?: FrameRef) =>
@@ -232,6 +244,14 @@ export function ControlPanel({
 
   // @-mentions only resolve in references mode; anywhere else they're flagged.
   const refs = effectiveMode === "references";
+  const referenceVideos = refs ? refList.filter((r) => r.item.kind === "video") : [];
+  // Images and audio are not billed. A video with no readable length still selects the with-video rate.
+  const referenceVideoSeconds = referenceVideos.length
+    ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
+    : undefined;
+  const routeProvider = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider])?.provider;
+  const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds };
+  const cost = estimateRouteCost(model, routeProvider, estimateInput);
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
   const badMentions = invalidMentions(prompt, counts);
   const mentionItems: MentionItem[] = !refs
@@ -402,6 +422,14 @@ export function ControlPanel({
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
     setCameraMove((move) => keptCameraMove(m, move));
+    setRouteChoice(undefined);
+  }
+
+  function changeRoute(provider: RouteProvider) {
+    const open = availability({ routes: model.routes.filter((item) => item.provider === provider) }, keyed);
+    if (!open.available) return;
+    setRouteChoice(provider);
+    onSaveRoute?.(model.id, provider);
   }
 
   const uploading =
@@ -430,6 +458,7 @@ export function ControlPanel({
       ratio,
       resolution,
       duration,
+      route: routeProvider,
       generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraMove: moves.length && cameraMove ? cameraMove : undefined,
@@ -455,7 +484,16 @@ export function ControlPanel({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 pb-5">
         {notice && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-100">{notice}</p>}
         <Section label="Model">
-          <ModelMenu models={models} value={model.id} keyed={keyed} onChange={changeModel} onOpenKeys={onOpenKeys} />
+          <ModelMenu
+            models={models}
+            value={model.id}
+            route={routeProvider}
+            estimate={estimateInput}
+            keyed={keyed}
+            onChange={changeModel}
+            onRoute={changeRoute}
+            onOpenKeys={onOpenKeys}
+          />
           <p className="mt-1.5 text-xs text-zinc-500">{model.description}</p>
         </Section>
 

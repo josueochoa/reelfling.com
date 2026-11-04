@@ -30,7 +30,7 @@ const readTab = (): Tab => TABS.find((t) => window.location.hash === `#${t}`) ??
 export function Studio() {
   const tab = useSyncExternalStore(subscribe, readTab, () => "video" as Tab);
   const [me, setMe] = useState<Me | null>(null);
-  const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
+  const [catalogModels, setCatalogModels] = useState<VideoModel[] | null>(null);
   const [tools, setTools] = useState<CatalogTool[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
@@ -51,10 +51,10 @@ export function Studio() {
     apiJson<{ models: VideoModel[]; tools?: CatalogTool[] }>("/api/models")
       .then((body) => {
         rememberModels(body.models);
-        setOpenRouterModels(body.models);
+        setCatalogModels(body.models);
         setTools(body.tools ?? []);
       })
-      .catch(() => setOpenRouterModels([]));
+      .catch(() => setCatalogModels([]));
   }, []);
 
   function switchTo(id: string) {
@@ -96,7 +96,7 @@ export function Studio() {
           key={me.workspace.id}
           me={me}
           tab={tab}
-          openRouterModels={openRouterModels}
+          catalogModels={catalogModels}
           tools={tools}
           onOpenKeys={openKeys}
           onChanged={loadMe}
@@ -114,14 +114,14 @@ export function Studio() {
 function WorkspaceView({
   me,
   tab,
-  openRouterModels,
+  catalogModels,
   tools,
   onOpenKeys,
   onChanged,
 }: {
   me: Me;
   tab: Tab;
-  openRouterModels: VideoModel[] | null;
+  catalogModels: VideoModel[] | null;
   tools: readonly CatalogTool[];
   onOpenKeys: () => void;
   onChanged: () => Promise<void>;
@@ -144,7 +144,7 @@ function WorkspaceView({
           me={me}
           library={library}
           onOpenKeys={onOpenKeys}
-          openRouterModels={openRouterModels}
+          catalogModels={catalogModels}
           tools={tools}
         />
       </div>

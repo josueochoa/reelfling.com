@@ -3,7 +3,7 @@
 // roles. Each request says which workspace it acts in (x-workspace-id header, or ?ws= on
 // media URLs, which can't carry headers); membership is checked here, once.
 
-import { requireUser, setActiveProvider as setUserProvider, type User } from "./auth";
+import { requireUser, type User } from "./auth";
 import { randomToken, sha256 } from "./crypto";
 import { all, env, first, run } from "./db";
 import { isStudioProvider, type StudioProviderId } from "./registry";
@@ -171,11 +171,6 @@ export function chooseKey(workspace: Workspace, userId: string, requested?: KeyS
 }
 
 /** Route preference for this workspace. A personal change also updates the user row, which wins on backfill. */
-export async function setActiveProvider(workspace: Workspace, provider: StudioProviderId | null) {
-  await run("UPDATE workspaces SET active_provider = ? WHERE id = ?", provider, workspace.id);
-  if (workspace.kind === "personal") await setUserProvider(workspace.id, provider);
-}
-
 export async function setTeamFlags(
   id: string,
   flags: { memberKeys?: boolean; adminsManageKeys?: boolean },

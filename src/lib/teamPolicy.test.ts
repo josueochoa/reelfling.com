@@ -21,7 +21,8 @@ const ROUTES: { file: string; action: TeamAction | "createTeam"; needle: string 
   { file: "src/app/api/workspaces/[id]/members/[userId]/route.ts", action: "leave", needle: 'permit(ws.role, "leave"' },
   { file: "src/app/api/workspaces/[id]/usage/route.ts", action: "viewUsage", needle: 'permit(ws.role, "viewUsage")' },
   { file: "src/app/api/keys/route.ts", action: "manageKeys", needle: "requireKeyManager(" },
-  { file: "src/app/api/me/route.ts", action: "setRoute", needle: "requireKeyManager(" },
+  // A route preference is the signed-in user's, not the team's shared switch.
+  { file: "src/app/api/me/route.ts", action: "setRoute", needle: "requireWorkspace(" },
   { file: "src/app/api/generations/[id]/route.ts", action: "editOwn", needle: "requireCanModify(" },
   { file: "src/app/api/images/[id]/route.ts", action: "editOwn", needle: "requireCanModify(" },
   { file: "src/app/api/fal/[id]/route.ts", action: "editOwn", needle: "requireCanModify(" },

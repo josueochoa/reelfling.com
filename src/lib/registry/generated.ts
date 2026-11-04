@@ -50,7 +50,7 @@ export function openRouterPickerModels(): VideoModel[] {
     .filter((model) => model.routes.some((route) => route.provider === "openrouter"))
     .slice()
     .sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
-    .map(slimVideo);
+    .map((model) => slimVideo(model, "openrouter"));
 }
 
 const TOOL_TASKS = ["upscale", "extend", "lipsync", "avatar", "motion"] as const;
@@ -76,8 +76,19 @@ export function toolMenu(): CatalogTool[] {
   });
 }
 
-function slimVideo(model: VideoModel): VideoModel {
+const STUDIO_TASKS = new Set(["t2v", "i2v", "ref2v"]);
+
+/** OpenRouter videos plus fal text, image, and reference video models for the one picker. */
+export function catalogPickerModels(): VideoModel[] {
+  const fal = ALL_MODELS.filter(isVideo).filter(
+    (model) => model.routes.some((route) => route.provider === "fal") && model.tasks.some((task) => STUDIO_TASKS.has(task)),
+  );
+  return [...openRouterPickerModels(), ...fal.map((model) => slimVideo(model))];
+}
+
+function slimVideo(model: VideoModel, provider?: string): VideoModel {
   const description = model.description.length > 240 ? `${model.description.slice(0, 239)}…` : model.description;
+  const routes = provider ? model.routes.filter((route) => route.provider === provider) : model.routes;
   return {
     id: model.id,
     family: model.family,
@@ -86,7 +97,7 @@ function slimVideo(model: VideoModel): VideoModel {
     group: "video",
     task: model.task,
     tasks: model.tasks,
-    routes: model.routes.filter((route) => route.provider === "openrouter"),
+    routes,
     promptRequired: model.promptRequired,
     refSyntax: model.refSyntax,
     ...(model.mark ? { mark: model.mark } : {}),

@@ -188,6 +188,38 @@ describe("0010 on a prod-shaped database", () => {
   });
 });
 
+describe("0013 route preferences", () => {
+  it("keeps users.active_provider and copies the route off each generation", () => {
+    const db = open();
+    applyThrough(db, "0010_team_scope.sql");
+    db.exec(`
+      INSERT INTO users (id, email, name, active_provider, created_at) VALUES
+        ('u1', 'a@example.com', 'Ada', 'modelark', 1);
+      INSERT INTO workspaces (id, name, kind, owner_id, active_provider, created_at) VALUES
+        ('u1', 'Personal', 'personal', 'u1', 'modelark', 1);
+      INSERT INTO generations (id, user_id, workspace_id, created_by, created_at, data) VALUES
+        ('g1', 'u1', 'u1', 'u1', 2, '{"route":"fal","model":"dreamina-seedance-2-0-260128"}');
+      INSERT INTO image_generations (id, user_id, workspace_id, created_by, created_at, data) VALUES
+        ('i1', 'u1', 'u1', 'u1', 2, '{"route":"openrouter","model":"nano-banana-2.1"}');
+    `);
+    applyFile(db, "0013_model_routes.sql", false);
+    applyFile(db, "0013_model_routes.sql", true);
+
+    assert.equal(val(db, "SELECT active_provider FROM users WHERE id = 'u1'"), "modelark");
+    assert.equal(val(db, "SELECT route FROM generations WHERE id = 'g1'"), "fal");
+    assert.equal(val(db, "SELECT route FROM image_generations WHERE id = 'i1'"), "openrouter");
+    db.exec(`INSERT INTO route_preferences (user_id, model_id, provider) VALUES ('u1', 'dreamina-seedance-2-0-260128', 'fal')`);
+    db.exec(
+      `INSERT INTO route_preferences (user_id, model_id, provider) VALUES ('u1', 'dreamina-seedance-2-0-260128', 'modelark')
+       ON CONFLICT (user_id, model_id) DO UPDATE SET provider = excluded.provider`,
+    );
+    assert.equal(
+      val(db, "SELECT provider FROM route_preferences WHERE user_id = 'u1' AND model_id = 'dreamina-seedance-2-0-260128'"),
+      "modelark",
+    );
+  });
+});
+
 function snapshot(db: DatabaseSync) {
   const tables = ["users", "workspaces", "workspace_members", "workspace_invites", "generations", "image_generations", "assets", "buckets", "api_keys", "fal_jobs"];
   const out: Record<string, unknown[]> = {};

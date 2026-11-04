@@ -90,13 +90,14 @@ export async function getImageGeneration(workspaceId: string, id: string) {
 
 export async function insertImageGeneration(workspaceId: string, gen: ImageGeneration, createdBy: string) {
   await run(
-    "INSERT INTO image_generations (id, user_id, workspace_id, created_by, created_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO image_generations (id, user_id, workspace_id, created_by, created_at, data, route) VALUES (?, ?, ?, ?, ?, ?, ?)",
     gen.id,
     createdBy,
     workspaceId,
     createdBy,
     gen.createdAt,
     persistJson(gen),
+    gen.route ?? null,
   );
 }
 
