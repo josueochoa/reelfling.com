@@ -210,6 +210,15 @@ export function FalStudio({
                       <p className={`truncate text-xs ${job.tool ? "text-zinc-200" : "font-mono text-zinc-400"}`}>
                         {job.tool?.name ?? job.endpointId}
                       </p>
+                      {job.tool?.inputAssetIds[0] && (
+                        <a
+                          href={assetFileUrl(job.tool.inputAssetIds[0])}
+                          data-testid="source-video"
+                          className="mt-1 inline-block text-body text-fg underline"
+                        >
+                          {/lipsync|latentsync/i.test(job.tool.id) ? "Source video" : "Source"}
+                        </a>
+                      )}
                     </div>
                     {job.prompt && <p className="mt-2 line-clamp-3 text-sm text-zinc-200">{job.prompt}</p>}
                     {needsPoll(job) && (

@@ -10,7 +10,7 @@ import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
 import type { Me } from "./api";
-import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
+import { fileSrc, thumbSrc, toolAudios, uploadToolAudio, type Library, type LibraryItem } from "./library";
 import { BulkUpscale } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { Viewer } from "./Viewer";
@@ -382,6 +382,8 @@ export function AssetsStudio({
             setPreviewId(null);
             onToolJob();
           }}
+          audios={toolAudios(library.items)}
+          onUploadAudio={(file) => uploadToolAudio(library, file)}
           lineage={lineageFor(previewing, library.items, tools, setPreviewId)}
           extra={
             previewing.kind === "image" ? (

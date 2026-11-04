@@ -4,10 +4,12 @@
 // Upscale models that share a menu name collapse into one item with a model picker.
 
 import { useState } from "react";
+import { lipsyncEstimate, lipsyncLimitError, mismatchNotice } from "@/lib/lipsyncQuote";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { toolsForKind, type ToolAsset, type ToolFieldView, type ToolView } from "@/lib/toolTypes";
 import { formatUpscaleCost, planBulkToolJobs, upscaleCost } from "@/lib/upscaleQuote";
 import { api } from "./api";
+import type { ToolAudioChoice } from "./library";
 import { UnlockHint } from "./UnlockHint";
 
 interface MenuEntry {
@@ -34,7 +36,7 @@ function menuEntries(tools: readonly ToolView[]): MenuEntry[] {
     const entry: MenuEntry = {
       id: key,
       name: tool.menu ?? tool.name,
-      description: tool.menu ? "Increase the resolution." : tool.description,
+      description: tool.menu === "Upscale" ? "Increase the resolution." : tool.menu === "Lip sync" ? "Match a face in a video to an audio track." : tool.description,
       tools: [tool],
     };
     index.set(key, entry);
@@ -91,6 +93,8 @@ export function ToolsMenu({
   compact = false,
   inline = false,
   entry = undefined,
+  audios = [],
+  onUploadAudio,
 }: {
   kind: string;
   /** Library key. Absent until the file is stored. */
@@ -112,6 +116,9 @@ export function ToolsMenu({
   inline?: boolean;
   /** Open this menu name (`Upscale`). Null shows the list. A new key remounts it. */
   entry?: string | null;
+  /** Audio already in Uploads. Lip sync picks one of these, or uploads a new file. */
+  audios?: readonly ToolAudioChoice[];
+  onUploadAudio?: (file: File) => Promise<ToolAudioChoice>;
 }) {
   const available = toolsForKind(tools, kind);
   const entries = menuEntries(available);
@@ -123,6 +130,10 @@ export function ToolsMenu({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  const [audioSource, setAudioSource] = useState<"library" | "new">("library");
+  const [audioKey, setAudioKey] = useState<string>("");
+  const [uploaded, setUploaded] = useState<ToolAudioChoice | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   if (available.length === 0) return null;
 
@@ -141,10 +152,39 @@ export function ToolsMenu({
   const target = typeof values.target === "string" ? values.target : undefined;
   const estimate = tool ? estimateFor(tool, subjects, target) : undefined;
   const count = assets?.length ?? 1;
+  const audioChoices = uploaded && !audios.some((item) => item.key === uploaded.key) ? [uploaded, ...audios] : audios;
+  const selectedAudio = audioChoices.find((item) => item.key === audioKey);
+  const optionField = tool?.fields.find((field) => field.name === "sync_mode" || field.name === "loop_mode");
+  const optionValue = optionField ? values[optionField.name] : undefined;
+  const option = typeof optionValue === "string" ? optionValue : undefined;
+  const lipsync = tool?.needsAudio
+    ? lipsyncEstimate(tool.id, { video: asset?.duration, audio: selectedAudio?.duration, option })
+    : undefined;
+  const mismatch =
+    tool?.needsAudio && selectedAudio
+      ? mismatchNotice(tool.id, { video: asset?.duration, audio: selectedAudio.duration, option })
+      : undefined;
+  const audioLimit =
+    tool?.needsAudio && selectedAudio
+      ? lipsyncLimitError(
+          tool.id,
+          { duration: asset?.duration },
+          { duration: selectedAudio.duration, bytes: selectedAudio.bytes },
+          tool.name,
+        )
+      : undefined;
 
   async function run() {
     if (!tool) return;
     if (!assets && !assetKey) return;
+    if (tool.needsAudio && !selectedAudio) {
+      setError("Choose an audio file.");
+      return;
+    }
+    if (audioLimit) {
+      setError(audioLimit);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -156,7 +196,7 @@ export function ToolsMenu({
             { id: tool.id, accepts: tool.accepts },
             params,
           )
-        : [{ toolId: tool.id, assetIds: [assetKey!], params }];
+        : [{ toolId: tool.id, assetIds: [assetKey!], params, ...(tool.needsAudio ? { audioId: selectedAudio!.key } : {}) }];
       for (let i = 0; i < jobs.length; i++) {
         const res = await api("/api/fal", {
           method: "POST",
@@ -250,6 +290,30 @@ export function ToolsMenu({
               {choices && tool.description && (
                 <p className="text-[11px] leading-snug text-zinc-500">{tool.description}</p>
               )}
+              {tool.needsAudio && (
+                <AudioPicker
+                  source={audioSource}
+                  onSource={setAudioSource}
+                  choices={audioChoices}
+                  audioKey={audioKey}
+                  onAudio={setAudioKey}
+                  uploading={uploading}
+                  canUpload={!!onUploadAudio}
+                  onFile={(file) => {
+                    if (!onUploadAudio) return;
+                    setUploading(true);
+                    setError(null);
+                    void onUploadAudio(file)
+                      .then((item) => {
+                        setUploaded(item);
+                        setAudioKey(item.key);
+                        setAudioSource("library");
+                      })
+                      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Couldn't upload that audio"))
+                      .finally(() => setUploading(false));
+                  }}
+                />
+              )}
               {tool.fields.map((field) => (
                 <Field
                   key={field.name}
@@ -258,16 +322,27 @@ export function ToolsMenu({
                   onChange={(value) => setValues((prev) => ({ ...prev, [field.name]: value }))}
                 />
               ))}
+              {mismatch && (
+                <p data-testid="lipsync-mismatch" role="status" className="rounded-md bg-surface-3 px-2 py-1.5 text-body text-fg">
+                  {mismatch}
+                </p>
+              )}
+              {lipsync && (
+                <p data-testid="tool-cost" className="text-body text-fg">
+                  {lipsync.text}
+                </p>
+              )}
               {tool.menu === "Upscale" && (
                 <p className="text-xs text-zinc-200">
                   {estimate === undefined ? "Estimate unavailable." : `Est. cost ${formatUpscaleCost(estimate)}`}
                 </p>
               )}
-              {error && <p className="text-xs text-red-300">{error}</p>}
+              {(error || audioLimit) && <p className="text-xs text-red-300">{error || audioLimit}</p>}
               <button
                 type="submit"
-                disabled={busy}
-                className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-ink disabled:opacity-40"
+                data-testid="tool-run"
+                disabled={busy || uploading || (tool.needsAudio && !selectedAudio) || !!audioLimit}
+                className="w-full rounded-lg bg-accent py-2 text-sm font-semibold text-accent-fg disabled:opacity-40"
               >
                 {busy ? "Starting…" : assets ? `Queue ${count}` : "Run"}
               </button>
@@ -392,6 +467,99 @@ export function BulkUpscale({
   );
 }
 
+function AudioPicker({
+  source,
+  onSource,
+  choices,
+  audioKey,
+  onAudio,
+  uploading,
+  canUpload,
+  onFile,
+}: {
+  source: "library" | "new";
+  onSource: (source: "library" | "new") => void;
+  choices: readonly ToolAudioChoice[];
+  audioKey: string;
+  onAudio: (key: string) => void;
+  uploading: boolean;
+  canUpload: boolean;
+  onFile: (file: File) => void;
+}) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-body text-fg">Audio</legend>
+      <div className="flex gap-3">
+        <label className="flex items-center gap-1.5 text-body text-fg">
+          <input
+            type="radio"
+            name="lipsync-audio-source"
+            value="library"
+            checked={source === "library"}
+            onChange={() => onSource("library")}
+            data-testid="lipsync-audio-library"
+            className="accent-[var(--color-accent)]"
+          />
+          From Uploads
+        </label>
+        <label className="flex items-center gap-1.5 text-body text-fg">
+          <input
+            type="radio"
+            name="lipsync-audio-source"
+            value="new"
+            checked={source === "new"}
+            onChange={() => onSource("new")}
+            data-testid="lipsync-audio-new"
+            disabled={!canUpload}
+            className="accent-[var(--color-accent)]"
+          />
+          Upload new
+        </label>
+      </div>
+      {source === "library" ? (
+        <label className="block text-body text-fg-muted">
+          Uploaded audio
+          <select
+            aria-label="Uploaded audio"
+            data-testid="lipsync-audio-select"
+            value={audioKey}
+            onChange={(event) => onAudio(event.target.value)}
+            className="mt-1 w-full rounded-md border border-line bg-surface-3 px-2 py-1.5 text-body text-fg outline-none"
+          >
+            <option value="" className="bg-panel">
+              Choose audio
+            </option>
+            {choices.map((item) => (
+              <option key={item.key} value={item.key} className="bg-panel">
+                {item.name}
+                {item.duration !== undefined ? ` · ${item.duration.toFixed(1)}s` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <input
+          type="file"
+          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,.mp3,.wav"
+          aria-label="Upload audio"
+          data-testid="lipsync-audio-file"
+          disabled={uploading || !canUpload}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) onFile(file);
+          }}
+          className="block w-full text-body text-fg file:mr-2 file:rounded-md file:border-0 file:bg-accent file:px-2 file:py-1 file:text-body file:font-semibold file:text-accent-fg"
+        />
+      )}
+      {source === "library" && choices.length === 0 && (
+        <p className="text-body text-fg-muted">No audio in Uploads yet. Upload a new file.</p>
+      )}
+      {uploading && <p className="text-body text-fg-muted">Uploading audio…</p>}
+    </fieldset>
+  );
+}
+
 function paramValue(field: ToolFieldView, value: string | boolean | undefined): string | number | boolean {
   if (field.type === "boolean") return value === true;
   if (field.type === "number") return Number(value);
@@ -417,6 +585,24 @@ function Field({
           className="size-3.5 accent-[var(--color-accent)]"
         />
         {field.label}
+      </label>
+    );
+  }
+  if (field.type === "number") {
+    return (
+      <label className="block text-body text-fg-muted">
+        {field.label}
+        <input
+          type="number"
+          inputMode="decimal"
+          aria-label={field.label}
+          min={field.min}
+          max={field.max}
+          step={field.step ?? "any"}
+          value={typeof value === "string" ? value : ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-1 w-full rounded-md border border-line bg-surface-3 px-2 py-1.5 text-body text-fg outline-none"
+        />
       </label>
     );
   }

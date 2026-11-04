@@ -5,8 +5,17 @@ export type ToolAccepts = "image" | "video";
 export type ToolFieldView =
   | { name: string; label: string; type: "boolean"; default?: boolean }
   | { name: string; label: string; type: "enum"; options: string[]; default?: string }
-  | { name: string; label: string; type: "number"; min?: number; max?: number; default?: number }
+  | { name: string; label: string; type: "number"; min?: number; max?: number; step?: number; default?: number }
   | { name: string; label: string; type: "string"; default?: string };
+
+/**
+ * How a per-second tool price counts seconds.
+ * `sync_output` follows the selected sync mode's output length.
+ * `video_ceil_5` is the input video, rounded up to `step` seconds.
+ * `output_video` is the output. A total needs the output length.
+ * `latent_output` is a flat `flat` USD up to `flatUntil` seconds, then `usd` per second.
+ */
+export type PerSecondBasis = "sync_output" | "video_ceil_5" | "output_video" | "latent_output";
 
 /**
  * Published price the menu can turn into a dollar estimate.
@@ -15,7 +24,20 @@ export type ToolFieldView =
 export type ToolQuote =
   | { type: "output_megapixels"; usd: number }
   | { type: "output_megapixel_block"; usd: number; block: number }
-  | { type: "per_image"; usd: number };
+  | { type: "per_image"; usd: number }
+  | {
+      type: "per_second";
+      /** USD per second of the billed duration. */
+      usd: number;
+      basis: PerSecondBasis;
+      /** Round the billed duration up to this many seconds. */
+      step?: number;
+      /** Flat USD while the output is at most `flatUntil` seconds. */
+      flat?: number;
+      flatUntil?: number;
+      /** Published per-minute price. `usd` is that price divided by 60. */
+      perMinute?: number;
+    };
 
 /** What the Tools menu is allowed to see. The endpoint id stays on the server. */
 export interface ToolView {
@@ -27,6 +49,8 @@ export interface ToolView {
   /** Tools that share a menu name collapse into one item, with this as the label. */
   menu?: string;
   quote?: ToolQuote;
+  /** The tool also needs an audio file from the library. */
+  needsAudio?: boolean;
   /** Providers that can run it. Names only, never an endpoint or a key. */
   providers?: readonly string[];
 }

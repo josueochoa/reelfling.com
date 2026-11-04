@@ -1,0 +1,90 @@
+{
+  "docs": "https://fal.ai/docs/platform-apis/v1/models",
+  "source": "Hand-checked against GET https://api.fal.ai/v1/models?endpoint_id=…&expand=openapi-3.0 and each model's llms.txt on Nov 4, 2026, with no API key. Not written by catalog:sync. sync-3 was a video-catalog stub and is a tool here so it stays off the studio allowlist.",
+  "models": [
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Video of 2–10s and audio of 2–60s. No trim or loop setting.",
+      "family": "Kling",
+      "group": "tool",
+      "id": "fal:fal-ai/kling-video/lipsync/audio-to-video",
+      "name": "Kling LipSync",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/kling-video/lipsync/audio-to-video",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": ["tool"]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Loops the video when the audio is longer. Ping-pong or loop.",
+      "family": "LatentSync",
+      "group": "tool",
+      "id": "fal:fal-ai/latentsync",
+      "name": "LatentSync",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/latentsync",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": ["tool"]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "Handles a length mismatch with cut off, loop, bounce, silence, or remap.",
+      "family": "sync-3",
+      "group": "tool",
+      "id": "fal:fal-ai/sync-lipsync/v3",
+      "name": "sync-3",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "fal-ai/sync-lipsync/v3",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": ["tool"]
+    },
+    {
+      "capabilities": {
+        "accepts": "video"
+      },
+      "description": "New audio on a source video. Priced per second of output.",
+      "family": "VEED",
+      "group": "tool",
+      "id": "fal:veed/lipsync/v2",
+      "name": "VEED Lipsync",
+      "promptRequired": false,
+      "refSyntax": "at",
+      "routes": [
+        {
+          "endpoint": "veed/lipsync/v2",
+          "mapper": "fal.queue",
+          "provider": "fal"
+        }
+      ],
+      "task": "tool",
+      "tasks": ["tool"]
+    }
+  ]
+}

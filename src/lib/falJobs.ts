@@ -32,6 +32,8 @@ import {
   putAsset,
 } from "./storage";
 import { buildExtendBody, extendForm, runnableExtends } from "./extend";
+import { buildLipsyncBody, lipsyncTools } from "./lipsync";
+import { lipsyncLimitError } from "./lipsyncQuote";
 import { formFor, outputLineage, toolLimitError } from "./registry/tool-forms";
 import { continueSequence, ensureStoredVideo, getGeneration } from "./store";
 import { prepareToolInput } from "./toolCatalog";
@@ -258,29 +260,70 @@ function mediaKind(contentType: string): "image" | "video" | "audio" | undefined
   return undefined;
 }
 
+/** Duration on the file, or on the generation when a stored video never copied it. */
+async function knownDuration(
+  userId: string,
+  asset: { meta?: { duration?: number } | null; generationId: string | null },
+): Promise<number | undefined> {
+  const stored = asset.meta?.duration;
+  if (typeof stored === "number" && Number.isFinite(stored)) return stored;
+  if (!asset.generationId) return undefined;
+  const gen = await getGeneration(userId, asset.generationId);
+  return typeof gen?.duration === "number" && Number.isFinite(gen.duration) ? gen.duration : undefined;
+}
+
 /**
  * Runs a catalog tool on one library asset. The endpoint comes from the catalog,
  * not the client. The new file is written later, with parent_id and tool set.
  */
 export async function createToolJob(
   userId: string,
-  input: { toolId: string; assetIds: unknown; params: unknown },
+  input: { toolId: string; assetIds: unknown; params: unknown; audioId?: unknown },
   apiKey: string,
 ) {
   const assetIds = Array.isArray(input.assetIds) ? input.assetIds.filter((id): id is string => typeof id === "string") : [];
   if (assetIds.length !== 1 || !isAssetKey(assetIds[0]))
     throw new ProviderError("Choose one asset from your library.", 400);
-  const extendTool = runnableExtends().find((tool) => tool.id === input.toolId);
-  const prepared = extendTool
-    ? { tool: extendTool, body: buildExtendBody(extendTool.id, assetIds[0], input.params) }
-    : prepareToolInput(input.toolId, assetIds[0], input.params);
-  if (!prepared) throw new ProviderError("Unknown tool", 400);
-  const asset = (await getAsset(userId, assetIds[0])) ?? (extendTool ? await storedGenerationVideo(userId, assetIds[0]) : undefined);
+  const lipsyncTool = lipsyncTools().find((tool) => tool.id === input.toolId);
+  const extendTool = !lipsyncTool ? runnableExtends().find((tool) => tool.id === input.toolId) : undefined;
+  const audioId = typeof input.audioId === "string" ? input.audioId : "";
+  let audio: Awaited<ReturnType<typeof getAsset>> | undefined;
+  if (lipsyncTool) {
+    if (!isAssetKey(audioId)) throw new ProviderError("Choose an audio file.", 400);
+    audio = await getAsset(userId, audioId);
+    if (!audio) throw new ProviderError("That audio is no longer in your library.", 400);
+    if (mediaKind(audio.contentType) !== "audio") throw new ProviderError("Lip sync needs an audio file.", 400);
+  }
+  const audioDuration = audio ? await knownDuration(userId, audio) : undefined;
+  const asset =
+    (await getAsset(userId, assetIds[0])) ?? (extendTool || lipsyncTool ? await storedGenerationVideo(userId, assetIds[0]) : undefined);
   if (!asset) throw new ProviderError("That asset is no longer in your library.", 400);
+  const videoDuration = await knownDuration(userId, asset);
+  const prepared = lipsyncTool
+    ? {
+        tool: lipsyncTool,
+        body: buildLipsyncBody(lipsyncTool.id, assetIds[0], audioId, input.params, {
+          video: videoDuration,
+          audio: audioDuration,
+        }),
+      }
+    : extendTool
+      ? { tool: extendTool, body: buildExtendBody(extendTool.id, assetIds[0], input.params) }
+      : prepareToolInput(input.toolId, assetIds[0], input.params);
+  if (!prepared) throw new ProviderError("Unknown tool", 400);
   if (mediaKind(asset.contentType) !== prepared.tool.accepts)
     throw new ProviderError(prepared.tool.accepts === "image" ? "This tool needs an image." : "This tool needs a video.", 400);
+  if (lipsyncTool && audio) {
+    const limit = lipsyncLimitError(
+      lipsyncTool.id,
+      { contentType: asset.contentType, duration: videoDuration },
+      { contentType: audio.contentType, duration: audioDuration, bytes: audio.bytes },
+      lipsyncTool.name,
+    );
+    if (limit) throw new ProviderError(limit, 400);
+  }
   const form = formFor(prepared.tool.id) ?? extendForm(prepared.tool.id);
-  if (form) {
+  if (form && !lipsyncTool) {
     const limit = toolLimitError(
       form,
       { contentType: asset.contentType, duration: asset.meta?.duration },
@@ -290,6 +333,7 @@ export async function createToolJob(
   }
   const params = { ...prepared.body };
   delete params[prepared.tool.inputKey];
+  if (lipsyncTool?.audioKey) delete params[lipsyncTool.audioKey];
   const sourceId = extendTool ? await extendSourceId(userId, asset.generationId) : undefined;
   const stamp = sourceId ? await continueSequence(userId, sourceId) : undefined;
   return createFalJob(
@@ -300,7 +344,7 @@ export async function createToolJob(
     {
       id: prepared.tool.id,
       name: prepared.tool.name,
-      inputAssetIds: [asset.key],
+      inputAssetIds: audio ? [asset.key, audio.key] : [asset.key],
       params: params as Record<string, string | number | boolean>,
       route: { provider: "fal", endpoint: prepared.tool.endpoint, mapper: prepared.tool.mapper },
     },

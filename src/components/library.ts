@@ -6,6 +6,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { assetFileUrl, UPLOAD_RULES, uploadKindOf, type AssetItem, type UploadKind } from "@/lib/uploads";
 import { apiJson } from "./api";
 
+export interface ToolAudioChoice {
+  key: string;
+  name: string;
+  duration?: number;
+  bytes?: number;
+}
+
+/** Audio files lip sync can use. Uploads that are still sending are left out. */
+export function toolAudios(items: readonly LibraryItem[]): ToolAudioChoice[] {
+  return items.flatMap((item) => {
+    if (item.kind !== "audio" || item.status !== "ready" || !item.key) return [];
+    return [{ key: item.key, name: item.name, duration: item.duration, bytes: item.bytes }];
+  });
+}
+
+/** Uploads one audio file through the library and resolves once it is stored. */
+export async function uploadToolAudio(
+  library: Pick<Library, "add" | "whenReady">,
+  file: File,
+): Promise<ToolAudioChoice> {
+  const { items, errors } = await library.add([file]);
+  if (!items[0]) throw new Error(errors[0] || "Couldn't read that audio file.");
+  const ready = await library.whenReady(items[0].id);
+  if (ready.kind !== "audio" || !ready.key) throw new Error("Lip sync needs an audio file.");
+  return { key: ready.key, name: ready.name, duration: ready.duration, bytes: ready.bytes };
+}
+
 export interface LibraryItem extends Omit<AssetItem, "key"> {
   /** Stable for the item's life in this tab: the key, or a temporary id for new uploads. */
   id: string;

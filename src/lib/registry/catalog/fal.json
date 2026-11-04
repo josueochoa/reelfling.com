@@ -1106,48 +1106,6 @@
       "capabilities": {
         "audio": false,
         "camera": false,
-        "frames": {
-          "end": false,
-          "middle": false,
-          "start": false
-        },
-        "lastFrameOutput": false,
-        "promptExpansion": false,
-        "ratios": [],
-        "references": {
-          "audio": 1,
-          "image": 0,
-          "total": 2,
-          "video": 1
-        },
-        "resolutions": [],
-        "seed": false,
-        "watermark": false
-      },
-      "description": "sync-3 most powerful lipsync model yet, featuring native visual intelligence for professional-quality video.",
-      "family": "sync-3",
-      "group": "video",
-      "id": "fal:fal-ai/sync-lipsync/v3",
-      "inputs": {},
-      "name": "sync-3 Lipsync",
-      "promptRequired": false,
-      "refSyntax": "at",
-      "routes": [
-        {
-          "endpoint": "fal-ai/sync-lipsync/v3",
-          "mapper": "fal.queue",
-          "provider": "fal"
-        }
-      ],
-      "task": "lipsync",
-      "tasks": [
-        "lipsync"
-      ]
-    },
-    {
-      "capabilities": {
-        "audio": false,
-        "camera": false,
         "durations": {
           "default": 5,
           "max": 10,

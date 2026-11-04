@@ -3,7 +3,6 @@
   { "endpoint": "fal-ai/kling-video/v3/pro/text-to-video", "task": "t2v" },
   { "endpoint": "fal-ai/minimax/video-01/image-to-video", "task": "i2v" },
   { "endpoint": "minimax/h3-max/extend-video", "task": "extend" },
-  { "endpoint": "fal-ai/sync-lipsync/v3", "task": "lipsync" },
   { "endpoint": "fal-ai/kling-video/ai-avatar/v2/standard", "task": "avatar" },
   { "endpoint": "fal-ai/kling-video/v3/pro/motion-control", "task": "motion" },
   { "endpoint": "fal-ai/minimax/speech-2.8-hd", "task": "tts" },
