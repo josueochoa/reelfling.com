@@ -1,11 +1,12 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import { catalogImageModels, catalogPickerModels, toolMenu } from "@/lib/registry/generated";
+import { catalogImageModels, catalogPickerModels } from "@/lib/registry/generated";
+import { publicTools } from "@/lib/toolCatalog";
 
-/** Slim video and image models, plus tool providers, for the pickers. The catalog JSON stays on the server. */
+/** Slim picker models and tools. The catalog JSON stays on the server. */
 export async function GET() {
   try {
     await requireUser();
-    return Response.json({ models: catalogPickerModels(), images: catalogImageModels(), tools: toolMenu() });
+    return Response.json({ models: catalogPickerModels(), images: catalogImageModels(), tools: publicTools() });
   } catch (e) {
     return errorResponse(e);
   }

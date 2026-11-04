@@ -50,28 +50,8 @@ export class AuthError extends Error {
   }
 }
 
-/** Signed in (Access or Google) but not admitted: no account, and no invite. */
-export class NotInvitedError extends Error {
-  status = 403;
-  code = "not_invited";
-  constructor(public email: string) {
-    super(`${email} hasn't been invited. Ask a team admin for an invite.`);
-  }
-}
-
-/** A verified identity, account or not. */
-export interface Identity {
-  email: string;
-  name?: string;
-  avatarUrl?: string;
-}
-
-/**
- * Finds or creates the account for an email. Name and avatar are refreshed when given.
- * Creating one needs an invite when INVITE_ONLY is set, unless `admit` says it's fine
- * (accepting an invite link).
- */
-export async function upsertUser(profile: Identity, { admit = false } = {}): Promise<User> {
+/** Finds or creates the account for an email. Name and avatar are refreshed when given. */
+export async function upsertUser(profile: { email: string; name?: string; avatarUrl?: string }): Promise<User> {
   const email = profile.email.trim().toLowerCase();
   // Called on every request in Access mode, so skip the write when nothing changed.
   const existing = await first<UserRow>("SELECT * FROM users WHERE email = ?", email);
@@ -81,10 +61,6 @@ export async function upsertUser(profile: Identity, { admit = false } = {}): Pro
     (profile.avatarUrl ?? existing.avatar_url) === existing.avatar_url
   )
     return toUser(existing);
-  if (!existing && !admit) {
-    const { mayCreateAccount } = await import("./workspaces");
-    if (!(await mayCreateAccount(email))) throw new NotInvitedError(email);
-  }
   await run(
     `INSERT INTO users (id, email, name, avatar_url, created_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT (email) DO UPDATE SET
@@ -95,12 +71,7 @@ export async function upsertUser(profile: Identity, { admit = false } = {}): Pro
     profile.avatarUrl ?? null,
     Date.now(),
   );
-  const user = toUser((await first<UserRow>("SELECT * FROM users WHERE email = ?", email))!);
-  if (!existing) {
-    const { ensurePersonalWorkspace } = await import("./workspaces");
-    await ensurePersonalWorkspace(user);
-  }
-  return user;
+  return toUser((await first<UserRow>("SELECT * FROM users WHERE email = ?", email))!);
 }
 
 // ---------------------------------------------------------------- Cloudflare Access
@@ -115,12 +86,7 @@ function teamDomain() {
 // Access rotates its signing keys; jose caches and refreshes them per isolate.
 const jwksByDomain = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-async function devEmail(): Promise<string | undefined> {
-  if (process.env.NODE_ENV !== "development") return undefined;
-  return (await cookies()).get("dev_email")?.value || env().DEV_USER_EMAIL;
-}
-
-async function accessIdentity(): Promise<Identity | undefined> {
+async function accessUser(): Promise<User | undefined> {
   const domain = teamDomain();
   const aud = env().ACCESS_AUD;
   // Never trust identity headers without verifying them: requests that bypass Access
@@ -128,9 +94,9 @@ async function accessIdentity(): Promise<Identity | undefined> {
   const token = (await headers()).get("cf-access-jwt-assertion") ?? (await cookies()).get("CF_Authorization")?.value;
 
   if (!token) {
-    // `next dev` has no Access in front of it. A dev_email cookie switches the local user.
-    const email = await devEmail();
-    if (email) return { email, name: "Dev user" };
+    // `next dev` has no Access in front of it.
+    const devEmail = env().DEV_USER_EMAIL;
+    if (process.env.NODE_ENV === "development" && devEmail) return upsertUser({ email: devEmail, name: "Dev user" });
     return undefined;
   }
   if (!domain || !aud) throw new Error("Set ACCESS_TEAM_DOMAIN and ACCESS_AUD (see wrangler.jsonc).");
@@ -141,7 +107,7 @@ async function accessIdentity(): Promise<Identity | undefined> {
     const { payload } = await jwtVerify(token, jwks, { issuer: domain, audience: aud, algorithms: ["RS256"] });
     // Service tokens have no email; they aren't users.
     if (typeof payload.email !== "string" || !payload.email) return undefined;
-    return { email: payload.email };
+    return upsertUser({ email: payload.email });
   } catch {
     return undefined;
   }
@@ -190,21 +156,10 @@ export async function destroySession() {
 
 // ---------------------------------------------------------------- current user
 
-/** Who's signed in, whether or not they have an account yet (for accepting invite links). */
-export async function currentIdentity(): Promise<Identity | undefined> {
-  await connection();
-  if (authMode() === "access") return accessIdentity();
-  const user = await sessionUser();
-  return user && { email: user.email, name: user.name ?? undefined, avatarUrl: user.avatarUrl ?? undefined };
-}
-
-/** The signed-in user's account. Throws NotInvitedError for someone who can't have one yet. */
 export async function currentUser(): Promise<User | undefined> {
   // Per-request (never prerendered): reads the Worker env and the request's identity.
   await connection();
-  if (authMode() === "google") return sessionUser();
-  const identity = await accessIdentity();
-  return identity && upsertUser(identity);
+  return authMode() === "access" ? accessUser() : sessionUser();
 }
 
 export async function requireUser(): Promise<User> {
@@ -224,14 +179,10 @@ export async function errorResponse(e: unknown) {
   }
   let status = (e as { status?: number }).status;
   // A provider rejecting the user's key isn't a session problem — don't let it look like one.
-  // Our own permission errors keep their status.
-  const name = (e as Error).name;
-  const ours =
-    e instanceof NotInvitedError || name === "ForbiddenError" || name === "NotFoundError" || name === "CapError";
-  if (!ours && (status === 401 || status === 403)) status = 400;
+  if (status === 401 || status === 403) status = 400;
   if (!status || status >= 500) console.error(e);
   return Response.json(
-    { error: (e as Error).message ?? "Something went wrong", code: (e as { code?: string }).code },
+    { error: (e as Error).message ?? "Something went wrong" },
     { status: status && status >= 400 ? status : 500 },
   );
 }

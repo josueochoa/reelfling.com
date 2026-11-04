@@ -1,8 +1,8 @@
-import { errorResponse } from "@/lib/auth";
-import { openGenerationKey, resolveAvailableRoute, runWithCap } from "@/lib/generationKey";
+import { errorResponse, requireUser } from "@/lib/auth";
 import { enqueueImageJob, insertImageGeneration, listImageGenerations, type ImageGeneration } from "@/lib/images";
+import { listKeys } from "@/lib/keys";
 import { invalidMentions } from "@/lib/mentions";
-import type { KeySource } from "@/lib/scope";
+import { availabilityError, availabilityFor, routeProviders } from "@/lib/registry/availability";
 import {
   estimateRouteCost,
   imageProviderFor,
@@ -13,16 +13,15 @@ import {
   type ImageResolution,
 } from "@/lib/registry";
 import { catalogModel } from "@/lib/registry/generated";
-import { assertStorageAvailable, getAsset } from "@/lib/storage";
-import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
-import { requireWorkspace } from "@/lib/workspaces";
+import { assertStorageAvailable, getAsset } from "@/lib/storage";
+import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const { workspace } = await requireWorkspace(request);
-    return Response.json(await listImageGenerations(workspace.id));
+    const user = await requireUser();
+    return Response.json(await listImageGenerations(user.id));
   } catch (e) {
     return errorResponse(e);
   }
@@ -48,8 +47,8 @@ const bad = (error: string) => Response.json({ error }, { status: 400 });
 /** Validates and queues an image generation; the page polls GET /api/images/:id. */
 export async function POST(request: Request) {
   try {
-    const { user, workspace } = await requireWorkspace(request);
-    const req = (await request.json()) as ImageRequest & { keySource?: KeySource };
+    const user = await requireUser();
+    const req = (await request.json()) as ImageRequest;
     const found = catalogModel(req.model);
     const model = found && isImage(found) ? found : undefined;
     if (!model) return bad(`Unknown model "${req.model}"`);
@@ -59,26 +58,22 @@ export async function POST(request: Request) {
     if (invalid || !prompt) return bad(invalid ?? "Write a prompt");
     for (const key of refs) {
       // Uploads or generated images.
-      const asset = isAssetKey(key) ? await getAsset(workspace.id, key) : undefined;
+      const asset = isAssetKey(key) ? await getAsset(user.id, key) : undefined;
       if (!asset || !(uploadKindOf(asset.contentType) === "image" || asset.contentType.startsWith("image/")))
         return bad("A reference isn't an image in your uploads. Remove it and add it again.");
     }
     const mentions = invalidMentions(prompt, { Image: refs.length, Video: 0, Audio: 0 });
     if (mentions.length) return bad(`Prompt references ${mentions.join(", ")}, which isn't attached`);
-    const requested: KeySource =
-      workspace.kind === "team" && req.keySource === "member" ? "member" : workspace.kind === "team" ? "team" : "member";
-    const legacy = requested === "member" && workspace.kind === "team" ? user.activeProvider : workspace.activeProvider;
+    const keyed = new Set((await listKeys(user.id)).map((key) => key.provider));
+    const gate = availabilityFor(routeProviders(model.routes), keyed);
+    if (!gate.available) return bad(availabilityError(gate.needs));
     const saved = await getRoutePreference(user.id, model.id);
     const explicit = typeof req.route === "string" ? req.route : null;
-    const { route, source } = await resolveAvailableRoute(model, workspace, user.id, {
-      requested,
-      // imageProviderFor is the fallback: active image key, else any image key.
-      prefer: (keyed) => preferredRoute(model, keyed, [explicit, saved, imageProviderFor(legacy, [...keyed])])?.provider,
-    });
-    if (route.provider !== "argolink" && route.provider !== "openrouter" && route.provider !== "fal")
+    const route = preferredRoute(model, keyed, [explicit, saved, imageProviderFor(user.activeProvider, [...keyed])]);
+    if (!route || (route.provider !== "argolink" && route.provider !== "openrouter" && route.provider !== "fal"))
       return bad("This model isn't available on the image tab.");
     const imageProvider = route.provider;
-    await assertStorageAvailable(workspace.id);
+    await assertStorageAvailable(user.id);
     const estimate =
       estimateRouteCost(model, imageProvider, {
         resolution: req.resolution,
@@ -87,16 +82,6 @@ export async function POST(request: Request) {
         referenceImages: refs.length,
         megapixels: 1,
       }) ?? 0;
-    const opened = await openGenerationKey({
-      workspace,
-      userId: user.id,
-      provider: imageProvider,
-      requested: source,
-      estimate,
-    });
-    // Cap is checked before the job is queued. The queue is not the provider, but a
-    // rejected job must not be stored or run.
-    await runWithCap(opened, async () => undefined);
 
     // "auto": the reference's shape if there is one; otherwise the model's own fallback.
     let aspect: string | undefined = req.ratio;
@@ -121,16 +106,13 @@ export async function POST(request: Request) {
       references: refs,
       images: [],
       cost: estimate,
-      keySource: opened.source,
       route: imageProvider,
       routeEndpoint: route.endpoint,
-      estimatedCost: estimate,
-      keyWorkspaceId: opened.keyWorkspaceId,
       createdAt: now,
       updatedAt: now,
     };
-    await insertImageGeneration(workspace.id, gen, user.id);
-    await enqueueImageJob(workspace.id, user.id, gen.id);
+    await insertImageGeneration(user.id, gen);
+    await enqueueImageJob(user.id, gen.id);
     return Response.json(gen, { status: 201 });
   } catch (e) {
     return errorResponse(e);

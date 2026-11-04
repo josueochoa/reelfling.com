@@ -34,6 +34,8 @@ export interface FalOutput {
   url: string;
   contentType?: string;
   fileName?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface FalSnapshot {
@@ -43,6 +45,8 @@ export interface FalSnapshot {
   error?: string;
   fields?: FalFieldError[];
   outputs: FalOutput[];
+  /** From the status payload, when fal sent one. */
+  queuePosition?: number;
 }
 
 export class FalValidationError extends ProviderError {
@@ -224,9 +228,12 @@ export async function pollFal(
 ): Promise<FalSnapshot> {
   const statusRes = await falCall(apiKey, urls.statusUrl);
   if (statusRes.status < 200 || statusRes.status >= 300) throw httpFailure(statusRes.status, statusRes.body, apiKey);
-  const queueStatus = str(asRecord(statusRes.body).status);
-  if (queueStatus === "IN_QUEUE") return { status: "queued", response: statusRes.body, outputs: [] };
-  if (queueStatus === "IN_PROGRESS") return { status: "running", response: statusRes.body, outputs: [] };
+  const statusBody = asRecord(statusRes.body);
+  const queueStatus = str(statusBody.status);
+  const position = statusBody.queue_position;
+  const queuePosition = typeof position === "number" && Number.isFinite(position) ? position : undefined;
+  if (queueStatus === "IN_QUEUE") return { status: "queued", response: statusRes.body, outputs: [], queuePosition };
+  if (queueStatus === "IN_PROGRESS") return { status: "running", response: statusRes.body, outputs: [], queuePosition };
   if (queueStatus !== "COMPLETED") {
     return {
       status: "failed",
@@ -283,11 +290,17 @@ function httpsUrl(value: string): URL | undefined {
 export function collectOutputs(value: unknown): FalOutput[] {
   const out: FalOutput[] = [];
   const seen = new Set<string>();
-  const add = (raw: string, contentType?: string, fileName?: string) => {
+  const add = (raw: string, contentType?: string, fileName?: string, width?: number, height?: number) => {
     const url = httpsUrl(raw);
     if (!url || isFalApiHost(url.hostname) || seen.has(raw)) return;
     seen.add(raw);
-    out.push({ url: raw, contentType, fileName });
+    out.push({
+      url: raw,
+      contentType,
+      fileName,
+      ...(typeof width === "number" && Number.isFinite(width) ? { width } : {}),
+      ...(typeof height === "number" && Number.isFinite(height) ? { height } : {}),
+    });
   };
   const walk = (node: unknown, key?: string) => {
     if (typeof node === "string") {
@@ -312,6 +325,8 @@ export function collectOutputs(value: unknown): FalOutput[] {
           rec.url,
           typeof rec.content_type === "string" ? rec.content_type : undefined,
           typeof rec.file_name === "string" ? rec.file_name : undefined,
+          typeof rec.width === "number" ? rec.width : undefined,
+          typeof rec.height === "number" ? rec.height : undefined,
         );
     }
     for (const [k, v] of Object.entries(rec)) if (k !== "url") walk(v, k);

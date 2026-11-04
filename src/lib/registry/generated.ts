@@ -1,9 +1,10 @@
-// fal and OpenRouter catalogs. Server and tests only — client components import
-// ./index, which is the hand-written ModelArk and ArgoLink entries.
+// fal and OpenRouter catalogs, plus hand-checked upscale tools (catalog/upscale.json).
+// Server and tests only — client components import ./index, which is the hand-written
+// ModelArk and ArgoLink entries. catalog:sync does not write upscale.json.
 
 import falCatalog from "./catalog/fal.json" with { type: "json" };
 import openRouterCatalog from "./catalog/openrouter.json" with { type: "json" };
-import { routeProviders, type CatalogTool } from "./availability";
+import upscaleCatalog from "./catalog/upscale.json" with { type: "json" };
 import { HAND_MODELS } from "./hand";
 import { assertRegistry, parseModel } from "./parse";
 import { isImage, isVideo, type ImageModel, type ModelEntry, type VideoModel } from "./types";
@@ -19,6 +20,7 @@ function fromCatalog(file: CatalogFile): ModelEntry[] {
 export const GENERATED_MODELS: readonly ModelEntry[] = [
   ...fromCatalog(falCatalog as CatalogFile),
   ...fromCatalog(openRouterCatalog as CatalogFile),
+  ...fromCatalog(upscaleCatalog as CatalogFile),
 ];
 
 /** Hand-written entries plus the generated catalogs. */
@@ -51,29 +53,6 @@ export function openRouterPickerModels(): VideoModel[] {
     .slice()
     .sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
     .map((model) => slimVideo(model, "openrouter"));
-}
-
-const TOOL_TASKS = ["upscale", "extend", "lipsync", "avatar", "motion"] as const;
-
-const TOOL_LABEL: Record<(typeof TOOL_TASKS)[number], string> = {
-  upscale: "Upscale",
-  extend: "Extend",
-  lipsync: "Lipsync",
-  avatar: "Avatar",
-  motion: "Motion",
-};
-
-function hasTask(model: ModelEntry, task: string) {
-  return model.task === task || (model.tasks as readonly string[]).includes(task);
-}
-
-/** One chip per tool task, with the providers that can run it. Endpoints stay on the server. */
-export function toolMenu(): CatalogTool[] {
-  return TOOL_TASKS.flatMap((task) => {
-    const providers = routeProviders(ALL_MODELS.filter((model) => hasTask(model, task)).flatMap((model) => model.routes));
-    if (!providers.length) return [];
-    return [{ task, label: TOOL_LABEL[task], providers }];
-  });
 }
 
 const STUDIO_TASKS = new Set(["t2v", "i2v", "ref2v"]);

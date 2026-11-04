@@ -18,6 +18,7 @@ export function MediaPreview({
   onNext,
   onClose,
   actions,
+  lineage,
 }: {
   item: LibraryItem;
   /** Extra buttons for the footer (e.g. the Assets view's Download / Use in…). */
@@ -29,6 +30,13 @@ export function MediaPreview({
   onPrev?: () => void;
   onNext?: () => void;
   onClose: () => void;
+  /** What this file was made from, and what was made from it. */
+  lineage?: {
+    toolName?: string;
+    parent?: { id: string; name: string };
+    children: { id: string; name: string }[];
+    onOpen: (id: string) => void;
+  };
 }) {
   const src = fileSrc(item);
 
@@ -42,9 +50,15 @@ export function MediaPreview({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, onPrev, onNext]);
 
+  const size = item.resolution ?? (item.width && item.height ? `${item.width}×${item.height}` : undefined);
   const details = [
-    item.source === "generated" ? `Generated · ${modelLabel(item.generation?.model ?? "")}` : "Uploaded",
+    item.source === "processed"
+      ? "Processed"
+      : item.source === "generated"
+        ? `Generated · ${modelLabel(item.generation?.model ?? "")}`
+        : "Uploaded",
     item.kind === "image" ? "Image" : item.kind === "video" ? "Video" : "Audio",
+    size,
     formatDuration(item.duration),
     formatBytes(item.bytes),
   ].filter(Boolean);
@@ -84,12 +98,39 @@ export function MediaPreview({
         <div className="flex items-center gap-3 border-t border-white/5 px-4 py-3">
           <div className="min-w-0 flex-1">
             <p
-              className={`text-sm font-medium ${item.source === "generated" ? "line-clamp-2" : "truncate"}`}
+              className={`text-sm font-medium ${item.source === "generated" || item.source === "processed" ? "line-clamp-2" : "truncate"}`}
               title={item.name}
             >
-              {item.generation?.prompt ?? item.name}
+              {item.generation?.prompt || item.name}
             </p>
             <p className="text-xs text-zinc-500">{details.join(" · ")}</p>
+            {lineage && (lineage.parent || lineage.toolName || lineage.children.length > 0) && (
+              <div className="mt-1 space-y-0.5 text-xs text-zinc-400">
+                {lineage.parent && (
+                  <p>
+                    Made from{" "}
+                    <button type="button" onClick={() => lineage.onOpen(lineage.parent!.id)} className="text-zinc-200 underline">
+                      {lineage.parent.name}
+                    </button>
+                    {lineage.toolName ? ` · ${lineage.toolName}` : ""}
+                  </p>
+                )}
+                {!lineage.parent && lineage.toolName && <p>Made with {lineage.toolName}</p>}
+                {lineage.children.length > 0 && (
+                  <p>
+                    Made from this:{" "}
+                    {lineage.children.map((child, index) => (
+                      <span key={child.id}>
+                        {index > 0 && ", "}
+                        <button type="button" onClick={() => lineage.onOpen(child.id)} className="text-zinc-200 underline">
+                          {child.name}
+                        </button>
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           {actions}
           {onToggle && item.status === "ready" && (

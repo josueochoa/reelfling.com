@@ -50,26 +50,25 @@ export interface UploadItem {
   duration?: number;
   /** Waveform bar heights (0–100), for audio. */
   peaks?: number[];
+  width?: number;
+  height?: number;
+  /** Label stored on a finished upscale, for example "1920×1080" or "4K". */
+  resolution?: string;
   hasThumb: boolean;
   createdAt: number;
 }
 
-export type AssetSource = "upload" | "generated";
+export type AssetSource = "upload" | "generated" | "processed";
 
-/** Who made something, for team workspaces. */
-export interface Creator {
-  id: string;
-  email: string;
-  name: string | null;
-  avatarUrl: string | null;
-}
-
-/** Anything in the workspace's bucket: uploads plus generated videos and images. */
+/** Anything in the user's bucket they'd want to see: uploads plus generated videos and images. */
 export interface AssetItem extends UploadItem {
   source: AssetSource;
   /** For generated assets: what made it. */
   generation?: { id: string; tab: "video" | "image" | "fal"; model: string; prompt: string };
-  createdBy?: Creator;
+  /** Asset key this file was made from, when a tool produced it. */
+  parentId?: string;
+  /** Catalog tool id. */
+  tool?: string;
 }
 
 /** Keys of assets the app lists and lets users reference (not thumbnails or old `refs/`). */

@@ -1,5 +1,5 @@
 import { connection, NextResponse, type NextRequest } from "next/server";
-import { authMode, createSession, NotInvitedError, upsertUser } from "@/lib/auth";
+import { authMode, createSession, upsertUser } from "@/lib/auth";
 import { finishAuth, googleConfig, OAUTH_COOKIE, redirectUri } from "@/lib/google";
 import { ensureBucket } from "@/lib/storage";
 
@@ -32,11 +32,10 @@ export async function GET(request: NextRequest) {
     if (!profile.email_verified) return fail("unverified_email");
     const user = await upsertUser({ email: profile.email, name: profile.name, avatarUrl: profile.picture });
     await createSession(user.id);
-    // Provision the user's bucket up front. Not fatal: uploads retry it on first use.
-    await ensureBucket(user.id).catch((e) => console.error("Bucket setup failed:", (e as Error).message));
+    // Confirms R2 is configured. Does not create a bucket: objects share R2_BUCKET.
+    await ensureBucket().catch((e) => console.error("Storage setup failed:", e));
   } catch (e) {
-    if (e instanceof NotInvitedError) return fail("not_invited");
-    console.error("Google sign-in failed:", (e as Error).message);
+    console.error("Google sign-in failed:", e);
     return fail("google_error");
   }
 

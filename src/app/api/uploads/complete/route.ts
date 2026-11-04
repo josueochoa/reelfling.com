@@ -1,9 +1,15 @@
-import { errorResponse } from "@/lib/auth";
-import { requireWorkspace } from "@/lib/workspaces";
+import { errorResponse, requireUser } from "@/lib/auth";
 import { completeUpload, deleteAsset, discardUpload, storageUsage } from "@/lib/storage";
 import { LIBRARY_PREFIX, thumbKeyFor, UPLOAD_RULES, uploadKindOf } from "@/lib/uploads";
 
 const KEY_RE = new RegExp(`^${LIBRARY_PREFIX}[0-9a-f-]{36}\\.[a-z0-9]+$`);
+
+function finiteDim(value: unknown, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value);
+  if (rounded < 1 || rounded > max) return undefined;
+  return rounded;
+}
 
 /**
  * { key, name, duration?, peaks?, thumb? } — call after the browser's PUTs succeed.
@@ -12,22 +18,25 @@ const KEY_RE = new RegExp(`^${LIBRARY_PREFIX}[0-9a-f-]{36}\\.[a-z0-9]+$`);
  */
 export async function POST(request: Request) {
   try {
-    const { user, workspace } = await requireWorkspace(request);
+    const user = await requireUser();
     const body = (await request.json()) as {
       key: string;
       name?: string;
       duration?: number;
       peaks?: number[];
       thumb?: boolean;
+      width?: number;
+      height?: number;
     };
     const { key } = body;
     if (!KEY_RE.test(key ?? "")) return Response.json({ error: "Invalid upload key" }, { status: 400 });
 
-    const asset = await completeUpload(workspace.id, key, {
-      createdBy: user.id,
+    const asset = await completeUpload(user.id, key, {
       name: body.name?.trim().slice(0, 120) || key.split("/").pop()!,
       meta: {
         duration: Number.isFinite(body.duration) ? Math.round(body.duration! * 100) / 100 : undefined,
+        width: finiteDim(body.width, 20_000),
+        height: finiteDim(body.height, 20_000),
         // Waveform bars for audio: up to 64 values, 0–100.
         peaks: Array.isArray(body.peaks)
           ? body.peaks.slice(0, 64).map((p) => Math.max(0, Math.min(100, Math.round(Number(p) || 0))))
@@ -39,7 +48,7 @@ export async function POST(request: Request) {
 
     const kind = uploadKindOf(asset.contentType);
     const rules = kind && UPLOAD_RULES[kind];
-    const usage = await storageUsage(workspace.id);
+    const usage = await storageUsage(user.id);
     const problem = !rules
       ? "Unsupported file type"
       : asset.bytes > rules.maxBytes * 1.1 // allowance for the thumbnail
@@ -48,7 +57,7 @@ export async function POST(request: Request) {
           ? "Your storage is full. Delete some uploads or videos to make room."
           : undefined;
     if (problem) {
-      await deleteAsset(asset).catch(() => discardUpload(workspace.id, key));
+      await deleteAsset(asset).catch(() => discardUpload(user.id, key));
       return Response.json({ error: problem }, { status: 400 });
     }
     return Response.json({ key, bytes: asset.bytes });

@@ -3,23 +3,18 @@
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { invalidMentions, mentionToken, remapMentions, type RefCounts, type RefKind } from "@/lib/mentions";
 import {
+  CAMERA_MOVE_MAX,
   cameraMoveLabel,
   cameraMovesFor,
+  cameraPresets,
+  compileCamera,
   estimateRouteCost,
-  keptCameraMove,
-  type CameraMove,
+  keptCameraMoves,
   type RouteProvider,
   type VideoModel,
 } from "@/lib/registry";
+import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
-import {
-  availability,
-  availabilityHint,
-  modeRoutes,
-  routesForProviders,
-  sortByAvailability,
-  type CatalogTool,
-} from "@/lib/registry/availability";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { CameraMoves } from "./CameraMoves";
 import { ModelMenu } from "./ModelMenu";
@@ -49,7 +44,9 @@ export interface Preset {
   referenceKeys?: string[];
   /** Inline note, for a Reuse that couldn't find every file. */
   notice?: string;
-  /** Camera preset to restore. A move this model ignores is dropped. */
+  /** Camera chips to restore, in order. */
+  cameraMoves?: string[];
+  /** One preset from a generation saved before chips. */
   cameraMove?: string;
   /** Provider this generation ran on. Reuse sends it again. */
   route?: string;
@@ -98,22 +95,18 @@ export interface ControlPanelHandle {
 interface Props {
   ref?: React.Ref<ControlPanelHandle>;
   models: VideoModel[];
-  /** Providers the active workspace can run on. Names only, never key material. */
+  /** Providers this user has a key for. Names only. */
   keyed: ReadonlySet<string>;
-  /** Saved provider per model id. */
   routePreferences?: Readonly<Record<string, string>>;
   /** users.active_provider, used only when this model has no saved route. */
   defaultProvider?: string | null;
   onSaveRoute?: (modelId: string, provider: string) => void;
-  tools: readonly CatalogTool[];
   preset: Preset;
   onGenerate: (req: GenerateRequest) => Promise<boolean>;
   error: string | null;
   library: Library;
   onOpenLibrary: () => void;
   onOpenKeys: () => void;
-  /** A fal-only tool has a key, but this composer can't run it. */
-  onUseFal?: () => void;
   /** Library item id → its mention ("@Image 2"), for showing selection in the Uploads panel. */
   onReferencesChange: (labels: Map<string, string>) => void;
 }
@@ -142,9 +135,6 @@ const pickRatio = (model: VideoModel, prefer?: string, hasFrame?: boolean) => {
   return list.find((ratio) => ratio === "16:9") ?? list.find((ratio) => ratio !== "adaptive") ?? list[0] ?? "16:9";
 };
 
-const hasTask = (model: VideoModel, task: string) =>
-  model.task === task || (model.tasks as readonly string[]).includes(task);
-
 export function ControlPanel({
   ref,
   models,
@@ -152,14 +142,12 @@ export function ControlPanel({
   routePreferences,
   defaultProvider,
   onSaveRoute,
-  tools,
   preset,
   onGenerate,
   error,
   library,
   onOpenLibrary,
   onOpenKeys,
-  onUseFal,
   onReferencesChange,
 }: Props) {
   const initialModel = models.find((m) => m.id === preset.model) ?? models[0];
@@ -186,8 +174,8 @@ export function ControlPanel({
   // Latest list for handlers that run after an await.
   const refsNow = useRef(refIds);
   const [seed, setSeed] = useState("");
-  const [cameraMove, setCameraMove] = useState<CameraMove | undefined>(() =>
-    keptCameraMove(initialModel, preset.cameraMove),
+  const [cameraMoves, setCameraMoves] = useState<string[]>(() =>
+    keptCameraMoves(initialModel, preset.cameraMoves, preset.cameraMove),
   );
   const [routeChoice, setRouteChoice] = useState<string | undefined>(preset.route);
   const [cameraFixed, setCameraFixed] = useState(false);
@@ -195,7 +183,6 @@ export function ControlPanel({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [modeHover, setModeHover] = useState<GenerationMode | null>(null);
-  const [toolHover, setToolHover] = useState<string | null>(null);
   const editor = useRef<PromptEditorHandle>(null);
 
   const caps = model.capabilities;
@@ -203,10 +190,8 @@ export function ControlPanel({
   const showFixed = moves.length === 0 && !!(caps.camera && caps.camera.fixed);
   const durations = caps.durations;
   const hasRefs = caps.references.total > 0;
-  const effectiveMode: GenerationMode =
-    mode === "references" && availability({ routes: modeRoutes(model, "references") }, keyed).available
-      ? "references"
-      : "frames";
+  const routesOpen = availabilityFor(routeProviders(model.routes), keyed).available;
+  const effectiveMode: GenerationMode = hasRefs && mode === "references" && routesOpen ? "references" : "frames";
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
   const audioOn = caps.audio === "required" || (caps.audio === "optional" && generateAudio);
@@ -410,28 +395,27 @@ export function ControlPanel({
   }));
 
   function changeMode(m: GenerationMode) {
-    const open = availability({ routes: modeRoutes(model, m) }, keyed);
-    if (!open.available) return;
+    if (!routesOpen) return;
     setMode(m);
     if (m === "references" && ratio === "adaptive") setRatio("16:9");
   }
 
   function changeModel(id: string) {
     const m = models.find((x) => x.id === id);
-    if (!m || !availability(m, keyed).available) return;
+    if (!m || !availabilityFor(routeProviders(m.routes), keyed).available) return;
     setModel(m);
     if (!m.capabilities.ratios.includes(ratio)) setRatio(pickRatio(m));
     setResolution(pickResolution(m, resolution));
     setDuration((d) => clampDuration(d, m));
     if (!m.capabilities.frames.end) setLastFrame(undefined);
     if (!m.capabilities.frames.start) setFirstFrame(undefined);
-    setCameraMove((move) => keptCameraMove(m, move));
+    setCameraMoves((moves) => keptCameraMoves(m, moves));
     setRouteChoice(undefined);
   }
 
   function changeRoute(provider: RouteProvider) {
-    const open = availability({ routes: model.routes.filter((item) => item.provider === provider) }, keyed);
-    if (!open.available) return;
+    if (!availabilityFor([provider], keyed).available) return;
+    if (!model.routes.some((item) => item.provider === provider)) return;
     setRouteChoice(provider);
     onSaveRoute?.(model.id, provider);
   }
@@ -439,7 +423,7 @@ export function ControlPanel({
   const uploading =
     (refs && refList.some((r) => r.item.status !== "ready")) ||
     (effectiveMode === "frames" && (framePending(firstFrame) || framePending(lastFrame)));
-  const gate = availability({ routes: modeRoutes(model, effectiveMode) }, keyed);
+  const gate = availabilityFor(routeProviders(model.routes), keyed);
   const canSubmit =
     gate.available &&
     !submitting &&
@@ -450,6 +434,21 @@ export function ControlPanel({
 
   const refValues = (kind: UploadKind) =>
     refList.filter((r) => r.item.kind === kind).map((r) => `upload:${r.item.key}`);
+
+  function changeCamera(id: string, toggle: boolean) {
+    if (!moves.includes(id)) return;
+    if (cameraMoves.includes(id)) {
+      if (toggle) setCameraMoves(cameraMoves.filter((move) => move !== id));
+      return;
+    }
+    if (cameraMoves.length >= CAMERA_MOVE_MAX) {
+      setNotice(`Up to ${CAMERA_MOVE_MAX} camera moves.`);
+      return;
+    }
+    setCameraMoves([...cameraMoves, id]);
+  }
+
+  const compiled = moves.length ? compileCamera(model, prompt, cameraMoves) : undefined;
 
   async function submit() {
     if (!canSubmit) return;
@@ -465,7 +464,7 @@ export function ControlPanel({
       route: routeProvider,
       generateAudio: caps.audio === "required" ? true : caps.audio === "optional" ? generateAudio : undefined,
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
-      cameraMove: moves.length && cameraMove ? cameraMove : undefined,
+      cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
       cameraFixed: showFixed ? cameraFixed : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
@@ -505,108 +504,47 @@ export function ControlPanel({
           <p className="mt-1.5 text-xs text-zinc-500">{model.description}</p>
         </Section>
 
-        {tools.length > 0 && (
-          <Section label="Tools">
-            <div data-testid="tool-row" onMouseLeave={() => setToolHover(null)}>
-            <div className="flex flex-wrap gap-1.5">
-              {sortByAvailability(tools, (tool) => availability({ routes: routesForProviders(tool.providers) }, keyed).available).map(
-                (tool) => {
-                  const open = availability({ routes: routesForProviders(tool.providers) }, keyed);
-                  const locked = !open.available;
-                  return (
-                    <button
-                      key={tool.task}
-                      type="button"
-                      data-testid={`tool-${tool.task}`}
-                      data-available={locked ? "false" : "true"}
-                      aria-disabled={locked}
-                      onMouseEnter={() => setToolHover(tool.task)}
-                      onClick={() => {
-                        if (locked) {
-                          setToolHover(tool.task);
-                          return;
-                        }
-                        const match = models.find((item) => hasTask(item, tool.task) && availability(item, keyed).available);
-                        if (match) changeModel(match.id);
-                        else if (tool.providers.includes("fal") && keyed.has("fal")) onUseFal?.();
-                      }}
-                      className={`rounded-lg border px-2.5 py-1.5 text-xs ${
-                        locked
-                          ? "cursor-not-allowed border-white/5 text-zinc-600 opacity-50"
-                          : "border-white/15 text-zinc-100 hover:border-white/25 hover:text-white"
-                      }`}
-                    >
-                      {tool.label}
-                    </button>
-                  );
-                },
-              )}
+        {hasRefs && (
+          <div onMouseLeave={() => setModeHover(null)}>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
+              {(["frames", "references"] as const).map((m) => {
+                const active = effectiveMode === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    data-testid={`mode-${m}`}
+                    data-available={routesOpen ? "true" : "false"}
+                    aria-disabled={!routesOpen}
+                    aria-pressed={active && routesOpen}
+                    onMouseEnter={() => setModeHover(m)}
+                    onClick={() => {
+                      if (!routesOpen) {
+                        setModeHover(m);
+                        return;
+                      }
+                      changeMode(m);
+                    }}
+                    className={`rounded-lg py-1.5 capitalize transition ${
+                      !routesOpen
+                        ? "cursor-not-allowed text-zinc-600"
+                        : active
+                          ? "bg-white/10 text-white"
+                          : "text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
             </div>
-            {toolHover && (
+            {modeHover && !routesOpen && (
               <div className="mt-2">
-                <UnlockHint
-                  hint={availabilityHint(
-                    availability(
-                      {
-                        routes: routesForProviders(tools.find((tool) => tool.task === toolHover)?.providers ?? []),
-                      },
-                      keyed,
-                    ).needs,
-                  )}
-                  onOpen={onOpenKeys}
-                />
+                <UnlockHint hint={availabilityHint(gate.needs)} onOpen={onOpenKeys} />
               </div>
             )}
-            </div>
-          </Section>
-        )}
-
-        <div onMouseLeave={() => setModeHover(null)}>
-        <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
-          {(["frames", "references"] as const).map((m) => {
-            const open = availability({ routes: modeRoutes(model, m) }, keyed);
-            const locked = !open.available;
-            const active = effectiveMode === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                data-testid={`mode-${m}`}
-                data-available={locked ? "false" : "true"}
-                aria-disabled={locked}
-                aria-pressed={active && !locked}
-                onMouseEnter={() => setModeHover(m)}
-                onClick={() => {
-                  if (locked) {
-                    setModeHover(m);
-                    return;
-                  }
-                  changeMode(m);
-                }}
-                className={`rounded-lg py-1.5 capitalize transition ${
-                  locked
-                    ? active
-                      ? "cursor-not-allowed bg-white/5 text-zinc-500"
-                      : "cursor-not-allowed text-zinc-600"
-                    : active
-                      ? "bg-white/10 text-white"
-                      : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {m}
-              </button>
-            );
-          })}
-        </div>
-        {modeHover && (
-          <div className="mt-2">
-            <UnlockHint
-              hint={availabilityHint(availability({ routes: modeRoutes(model, modeHover) }, keyed).needs)}
-              onOpen={onOpenKeys}
-            />
           </div>
         )}
-        </div>
 
         {effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (
@@ -653,10 +591,50 @@ export function ControlPanel({
             counts={counts}
             placeholder={
               refs
-                ? "The cat from @Image 1 dances on the rooftop from @Image 2… (type @ to reference)"
-                : "A slow dolly-in on a neon-lit ramen stall at night, rain on the window, steam rising…"
+                ? "The cat from @Image 1 dances on the rooftop from @Image 2… (type @ to reference, # for a camera move)"
+                : "A paper boat in the rain… (type # for a camera move)"
             }
+            cameras={
+              moves.length
+                ? cameraPresets
+                    .filter((preset) => moves.includes(preset.id))
+                    .map((preset) => ({
+                      id: preset.id,
+                      name: preset.name,
+                      description: preset.description,
+                      category: preset.category,
+                    }))
+                : undefined
+            }
+            onAddCamera={(id) => changeCamera(id, false)}
           />
+          {cameraMoves.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {cameraMoves.map((id, index) => (
+                <span
+                  key={`${id}-${index}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-0.5 pr-1 pl-2 text-xs text-accent"
+                >
+                  {cameraMoveLabel(id) ?? id}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${cameraMoveLabel(id) ?? "camera move"}`}
+                    onClick={() => setCameraMoves((cur) => cur.filter((_, at) => at !== index))}
+                    className="grid size-4 place-items-center rounded-full text-accent/80 hover:bg-accent/20 hover:text-accent"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {compiled && cameraMoves.length > 0 && (
+            <div className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs leading-relaxed text-zinc-300">
+              <p className="mb-1 text-[10px] font-medium tracking-wide text-zinc-500 uppercase">Prompt sent</p>
+              <p>{compiled.prompt || "—"}</p>
+              {compiled.cameraFixed && <p className="mt-1 text-zinc-500">Static is sent as a fixed camera.</p>}
+            </div>
+          )}
           {badMentions.length > 0 && (
             <p className="mt-1.5 text-xs text-red-300">
               {refs
@@ -667,8 +645,8 @@ export function ControlPanel({
         </Section>
 
         {moves.length > 0 && (
-          <Section label="Camera" aside={cameraMoveLabel(cameraMove) ?? "None"}>
-            <CameraMoves value={cameraMove} onChange={setCameraMove} />
+          <Section label="Camera" aside={cameraMoves.length ? `${cameraMoves.length}/${CAMERA_MOVE_MAX}` : "Type #"}>
+            <CameraMoves value={cameraMoves} onToggle={(id) => changeCamera(id, true)} />
           </Section>
         )}
 

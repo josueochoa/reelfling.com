@@ -1,84 +1,174 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { describe, it } from "node:test";
-import { canCreateTeam, canManageKeys, canModify, countsTowardCap, permit, type Role, type TeamAction } from "./teamPolicy";
+import { CLAIM_INVITE_SQL, JOIN_CLAIMED_INVITE_SQL } from "./teams";
+import {
+  canReadTeamItem,
+  publicAuthor,
+  publicTeamAsset,
+  publicTeamGeneration,
+  teamMediaContentType,
+  teamMediaHeaders,
+  teamMediaUrl,
+  visibleTeamItems,
+} from "./teamPolicy";
 
-const ROLES: Role[] = ["owner", "admin", "member"];
+const ADA = "user-ada";
+const BEN = "user-ben";
+const CID = "user-cid";
 
-/** Every team route and the action its handler checks. */
-const ROUTES: { file: string; action: TeamAction | "createTeam"; needle: string }[] = [
-  { file: "src/app/api/workspaces/route.ts", action: "createTeam", needle: "canCreateTeam(" },
-  { file: "src/app/api/workspaces/[id]/route.ts", action: "rename", needle: 'permit(ws.role, "rename")' },
-  { file: "src/app/api/workspaces/[id]/route.ts", action: "setMemberKeys", needle: 'permit(ws.role, "setMemberKeys")' },
-  { file: "src/app/api/workspaces/[id]/route.ts", action: "deleteTeam", needle: 'permit(ws.role, "deleteTeam")' },
-  { file: "src/app/api/workspaces/[id]/transfer/route.ts", action: "transfer", needle: 'permit(ws.role, "transfer")' },
-  { file: "src/app/api/workspaces/[id]/invites/route.ts", action: "invite", needle: 'permit(ws.role, "invite")' },
-  { file: "src/app/api/workspaces/[id]/invites/[inviteId]/route.ts", action: "revokeInvite", needle: 'permit(ws.role, "revokeInvite")' },
-  { file: "src/app/api/workspaces/[id]/members/route.ts", action: "invite", needle: 'permit(ws.role, "invite")' },
-  { file: "src/app/api/workspaces/[id]/members/[userId]/route.ts", action: "setRole", needle: 'permit(ws.role, "setRole"' },
-  { file: "src/app/api/workspaces/[id]/members/[userId]/route.ts", action: "setCap", needle: 'permit(ws.role, "setCap")' },
-  { file: "src/app/api/workspaces/[id]/members/[userId]/route.ts", action: "removeOther", needle: 'permit(ws.role, "removeOther"' },
-  { file: "src/app/api/workspaces/[id]/members/[userId]/route.ts", action: "leave", needle: 'permit(ws.role, "leave"' },
-  { file: "src/app/api/workspaces/[id]/usage/route.ts", action: "viewUsage", needle: 'permit(ws.role, "viewUsage")' },
-  { file: "src/app/api/keys/route.ts", action: "manageKeys", needle: "requireKeyManager(" },
-  // A route preference is the signed-in user's, not the team's shared switch.
-  { file: "src/app/api/me/route.ts", action: "setRoute", needle: "requireWorkspace(" },
-  { file: "src/app/api/generations/[id]/route.ts", action: "editOwn", needle: "requireCanModify(" },
-  { file: "src/app/api/images/[id]/route.ts", action: "editOwn", needle: "requireCanModify(" },
-  { file: "src/app/api/fal/[id]/route.ts", action: "editOwn", needle: "requireCanModify(" },
-  { file: "src/app/api/assets/route.ts", action: "editOwn", needle: "requireCanModify(" },
-  { file: "src/app/api/uploads/route.ts", action: "editOwn", needle: "requireCanModify(" },
-];
+describe("team membership", () => {
+  const boat = { ownerId: ADA, prompt: "A red paper boat" };
+  const fox = { ownerId: BEN, prompt: "A blue fox" };
 
-describe("team roles", () => {
-  it("lets any signed-in user create a team", () => {
-    assert.equal(canCreateTeam(), true);
-    const src = readFileSync("src/app/api/workspaces/route.ts", "utf8");
-    assert.equal(src.includes("plan"), false);
-    assert.equal(src.includes("stripe"), false);
+  it("hides the team from someone who was never a member", () => {
+    const members = [ADA, BEN];
+    assert.equal(canReadTeamItem(members, CID, ADA), false);
+    assert.deepEqual(visibleTeamItems(members, CID, [boat, fox]), []);
   });
 
-  for (const role of ROLES) {
-    it(`${role} permissions`, () => {
-      assert.equal(permit(role, "generate"), true);
-      assert.equal(permit(role, "editOwn"), true);
-      assert.equal(permit(role, "rename"), role === "owner");
-      assert.equal(permit(role, "setCap"), role === "owner");
-      assert.equal(permit(role, "setMemberKeys"), role === "owner");
-      assert.equal(permit(role, "setAdminsManageKeys"), role === "owner");
-      assert.equal(permit(role, "transfer"), role === "owner");
-      assert.equal(permit(role, "deleteTeam"), role === "owner");
-      assert.equal(permit(role, "invite"), role !== "member");
-      assert.equal(permit(role, "revokeInvite"), role !== "member");
-      assert.equal(permit(role, "viewUsage"), role !== "member");
-      assert.equal(permit(role, "editOther"), role !== "member");
-      assert.equal(permit(role, "setRole", { targetIsOwner: false }), role !== "member");
-      assert.equal(permit(role, "setRole", { targetIsOwner: true }), false);
-      assert.equal(permit(role, "removeOther", { targetIsOwner: false }), role !== "member");
-      assert.equal(permit(role, "removeOther", { targetIsOwner: true }), false);
-      assert.equal(permit(role, "leave", { self: true }), role !== "owner");
-      assert.equal(permit(role, "leave", { self: false }), false);
-      assert.equal(permit(role, "manageKeys", { adminsManageKeys: false }), role === "owner");
-      assert.equal(permit(role, "manageKeys", { adminsManageKeys: true }), role !== "member");
-      assert.equal(permit(role, "setRoute", { adminsManageKeys: false }), role === "owner");
-      assert.equal(canManageKeys("personal", role, false), true);
-      assert.equal(canManageKeys("team", role, false), role === "owner");
-      assert.equal(canManageKeys("team", role, true), role !== "member");
-      assert.equal(canModify(role, "someone-else", "me"), role !== "member");
-      assert.equal(canModify(role, "me", "me"), true);
+  it("lets a member read every current teammate's items", () => {
+    const members = [ADA, BEN];
+    assert.equal(canReadTeamItem(members, ADA, BEN), true);
+    assert.equal(canReadTeamItem(members, BEN, ADA), true);
+    assert.deepEqual(
+      visibleTeamItems(members, BEN, [boat, fox]).map((item) => item.ownerId),
+      [ADA, BEN],
+    );
+  });
+
+  it("drops access once a member is removed", () => {
+    const before = [ADA, BEN];
+    assert.equal(canReadTeamItem(before, BEN, ADA), true);
+    // Removal is the member id leaving the current set. The next request sees that set.
+    const after = [ADA];
+    assert.equal(canReadTeamItem(after, BEN, ADA), false);
+    assert.equal(canReadTeamItem(after, BEN, BEN), false);
+    assert.deepEqual(visibleTeamItems(after, BEN, [boat, fox]), []);
+    // What they made is no longer part of the team, either.
+    assert.deepEqual(
+      visibleTeamItems(after, ADA, [boat, fox]).map((item) => item.prompt),
+      ["A red paper boat"],
+    );
+  });
+});
+
+describe("team view payloads", () => {
+  const secret = "sk-live-TEAMMATE-KEY-4455";
+
+  it("shows who made a generation and drops urls and key material", () => {
+    const view = publicTeamGeneration({
+      id: "gen-1",
+      ownerId: ADA,
+      kind: "video",
+      createdAt: 10,
+      author: { id: ADA, name: "Ada", email: "ada@example.com", last4: "4455" } as never,
+      data: {
+        prompt: "A red paper boat",
+        model: "seedance-2.0",
+        status: "succeeded",
+        stored: true,
+        remoteVideoUrl: "https://provider.example/video?X-Amz-Signature=abc",
+        apiKey: secret,
+        request: { prompt: "ignored when prompt is set", apiKey: secret },
+      },
     });
+    assert.equal(view.prompt, "A red paper boat");
+    assert.equal(view.author.name, "Ada");
+    assert.deepEqual(Object.keys(view.author).sort(), ["email", "id", "name"]);
+    const json = JSON.stringify(view);
+    assert.equal(json.includes(secret), false);
+    assert.equal(json.includes("remoteVideoUrl"), false);
+    assert.equal(json.includes("X-Amz-Signature"), false);
+    assert.equal(json.includes("last4"), false);
+    assert.equal(json.includes("4455"), false);
+  });
+
+  it("keeps an author to a name and email", () => {
+    const author = publicAuthor({ id: BEN, name: null, email: "ben@example.com" });
+    assert.deepEqual(author, { id: BEN, name: null, email: "ben@example.com" });
+  });
+
+  it("serves teammate media from a same-origin route with no signature", () => {
+    const url = teamMediaUrl("team-1", ADA, "images/gen-1/0.png", true);
+    assert.equal(url.startsWith("/api/teams/team-1/media?"), true);
+    assert.equal(url.includes("X-Amz-"), false);
+    assert.equal(/https?:/i.test(url), false);
+    const asset = publicTeamAsset({
+      ownerId: ADA,
+      key: "images/gen-1/0.png",
+      name: "boat.png",
+      contentType: "image/png",
+      bytes: 12,
+      createdAt: 10,
+      hasThumb: false,
+      author: { id: ADA, name: "Ada", email: "ada@example.com" },
+    });
+    assert.equal(asset?.name, "boat.png");
+    assert.equal(publicTeamAsset({ ...asset!, key: "../secret", contentType: "image/png", name: "x" }), undefined);
+  });
+
+  it("sandboxes team media and refuses anything that is not image, video, or audio", () => {
+    const headers = teamMediaHeaders({ contentType: "video/mp4", contentLength: "12", contentRange: null });
+    assert.equal(headers.get("Cache-Control"), "private, no-store");
+    assert.equal(headers.get("Content-Security-Policy"), "sandbox");
+    assert.equal(headers.get("X-Content-Type-Options"), "nosniff");
+    assert.equal(headers.has("Location"), false);
+    const raw = [...headers.entries()].map(([key, value]) => `${key}:${value}`).join("\n");
+    assert.equal(/amz|cloudflarestorage|secret/i.test(raw), false);
+
+    assert.equal(teamMediaContentType("video/mp4"), "video/mp4");
+    assert.equal(teamMediaContentType("image/jpeg; charset=binary"), "image/jpeg");
+    assert.equal(teamMediaContentType("audio/mpeg"), "audio/mpeg");
+    assert.equal(teamMediaContentType("application/pdf"), undefined);
+    assert.equal(teamMediaContentType("text/html"), undefined);
+    assert.equal(teamMediaContentType("application/octet-stream"), undefined);
+    assert.equal(teamMediaContentType(null), undefined);
+  });
+});
+
+describe("invite claim", () => {
+  function claimDb() {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE team_invites (
+        id TEXT PRIMARY KEY,
+        team_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        used_by TEXT,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE TABLE team_members (
+        team_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        joined_at INTEGER NOT NULL,
+        PRIMARY KEY (team_id, user_id)
+      );
+      INSERT INTO team_invites (id, team_id, token_hash, expires_at) VALUES ('inv', 'team', 'hash', 5000);
+    `);
+    const claim = db.prepare(CLAIM_INVITE_SQL);
+    const join = db.prepare(JOIN_CLAIMED_INVITE_SQL);
+    const attempt = (userId: string, now: number) => {
+      db.exec("BEGIN");
+      claim.run(userId, "hash", now);
+      join.run(userId, now, "hash", userId);
+      db.exec("COMMIT");
+    };
+    const members = () => db.prepare("SELECT user_id FROM team_members ORDER BY user_id").all() as { user_id: string }[];
+    return { db, attempt, members };
   }
 
-  it("checks a role on every team route", () => {
-    for (const route of ROUTES) {
-      const src = readFileSync(route.file, "utf8");
-      assert.equal(src.includes(route.needle), true, `${route.file} should check ${route.action}`);
-      assert.equal(/stripe|plan_override|effectivePlan/.test(src), false, route.file);
-    }
-  });
+  it("lets one claim add one member and a second claim add nobody", () => {
+    const { db, attempt, members } = claimDb();
+    attempt(ADA, 10);
+    attempt(ADA, 11);
+    attempt(BEN, 12);
+    assert.deepEqual(members().map((row) => row.user_id), [ADA]);
+    assert.equal((db.prepare("SELECT used_by FROM team_invites").get() as { used_by: string }).used_by, ADA);
 
-  it("counts only team-key generations toward a cap", () => {
-    assert.equal(countsTowardCap("team"), true);
-    assert.equal(countsTowardCap("member"), false);
+    db.exec("DELETE FROM team_members");
+    attempt(ADA, 13);
+    assert.deepEqual(members(), []);
   });
 });

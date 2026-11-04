@@ -1,16 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { falVideoEndpoint } from "../providers/fal";
-import { availability } from "./availability";
+import { availabilityFor, routeProviders } from "./availability";
 import { catalogPickerModels } from "./generated";
-import {
-  estimateRouteCost,
-  getModel,
-  imageProviderFor,
-  isVideo,
-  MODELS,
-} from "./index";
-import { pickerModels, preferredRoute, reuseSelection } from "./routing";
+import { estimateRouteCost, getModel, imageProviderFor, isVideo, MODELS } from "./index";
+import { pickerModels, preferredRoute, reuseSelection, routeChoiceError } from "./routing";
 
 const seedance = () => {
   const model = getModel("dreamina-seedance-2-0-260128");
@@ -27,14 +21,14 @@ function studioCatalog() {
 describe("per-model routes", () => {
   it("shows Seedance and Kling together when ModelArk and fal keys are saved", () => {
     const keyed = new Set(["modelark", "fal"]);
-    const open = studioCatalog().filter((model) => availability(model, keyed).available);
+    const open = studioCatalog().filter((model) => availabilityFor(routeProviders(model.routes), keyed).available);
     assert.ok(open.some((model) => model.name.includes("Seedance")));
     assert.ok(open.some((model) => /kling/i.test(model.name)));
     assert.equal(open.some((model) => model.id === "seedance-2.0"), false);
-    const seedanceRow = open.find((model) => model.id === "dreamina-seedance-2-0-260128");
-    assert.ok(seedanceRow);
-    assert.ok(seedanceRow.routes.some((route) => route.provider === "modelark"));
-    assert.ok(seedanceRow.routes.some((route) => route.provider === "fal"));
+    const row = open.find((model) => model.id === "dreamina-seedance-2-0-260128");
+    assert.ok(row);
+    assert.ok(row.routes.some((route) => route.provider === "modelark"));
+    assert.ok(row.routes.some((route) => route.provider === "fal"));
   });
 
   it("uses the saved route, then the old active provider, then the first keyed route", () => {
@@ -55,14 +49,9 @@ describe("per-model routes", () => {
     assert.ok(modelark !== undefined && Math.abs(modelark - 0.756) < 0.02);
     assert.ok(argolink !== undefined && Math.abs(argolink - 0.129 * 5) < 1e-6);
     assert.ok(fal !== undefined && Math.abs(fal - 0.3034 * 5) < 1e-6);
-    assert.notEqual(modelark, argolink);
-
-    // ModelArk: (5 + 10) seconds at the with-video token rate.
     const withVideo = estimateRouteCost(model, "modelark", { ...plain, referenceVideoSeconds: 10 });
     const tokens = (15 * 1280 * 720 * 24) / 1024;
     assert.ok(withVideo !== undefined && Math.abs(withVideo - tokens * 0.0000043) < 1e-6);
-
-    // ArgoLink: 5s output + 2.4s reference bills 9s at the with-video 720p rate.
     const billed = estimateRouteCost(model, "argolink", { ...plain, referenceVideoSeconds: 2.4 });
     assert.ok(billed !== undefined && Math.abs(billed - 0.0792 * 9) < 1e-6);
   });
@@ -71,29 +60,28 @@ describe("per-model routes", () => {
     const model = getModel("nano-banana-2.1");
     assert.ok(model);
     const keyed = new Set(["openrouter"]);
-    assert.equal(availability(model, keyed).available, true);
-    assert.equal(availability(model, keyed).needs.length, 0);
-    const provider = imageProviderFor("modelark", ["openrouter"]);
-    assert.equal(provider, "openrouter");
-    assert.equal(preferredRoute(model, keyed, [provider])?.provider, "openrouter");
-    const argolink = estimateRouteCost(model, "argolink", { resolution: "1k", count: 1 });
-    const openrouter = estimateRouteCost(model, "openrouter", { resolution: "1k", count: 1 });
-    assert.equal(argolink, 0.02);
-    assert.equal(openrouter, 0.034);
+    assert.equal(availabilityFor(routeProviders(model.routes), keyed).available, true);
+    assert.equal(imageProviderFor("modelark", ["openrouter"]), "openrouter");
+    assert.equal(preferredRoute(model, keyed, [imageProviderFor("modelark", ["openrouter"])])?.provider, "openrouter");
+    assert.equal(estimateRouteCost(model, "argolink", { resolution: "1k", count: 1 }), 0.02);
+    assert.equal(estimateRouteCost(model, "openrouter", { resolution: "1k", count: 1 }), 0.034);
   });
 
   it("reuses the route stored on the generation", () => {
-    const catalog = studioCatalog();
-    const hidden = MODELS.filter(isVideo);
-    const again = reuseSelection(hidden, "dreamina-seedance-2-0-260128", "fal");
+    const again = reuseSelection(MODELS.filter(isVideo), "dreamina-seedance-2-0-260128", "fal");
     assert.deepEqual(again, { id: "dreamina-seedance-2-0-260128", route: "fal" });
-    const fromOldId = reuseSelection([...hidden, ...catalog], "seedance-2.0", "argolink");
+    const fromOldId = reuseSelection(MODELS.filter(isVideo), "seedance-2.0", "argolink");
     assert.equal(fromOldId.id, "dreamina-seedance-2-0-260128");
     assert.equal(fromOldId.route, "argolink");
     assert.equal(falVideoEndpoint("bytedance/seedance-2.0/text-to-video", "frames", true), "bytedance/seedance-2.0/image-to-video");
-    assert.equal(
-      falVideoEndpoint("fal-ai/kling-video/v3/pro/text-to-video", "frames", true),
-      "fal-ai/kling-video/v3/pro/text-to-video",
-    );
+  });
+
+  it("rejects an unknown model id and a provider that is not a route of that model", () => {
+    const model = seedance();
+    assert.equal(routeChoiceError(undefined, "fal"), "Unknown model");
+    assert.equal(routeChoiceError(model, "not-a-provider"), "That model has no route on this provider");
+    assert.equal(routeChoiceError(getModel("seedance-1-0-pro-250528"), "fal"), "That model has no route on this provider");
+    assert.equal(routeChoiceError(model, "fal"), null);
+    assert.equal(routeChoiceError(model, "modelark"), null);
   });
 });

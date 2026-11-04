@@ -42,9 +42,8 @@
     // The Access application's AUD tag.
     "ACCESS_AUD": "eccac565bac5751109918539fd189d9cceeb3c34b67e80edc3b4b4dbc060770b",
     "R2_ACCOUNT_ID": "fca019314f738e7878872679ea3604c6",
-    "R2_BUCKET_PREFIX": "reelfling",
-    "STORAGE_QUOTA_GB": "2",
-    // "false": anyone Cloudflare Access lets in gets an account. "true": new accounts also need a team invite.
-    "INVITE_ONLY": "false"
+    // One bucket. Objects are "<user id>/<key>" (a personal workspace id is the user id).
+    "R2_BUCKET": "reelfling-media",
+    "STORAGE_QUOTA_GB": "2"
   }
 }

@@ -11,12 +11,7 @@ import {
   type FalJobView,
 } from "./falTypes";
 import { all, first, run } from "./db";
-import { mockProviders } from "./providers/mock";
-import { getCredentials, scrubSecret } from "./keys";
-import { reportedUsd } from "./reportedCost";
-import { byWorkspace, persistJson, wsArgs, type KeySource } from "./scope";
-import { creatorsIn } from "./storage";
-import type { Creator } from "./uploads";
+import { getCredentials } from "./keys";
 import {
   cancelFal,
   collectOutputs,
@@ -36,7 +31,19 @@ import {
   providerUrl,
   putAsset,
 } from "./storage";
+import { formFor, outputLineage, toolLimitError } from "./registry/tool-forms";
+import { prepareToolInput } from "./toolCatalog";
+import { upscaleResolution } from "./upscaleQuote";
 import { isAssetKey, isUploadRef, uploadKeyOf } from "./uploads";
+
+/** Stored on a fal job when it was started from the Tools menu. */
+export interface FalToolJob {
+  id: string;
+  name: string;
+  inputAssetIds: string[];
+  params: Record<string, string | number | boolean>;
+  route: { provider: "fal"; endpoint: string; mapper: string };
+}
 
 export interface FalJob {
   id: string;
@@ -50,6 +57,10 @@ export interface FalJob {
   request: unknown;
   /** Latest fal payload. */
   response?: unknown;
+  /** Set for a catalog tool. Absent on raw endpoint runs. */
+  tool?: FalToolJob;
+  /** Latest queue position, while fal still has the request. */
+  queuePosition?: number;
   outputs: { key: string; contentType: string }[];
   error?: string;
   fields?: FalFieldError[];
@@ -57,73 +68,55 @@ export interface FalJob {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
-  keySource?: KeySource;
-  route?: string;
-  estimatedCost?: number;
-  reportedCost?: number;
-  keyWorkspaceId?: string;
-  createdBy?: string | null;
-  creator?: Creator;
 }
 
-type Row = { data: string; created_by: string | null };
-const parse = (row?: Row) =>
-  row ? ({ ...(JSON.parse(row.data) as FalJob), createdBy: row.created_by } as FalJob) : undefined;
+const parse = (row?: { data: string }) => (row ? (JSON.parse(row.data) as FalJob) : undefined);
 
-export async function listFalJobs(workspaceId: string) {
-  const [rows, creators] = await Promise.all([
-    all<Row>(`SELECT data, created_by FROM fal_jobs WHERE ${byWorkspace()} ORDER BY created_at DESC`, ...wsArgs(workspaceId)),
-    creatorsIn("fal_jobs", workspaceId),
-  ]);
-  return rows.map((row) => ({ ...parse(row)!, creator: (row.created_by && creators.get(row.created_by)) || undefined }));
-}
-
-export async function getFalJob(workspaceId: string, id: string) {
-  return parse(
-    await first<Row>(`SELECT data, created_by FROM fal_jobs WHERE id = ? AND ${byWorkspace()}`, id, ...wsArgs(workspaceId)),
+export async function listFalJobs(userId: string) {
+  const rows = await all<{ data: string }>(
+    "SELECT data FROM fal_jobs WHERE user_id = ? ORDER BY created_at DESC",
+    userId,
   );
+  return rows.map((row) => parse(row)!);
 }
 
-export async function insertFalJob(workspaceId: string, job: FalJob, createdBy: string) {
+export async function getFalJob(userId: string, id: string) {
+  return parse(await first<{ data: string }>("SELECT data FROM fal_jobs WHERE id = ? AND user_id = ?", id, userId));
+}
+
+export async function insertFalJob(userId: string, job: FalJob) {
   await run(
-    "INSERT INTO fal_jobs (id, user_id, workspace_id, created_by, created_at, data) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO fal_jobs (id, user_id, created_at, data) VALUES (?, ?, ?, ?)",
     job.id,
-    createdBy,
-    workspaceId,
-    createdBy,
+    userId,
     job.createdAt,
-    persistJson(job),
+    JSON.stringify(job),
   );
 }
 
-export async function updateFalJob(workspaceId: string, id: string, patch: Partial<FalJob>) {
-  const job = await getFalJob(workspaceId, id);
+export async function updateFalJob(userId: string, id: string, patch: Partial<FalJob>) {
+  const job = await getFalJob(userId, id);
   if (!job) return undefined;
   const next = { ...job, ...patch, updatedAt: Date.now() };
-  await run(
-    `UPDATE fal_jobs SET data = ? WHERE id = ? AND ${byWorkspace()}`,
-    persistJson(next),
-    id,
-    ...wsArgs(workspaceId),
-  );
+  await run("UPDATE fal_jobs SET data = ? WHERE id = ? AND user_id = ?", JSON.stringify(next), id, userId);
   return next;
 }
 
 /** Indexed copies live under `fal/<id>/` and are tagged with this job id. Both go. */
-export async function deleteFalFiles(workspaceId: string, id: string) {
-  await deleteGenerationAssets(workspaceId, id);
-  await deleteAssetsUnder(workspaceId, `fal/${id}/`);
+export async function deleteFalFiles(userId: string, id: string) {
+  await deleteGenerationAssets(userId, id);
+  await deleteAssetsUnder(userId, `fal/${id}/`);
 }
 
-export async function removeFalJob(workspaceId: string, id: string) {
-  await deleteFalFiles(workspaceId, id);
-  await run(`DELETE FROM fal_jobs WHERE id = ? AND ${byWorkspace()}`, id, ...wsArgs(workspaceId));
+export async function removeFalJob(userId: string, id: string) {
+  await deleteFalFiles(userId, id);
+  await run("DELETE FROM fal_jobs WHERE id = ? AND user_id = ?", id, userId);
 }
 
 /** Still in flight, or finished but not yet copied into the bucket. */
 export async function unfinishedFalJobs(limit: number, maxAgeMs: number) {
-  return all<{ id: string; workspace_id: string }>(
-    `SELECT id, COALESCE(workspace_id, user_id) AS workspace_id FROM fal_jobs
+  return all<{ id: string; user_id: string }>(
+    `SELECT id, user_id FROM fal_jobs
      WHERE created_at > ?
        AND (json_extract(data, '$.status') IN ('queued', 'running')
             OR (json_extract(data, '$.status') = 'succeeded' AND json_extract(data, '$.stored') IS NOT 1))
@@ -134,9 +127,9 @@ export async function unfinishedFalJobs(limit: number, maxAgeMs: number) {
 }
 
 /** Best-effort cancel of a queued or running request. Finished jobs are only removed locally. */
-export async function cancelFalJob(workspaceId: string, job: FalJob) {
+export async function cancelFalJob(userId: string, job: FalJob) {
   if (!shouldCancelFal(job.status)) return;
-  const creds = await getCredentials(job.keyWorkspaceId || workspaceId, "fal").catch(() => undefined);
+  const creds = await getCredentials(userId, "fal").catch(() => undefined);
   if (!creds) return;
   await cancelFal(creds.apiKey, job.cancelUrl);
 }
@@ -161,27 +154,29 @@ export function publicFalJob(job: FalJob): FalJobView {
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     completedAt: job.completedAt,
-    ...(job.creator ? { creator: job.creator } : {}),
-    ...(job.keySource ? { keySource: job.keySource } : {}),
+    ...(job.tool && {
+      tool: { id: job.tool.id, name: job.tool.name, inputAssetIds: job.tool.inputAssetIds },
+    }),
+    ...(job.queuePosition !== undefined && { queuePosition: job.queuePosition }),
   };
 }
 
 /** Replaces `upload:<key>` strings with signed R2 URLs fal can download. */
-export async function resolveFalInput(workspaceId: string, input: unknown): Promise<unknown> {
+export async function resolveFalInput(userId: string, input: unknown): Promise<unknown> {
   if (typeof input === "string") {
     if (!isUploadRef(input)) return input;
     const key = uploadKeyOf(input);
-    const asset = isAssetKey(key) ? await getAsset(workspaceId, key) : undefined;
+    const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
     if (!asset)
       throw Object.assign(new Error("A reference is no longer in your uploads. Remove it and add it again."), {
         status: 400,
       });
     return providerUrl(asset);
   }
-  if (Array.isArray(input)) return Promise.all(input.map((item) => resolveFalInput(workspaceId, item)));
+  if (Array.isArray(input)) return Promise.all(input.map((item) => resolveFalInput(userId, item)));
   if (input && typeof input === "object") {
     const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(input)) out[key] = await resolveFalInput(workspaceId, value);
+    for (const [key, value] of Object.entries(input)) out[key] = await resolveFalInput(userId, value);
     return out;
   }
   return input;
@@ -194,36 +189,15 @@ function assertNoSecret(value: unknown, secret: string) {
 
 /** Submits to fal and records the job. A 422 is thrown and nothing is stored. */
 export async function createFalJob(
-  workspaceId: string,
+  userId: string,
   endpointId: string,
   input: unknown,
   apiKey: string,
-  createdBy: string,
-  extra: Pick<FalJob, "keySource" | "keyWorkspaceId" | "estimatedCost" | "route"> = {},
+  tool?: FalToolJob,
 ) {
-  const resolved = await resolveFalInput(workspaceId, input);
+  const resolved = await resolveFalInput(userId, input);
   const request = redactSecrets(resolved, apiKey);
   assertNoSecret(request, apiKey);
-  if (mockProviders()) {
-    const now = Date.now();
-    const id = crypto.randomUUID();
-    const job: FalJob = {
-      id,
-      endpointId: endpointId.trim().replace(/^\/+|\/+$/g, ""),
-      status: "queued",
-      requestId: `mock-${id}`,
-      statusUrl: "https://queue.fal.run/mock/status",
-      responseUrl: "https://queue.fal.run/mock/response",
-      cancelUrl: "https://queue.fal.run/mock/cancel",
-      request,
-      outputs: [],
-      createdAt: now,
-      updatedAt: now,
-      ...extra,
-    };
-    await insertFalJob(workspaceId, job, createdBy);
-    return job;
-  }
   const submitted = await submitFal(apiKey, endpointId, resolved);
   assertNoSecret(submitted.raw, apiKey);
   const now = Date.now();
@@ -237,13 +211,58 @@ export async function createFalJob(
     cancelUrl: submitted.cancelUrl,
     request,
     response: submitted.raw,
+    ...(tool && { tool }),
     outputs: [],
     createdAt: now,
     updatedAt: now,
-    ...extra,
   };
-  await insertFalJob(workspaceId, job, createdBy);
+  await insertFalJob(userId, job);
   return job;
+}
+
+function mediaKind(contentType: string): "image" | "video" | "audio" | undefined {
+  if (contentType.startsWith("image/")) return "image";
+  if (contentType.startsWith("video/")) return "video";
+  if (contentType.startsWith("audio/")) return "audio";
+  return undefined;
+}
+
+/**
+ * Runs a catalog tool on one library asset. The endpoint comes from the catalog,
+ * not the client. The new file is written later, with parent_id and tool set.
+ */
+export async function createToolJob(
+  userId: string,
+  input: { toolId: string; assetIds: unknown; params: unknown },
+  apiKey: string,
+) {
+  const assetIds = Array.isArray(input.assetIds) ? input.assetIds.filter((id): id is string => typeof id === "string") : [];
+  if (assetIds.length !== 1 || !isAssetKey(assetIds[0]))
+    throw new ProviderError("Choose one asset from your library.", 400);
+  const prepared = prepareToolInput(input.toolId, assetIds[0], input.params);
+  if (!prepared) throw new ProviderError("Unknown tool", 400);
+  const asset = await getAsset(userId, assetIds[0]);
+  if (!asset) throw new ProviderError("That asset is no longer in your library.", 400);
+  if (mediaKind(asset.contentType) !== prepared.tool.accepts)
+    throw new ProviderError(prepared.tool.accepts === "image" ? "This tool needs an image." : "This tool needs a video.", 400);
+  const form = formFor(prepared.tool.id);
+  if (form) {
+    const limit = toolLimitError(
+      form,
+      { contentType: asset.contentType, duration: asset.meta?.duration },
+      prepared.tool.name,
+    );
+    if (limit) throw new ProviderError(limit, 400);
+  }
+  const params = { ...prepared.body };
+  delete params[prepared.tool.inputKey];
+  return createFalJob(userId, prepared.tool.endpoint, prepared.body, apiKey, {
+    id: prepared.tool.id,
+    name: prepared.tool.name,
+    inputAssetIds: [asset.key],
+    params: params as Record<string, string | number | boolean>,
+    route: { provider: "fal", endpoint: prepared.tool.endpoint, mapper: prepared.tool.mapper },
+  });
 }
 
 const EXT: Record<string, string> = {
@@ -283,7 +302,7 @@ function contentTypeOf(file: FalOutput, header: string | null) {
 }
 
 /** Copies every output URL into the user's bucket. Output fetches carry no API key. */
-async function storeOutputs(workspaceId: string, job: FalJob) {
+async function storeOutputs(userId: string, job: FalJob) {
   const files = collectOutputs(job.response);
   const outputs: FalJob["outputs"] = [];
   for (const [i, file] of files.entries()) {
@@ -291,44 +310,53 @@ async function storeOutputs(workspaceId: string, job: FalJob) {
     let bytes: number;
     try {
       bytes = outputBytes(source.headers.get("content-length"));
-      await assertStorageAvailable(workspaceId, bytes);
+      await assertStorageAvailable(userId, bytes);
     } catch (e) {
       await source.body?.cancel().catch(() => {});
       throw e;
     }
     const contentType = contentTypeOf(file, source.headers.get("content-type"));
     const ext = EXT[contentType] ?? typeFromUrl(file.url)?.split("/")[1] ?? "bin";
-    const asset = await putAsset(workspaceId, {
+    const lineage = outputLineage(job);
+    const parent = lineage.parentId ? await getAsset(userId, lineage.parentId) : undefined;
+    const size = upscaleResolution(
+      job.tool?.params ?? {},
+      { width: parent?.meta?.width, height: parent?.meta?.height },
+      file.width !== undefined || file.height !== undefined ? { width: file.width, height: file.height } : undefined,
+    );
+    const asset = await putAsset(userId, {
       key: `fal/${job.id}/${i}.${ext}`,
       source,
       contentType,
       generationId: job.id,
-      createdBy: job.createdBy,
+      parentId: lineage.parentId,
+      tool: lineage.tool,
+      name: lineage.tool ? job.tool?.name : undefined,
+      meta: size.resolution ? { width: size.width, height: size.height, resolution: size.resolution } : undefined,
     });
     outputs.push({ key: asset.key, contentType });
   }
-  await updateFalJob(workspaceId, job.id, { outputs, stored: true, error: undefined });
+  await updateFalJob(userId, job.id, { outputs, stored: true, error: undefined });
 }
 
 /** Pulls the latest queue state and, once it succeeds, copies outputs into R2. */
-export async function syncFalJob(workspaceId: string, id: string): Promise<FalJob | undefined> {
-  let job = await getFalJob(workspaceId, id);
+export async function syncFalJob(userId: string, id: string): Promise<FalJob | undefined> {
+  let job = await getFalJob(userId, id);
   if (!job) return undefined;
 
-  if ((job.status === "queued" || job.status === "running") && !job.requestId.startsWith("mock-")) {
-    const creds = await getCredentials(job.keyWorkspaceId || workspaceId, "fal");
+  if (job.status === "queued" || job.status === "running") {
+    const creds = await getCredentials(userId, "fal");
     if (!creds) throw new ProviderError("Add your fal API key under API keys.", 400);
     const snap = await pollFal(creds.apiKey, { statusUrl: job.statusUrl, responseUrl: job.responseUrl });
     assertNoSecret(snap.response, creds.apiKey);
     const done = snap.status === "succeeded" || snap.status === "failed";
-    const reported = reportedUsd(snap.response);
-    job = await updateFalJob(workspaceId, id, {
+    job = await updateFalJob(userId, id, {
       status: snap.status,
       response: snap.response,
-      error: snap.error ? scrubSecret(snap.error, creds.apiKey) : snap.error,
+      error: snap.error,
       fields: snap.fields,
-      ...(reported !== undefined ? { reportedCost: reported } : {}),
-      ...(done && { completedAt: Date.now() }),
+      queuePosition: snap.queuePosition,
+      ...(done && { completedAt: Date.now(), queuePosition: undefined }),
     });
     if (!job) return undefined;
   }
@@ -337,8 +365,8 @@ export async function syncFalJob(workspaceId: string, id: string): Promise<FalJo
     let last: unknown;
     for (let attempt = 1; !storeGaveUp(attempt - 1); attempt++) {
       try {
-        await storeOutputs(workspaceId, job);
-        return getFalJob(workspaceId, id);
+        await storeOutputs(userId, job);
+        return getFalJob(userId, id);
       } catch (e) {
         last = e;
         // One in-process retry. The job stays unpolled either way, so a blip
@@ -346,11 +374,11 @@ export async function syncFalJob(workspaceId: string, id: string): Promise<FalJo
         if (storeGaveUp(attempt)) break;
       }
     }
-    const message = scrubSecret((last as Error)?.message || "The download failed.", undefined);
+    const message = (last as Error)?.message || "The download failed.";
     console.error(`[fal ${id}]`, message);
     // Drop partial files (file 1 saved, file 2 failed) so they don't count toward quota.
-    await deleteFalFiles(workspaceId, id).catch((e) => console.error(`[fal ${id} cleanup]`, (e as Error).message));
-    return updateFalJob(workspaceId, id, storeFailureUpdate(message));
+    await deleteFalFiles(userId, id).catch((e) => console.error(`[fal ${id} cleanup]`, (e as Error).message));
+    return updateFalJob(userId, id, storeFailureUpdate(message));
   }
   return job;
 }

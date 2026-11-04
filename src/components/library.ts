@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assetFileUrl, UPLOAD_RULES, uploadKindOf, type AssetItem, type UploadKind } from "@/lib/uploads";
-import { apiJson, withWorkspace } from "./api";
+import { apiJson } from "./api";
 
 export interface LibraryItem extends Omit<AssetItem, "key"> {
   /** Stable for the item's life in this tab: the key, or a temporary id for new uploads. */
@@ -25,13 +25,12 @@ export interface LibraryItem extends Omit<AssetItem, "key"> {
 export function thumbSrc(item: LibraryItem) {
   if (item.localThumb) return item.localThumb;
   if (!item.key) return item.kind === "image" ? item.localFile : undefined;
-  if (item.hasThumb) return withWorkspace(assetFileUrl(item.key, { thumb: true }));
-  return item.kind === "image" ? withWorkspace(assetFileUrl(item.key)) : undefined;
+  if (item.hasThumb) return assetFileUrl(item.key, { thumb: true });
+  return item.kind === "image" ? assetFileUrl(item.key) : undefined;
 }
 
 /** The playable file, for audio and video. */
-export const fileSrc = (item: LibraryItem) =>
-  item.localFile ?? (item.key ? withWorkspace(assetFileUrl(item.key)) : undefined);
+export const fileSrc = (item: LibraryItem) => item.localFile ?? (item.key ? assetFileUrl(item.key) : undefined);
 
 // ---------------------------------------------------------------- preparing files
 
@@ -49,6 +48,16 @@ function typeOf(file: File) {
   for (const rule of Object.values(UPLOAD_RULES))
     for (const [type, e] of Object.entries(rule.types)) if (e === ext) return type;
   return "";
+}
+
+function videoInfo(url: string): Promise<{ duration: number; width: number; height: number }> {
+  return new Promise((resolve) => {
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.onloadedmetadata = () => resolve({ duration: el.duration, width: el.videoWidth, height: el.videoHeight });
+    el.onerror = () => resolve({ duration: NaN, width: 0, height: 0 });
+    el.src = url;
+  });
 }
 
 function mediaDuration(url: string, kind: "video" | "audio"): Promise<number> {
@@ -133,6 +142,8 @@ interface Prepared {
   file: File;
   kind: UploadKind;
   duration?: number;
+  width?: number;
+  height?: number;
   peaks?: number[];
   thumb?: Blob;
 }
@@ -150,15 +161,40 @@ async function prepare(original: File): Promise<Prepared> {
   type = file.type || type;
   if (file.size > rules.maxBytes) throw new Error(`${original.name} is too large. Use ${rules.label}.`);
 
-  if (kind === "image") return { file, kind, thumb: await imageThumb(file).catch(() => undefined) };
+  if (kind === "image") {
+    const bitmap = await createImageBitmap(file).catch(() => undefined);
+    const thumb = bitmap
+      ? await canvasToJpeg(drawScaled(bitmap, bitmap.width, bitmap.height, THUMB_SIDE), 0.8).catch(() => undefined)
+      : await imageThumb(file).catch(() => undefined);
+    return {
+      file,
+      kind,
+      thumb,
+      width: bitmap && bitmap.width > 0 ? bitmap.width : undefined,
+      height: bitmap && bitmap.height > 0 ? bitmap.height : undefined,
+    };
+  }
 
   const url = URL.createObjectURL(file);
   try {
+    if (kind === "video") {
+      const info = await videoInfo(url);
+      const duration = Number.isFinite(info.duration) ? info.duration : undefined;
+      if (rules.seconds && duration !== undefined && (duration < rules.seconds.min || duration > rules.seconds.max))
+        throw new Error(`${original.name} is ${duration.toFixed(1)} s long. Use ${rules.label}.`);
+      return {
+        file,
+        kind,
+        duration,
+        width: info.width > 0 ? info.width : undefined,
+        height: info.height > 0 ? info.height : undefined,
+        thumb: await videoThumb(url),
+      };
+    }
     const duration = await mediaDuration(url, kind);
     if (rules.seconds && Number.isFinite(duration) && (duration < rules.seconds.min || duration > rules.seconds.max))
       throw new Error(`${original.name} is ${duration.toFixed(1)} s long. Use ${rules.label}.`);
     const d = Number.isFinite(duration) ? duration : undefined;
-    if (kind === "video") return { file, kind, duration: d, thumb: await videoThumb(url) };
     return { file, kind, duration: d, peaks: await audioPeaks(file) };
   } finally {
     URL.revokeObjectURL(url);
@@ -294,7 +330,15 @@ export function useLibrary(): Library {
       if (abort.signal.aborted) return;
       await apiJson("/api/uploads/complete", {
         method: "POST",
-        body: JSON.stringify({ key: r.key, name, duration: p.duration, peaks: p.peaks, thumb: !!r.thumbUploadUrl }),
+        body: JSON.stringify({
+          key: r.key,
+          name,
+          duration: p.duration,
+          peaks: p.peaks,
+          thumb: !!r.thumbUploadUrl,
+          width: p.width,
+          height: p.height,
+        }),
       });
       // The uploaded copy is served from the bucket from now on.
       revoke(localFile);
@@ -345,7 +389,7 @@ export function useLibrary(): Library {
   const thumbQueue = useRef<LibraryItem[]>([]);
   const thumbsRunning = useRef(0);
   function ensureThumb(item: LibraryItem) {
-    if (item.source !== "generated" || item.hasThumb || !item.key || thumbTried.current.has(item.key)) return;
+    if ((item.source !== "generated" && item.source !== "processed") || item.hasThumb || !item.key || thumbTried.current.has(item.key)) return;
     if (item.kind !== "image" && item.kind !== "video") return;
     thumbTried.current.add(item.key);
     thumbQueue.current.push(item);
@@ -369,7 +413,7 @@ export function useLibrary(): Library {
         body: JSON.stringify({ key }),
       });
       if (r.done) return patch(item.id, { hasThumb: true });
-      const blob = r.uploadUrl && (await thumbFromUrl(withWorkspace(assetFileUrl(key)), item.kind as "image" | "video"));
+      const blob = r.uploadUrl && (await thumbFromUrl(assetFileUrl(key), item.kind as "image" | "video"));
       if (!blob) return;
       const put = await fetch(r.uploadUrl!, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
       if (!put.ok) return;

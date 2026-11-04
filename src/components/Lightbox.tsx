@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { cameraMoveLabel, estimateCost } from "@/lib/registry";
+import { cameraSummary, estimateCost } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
+import type { ToolView } from "@/lib/toolTypes";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
+import { ToolsMenu } from "./ToolsMenu";
 
 export function Lightbox({
   gen,
@@ -13,6 +15,10 @@ export function Lightbox({
   onUseAsReference,
   onExtend,
   onDelete,
+  tools,
+  keyed,
+  onOpenKeys,
+  onToolJob,
 }: {
   gen: Generation;
   onClose: () => void;
@@ -20,6 +26,10 @@ export function Lightbox({
   onUseAsReference: () => void;
   onExtend?: () => void;
   onDelete: () => void;
+  tools: readonly ToolView[];
+  keyed: ReadonlySet<string>;
+  onOpenKeys: () => void;
+  onToolJob: () => void;
 }) {
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
@@ -32,9 +42,20 @@ export function Lightbox({
   }, [onClose]);
 
   const model = lookupModel(gen.model);
-  const camera = cameraMoveLabel(gen.cameraMove);
+  const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
+  const billed = gen.billedSeconds;
+  // billed_seconds already include reference video. Use the with-video rate only
+  // when this job had one. A longer bill on its own (a provider minimum) stays
+  // on the normal rate.
+  const hadReferenceVideo = gen.inputs.videos > 0;
   const cost =
-    model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
+    model &&
+    estimateCost(model, {
+      resolution: gen.resolution,
+      duration: billed ?? gen.duration,
+      audio: gen.generateAudio,
+      ...(hadReferenceVideo && billed !== undefined ? { referenceVideoSeconds: 0, durationIsBilled: true } : {}),
+    });
   const details: [string, React.ReactNode][] = [
     ["Model", model?.name ?? gen.model],
     ["Provider", gen.provider ?? "modelark"],
@@ -87,9 +108,17 @@ export function Lightbox({
           </dl>
           {gen.error && <p className="rounded-lg bg-red-500/10 p-2.5 text-xs text-red-300">{gen.error}</p>}
           <div className="mt-auto grid gap-2">
+            <ToolsMenu
+              kind="video"
+              assetKey={gen.stored ? `videos/${gen.id}.mp4` : undefined}
+              tools={tools}
+              keyed={keyed}
+              onOpenKeys={onOpenKeys}
+              onStarted={onToolJob}
+            />
             {ready && (
               <a
-                href={videoSrc(gen, true)}
+                href={`${videoSrc(gen)}?download`}
                 className="rounded-xl bg-accent py-2.5 text-center text-sm font-semibold text-ink"
               >
                 Download

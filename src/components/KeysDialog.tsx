@@ -4,12 +4,6 @@ import { useEffect, useState } from "react";
 import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { apiJson, type Me } from "./api";
 
-function canManageKeys(me: Me) {
-  if (me.workspace.kind === "personal") return true;
-  if (me.workspace.role === "owner") return true;
-  return me.workspace.role === "admin" && me.workspace.adminsManageKeys;
-}
-
 const ORDER: ProviderId[] = ["argolink", "openrouter", "modelark", "fal"];
 
 export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
@@ -31,9 +25,7 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
           <div>
             <h2 className="text-lg font-semibold">API keys</h2>
             <p className="mt-1 text-sm text-zinc-400">
-              {me.workspace.kind === "team"
-              ? "The team's keys are encrypted. Members only see the provider and the last 4 characters."
-              : "Generations run on your own provider account. Keys are encrypted and never sent to the browser."}
+              Generations run on your own provider account. Keys are encrypted and never sent to the browser.
             </p>
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-white" aria-label="Close">
@@ -47,7 +39,6 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
               key={p}
               provider={p}
               saved={me.keys.find((k) => k.provider === p)}
-              canManage={canManageKeys(me)}
               onChanged={onChanged}
             />
           ))}
@@ -60,16 +51,14 @@ export function KeysDialog({ me, onClose, onChanged }: { me: Me; onClose: () => 
 function ProviderRow({
   provider,
   saved,
-  canManage,
   onChanged,
 }: {
   provider: ProviderId;
   saved?: Me["keys"][number];
-  canManage: boolean;
   onChanged: () => void;
 }) {
   const info = PROVIDER_INFO[provider];
-  const [editing, setEditing] = useState(!saved && canManage);
+  const [editing, setEditing] = useState(!saved);
   const [apiKey, setApiKey] = useState("");
   const [region, setRegion] = useState(saved?.baseUrl ?? Object.keys(MODELARK_REGIONS)[0]);
   const [busy, setBusy] = useState(false);
@@ -114,11 +103,9 @@ function ProviderRow({
           <div className="flex items-center gap-2">
             <h3 className="font-medium">{info.label}</h3>
           </div>
-          <p className="mt-0.5 text-xs text-zinc-500">
-            {saved ? `Key ••••${saved.last4}` : canManage ? info.blurb : "Not set up"}
-          </p>
+          <p className="mt-0.5 text-xs text-zinc-500">{saved ? `Key ••••${saved.last4}` : info.blurb}</p>
         </div>
-        {saved && canManage && (
+        {saved && (
           <div className="flex shrink-0 gap-1.5 text-xs">
             <button
               onClick={() => setEditing((e) => !e)}
@@ -138,7 +125,7 @@ function ProviderRow({
         )}
       </div>
 
-      {editing && canManage && (
+      {editing && (
         <form
           className="mt-3 space-y-2"
           onSubmit={(e) => {

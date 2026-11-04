@@ -11,7 +11,7 @@ npm run dev                      # http://localhost:3000, signed in as DEV_USER_
 npm run preview                  # the real Workers runtime, locally (http://localhost:8787)
 ```
 
-`npm run dev` applies D1 migrations to a local database (`.wrangler/state`) first. Finished videos go to real R2, so `.dev.vars` needs R2 credentials; local buckets use the `dev` prefix.
+`npm run dev` applies D1 migrations to a local database (`.wrangler/state`) first. Finished videos go to R2, so `.dev.vars` needs object read/write credentials for the `R2_BUCKET` in `wrangler.jsonc`.
 
 **Config never goes in `.env*` files**: OpenNext bundles them into the deployed Worker. Non-secret settings are `vars` in `wrangler.jsonc`; secrets go in `.dev.vars` locally and `wrangler secret put` in production.
 
@@ -32,35 +32,20 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 - **Video**: Seedance (see below).
 - **Image**: Nano Banana 2.1 and GPT Image 2.5 Sunburst through ArgoLink's images API (needs an ArgoLink key). Pick a ratio (or Auto, which matches the first reference image), resolution (1K/2K/4K), quality (when the model offers it) and 1–4 images; reference images come from Uploads and are mentioned as `@Image 1`. Models, capabilities and price formulas are in `src/lib/registry`.
 
-- **Assets**: everything in the user's bucket in one place: generated videos and images, and uploads. Filter by type (sidebar, with counts and storage used), source (All / Generated / Uploaded), model and prompt/name; grouped by day, with bulk select, download and delete. Any asset can be sent to the Image or Video tab as a reference, generated ones included. Deleting a generated video deletes its generation; deleting a generated image removes it from its generation (which goes with its last image).
+- **Assets**: everything in the user's bucket in one place: generated videos and images, uploads, and tool outputs. Filter by type (sidebar, with counts and storage used), source (All / Generated / Uploaded / Processed), model and prompt/name; grouped by day, with bulk select, download and delete. Any asset can be sent to the Image or Video tab as a reference, generated ones included. Deleting a generated video deletes its generation; deleting a generated image removes it from its generation (which goes with its last image).
+
+  Asset detail (Assets, and the video and image lightboxes) shows a Tools menu when a catalog tool matches that asset's type. A tool is a catalog entry plus a parameter form; running it queues the existing fal job, which shows in the fal feed with progress and cancel. The result is a new asset (`parent_id`, `tool`) and the original is left as it was. Background removal (BiRefNet v2) is the first one, and it only appears on images. Upscale appears on images and videos: pick a model and a target (2×, 4×, or 1080p/4K when that model has one). Image forms show a cost estimate from the file's width and height when fal publishes a formula for that. Video forms say the estimate is unavailable: those rates are per frame, and the file has no frame rate. In Assets, a selection queues one upscale job per file.
 
   Generated images and videos get thumbnails lazily: the first time a browser shows one without a thumbnail, it draws a small JPEG (canvas, via the bucket's CORS rule) and saves it next to the file (`/api/assets/thumb`).
 
   ArgoLink's images API is synchronous and can take minutes, so each generation is a background job: `POST /api/images` records it and sends it to the `reelfling-image-jobs` queue; the Worker's queue consumer (`worker.ts`, 15-minute limit) calls ArgoLink, copies the images into the user's bucket (`images/<id>/…`) and updates the record; the page polls. Closing the tab doesn't lose anything. Jobs are claimed atomically, so a redelivered message can't bill twice, and the cron job fails any that died. Under `npm run dev` jobs run inline (there's no queue consumer).
 
-## Teams
-
-A team is a shared workspace. Any signed-in user can create one and becomes its owner. The switcher sits next to the logo; each browser tab remembers its workspace.
-
-| | Owner | Admin | Member |
-|---|---|---|---|
-| Generate, upload, use shared assets; edit or delete their own items | ✓ | ✓ | ✓ |
-| Invite, remove members, change roles (not the owner's) | ✓ | ✓ | |
-| Team API keys, monthly caps, ownership, deleting the team | ✓ | keys only if the owner allows it | |
-
-- **Invites**: by email (a banner after sign-in) or by link (`/invite/<token>`, 14 days; only a hash is stored). Work stays in the team when someone leaves. No email is sent.
-- **Keys**: the owner keeps one team key per provider, encrypted the same way as a personal key. Members see provider and last 4 characters. The owner can let members generate with their own personal key instead; each generation records `key_source` (`team` or `member`).
-- **Spend**: team-key generations store a catalog estimate, replaced by a provider-reported cost when one comes back. The owner can set an optional monthly USD cap per member. Own-key generations do not count. Owners and admins can open Usage (7 and 30 days) and export CSV. This is a limit in the app, not billing.
-- **Storage**: each team has its own private R2 bucket with the same `STORAGE_QUOTA_GB` as a person (default 2 GB). Team files count only against that bucket.
-- **Who gets in**: Cloudflare Access. Set `INVITE_ONLY=true` to also require a team invite before a new account is created.
-
 ## Accounts & keys (BYOK)
 
 - **Sign-in** (`AUTH_MODE`): `access` (default) puts Cloudflare Access in front of the app. Access decides who gets in, and the app verifies the JWT it adds to every request (signature, issuer, audience, expiry) before trusting the email in it. `google` switches to built-in Google sign-in with cookie sessions; set `GOOGLE_CLIENT_ID` (var) and `GOOGLE_CLIENT_SECRET` (secret), with redirect URI `https://<domain>/api/auth/google/callback`.
 - Accounts are keyed by email, so switching sign-in methods keeps everyone's keys and videos.
-- Each workspace has its own keys under **API keys**. A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The browser only ever receives the provider and the last 4 characters. The server never uses keys of its own.
-- The active provider is stored on the workspace, so a team's choice does not change a member's personal one.
-- Personal generations stay on that person's workspace. Team generations are shared with the team and record who made them.
+- Each user adds their own ArgoLink and/or ModelArk key under **API keys** in the account menu. A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The server never uses keys of its own.
+- Generations and videos belong to the user who made them; every query is scoped by user.
 - D1 has point-in-time restore (Time Travel) for the last 30 days: `npx wrangler d1 time-travel`.
 
 | | ModelArk | ArgoLink |
@@ -73,11 +58,11 @@ A team is a shared workspace. Any signed-in user can create one and becomes its 
 
 ## Storage
 
-Every user gets a private R2 bucket named `<R2_BUCKET_PREFIX>-<user id>` in your Cloudflare account. It's created on their first upload, or at sign-in with Google. Finished videos are copied out of the provider, whose URLs expire after about 24 hours, and streamed into the bucket rather than buffered, since Workers have 128 MB of memory. Playback and downloads redirect to a signed URL that's valid for one hour, so the bytes go straight from R2 to the browser. R2 doesn't charge for egress.
+Every object lives in the one bucket named by `R2_BUCKET` (`reelfling-media`), at `<user id>/<key>`. A personal workspace id is the user id, so files written by the previous build under that id are found there. Keys in D1 stay bare (`images/…`, `videos/…`, `uploads/…`). The R2 token only needs object read and write: the app does not create buckets or set CORS. Finished videos are copied out of the provider, whose URLs expire after about 24 hours, and streamed into the bucket rather than buffered, since Workers have 128 MB of memory. Playback and downloads redirect to a signed URL that's valid for one hour, so the bytes go straight from R2 to the browser. R2 doesn't charge for egress.
 
 A cron trigger runs every minute and finishes generations nobody is watching (the user closed the tab): it syncs their status and copies the video into storage.
 
-Every stored object is indexed in the `assets` table, so per-user usage (shown in the account menu) is a `SUM(bytes)`. Each user gets `STORAGE_QUOTA_GB` (default 2). When it's full, new generations are refused before they reach the provider, so nothing is charged. All buckets share your account's R2 free tier (10 GB-month, 1M writes, 10M reads); beyond that it's $0.015/GB-month.
+Every stored object is indexed in the `assets` table, so per-user usage (shown in the account menu) is a `SUM(bytes)`. Each user gets `STORAGE_QUOTA_GB` (default 2). When it's full, new generations are refused before they reach the provider, so nothing is charged. The bucket uses your account's R2 free tier (10 GB-month, 1M writes, 10M reads); beyond that it's $0.015/GB-month.
 
 ## How it works
 

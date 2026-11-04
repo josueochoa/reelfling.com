@@ -12,8 +12,9 @@ import {
   type ImageModel,
   type ImageQuality,
   type ImageResolution,
+  type RouteProvider,
 } from "@/lib/registry";
-import { availability, availabilityHint, sortByAvailability } from "@/lib/registry/availability";
+import { availabilityFor, availabilityHint, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { groupByFamily } from "@/lib/registry/badges";
 import { preferredRoute } from "@/lib/registry/routing";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
@@ -30,7 +31,6 @@ export interface ComposerState {
   resolution: ImageResolution;
   quality: ImageQuality;
   count: number;
-  /** Provider route. Unset until the user or Reuse picks one. */
   route?: string;
 }
 
@@ -61,7 +61,6 @@ export function ImageComposer({
   defaultProvider,
   onSaveRoute,
   onOpenKeys,
-  /** Hand models plus fal image models from /api/models. */
   models = HAND_MODELS,
 }: {
   state: ComposerState;
@@ -74,35 +73,31 @@ export function ImageComposer({
   onGenerate: () => void;
   submitting: boolean;
   error: string | null;
-  /** Providers the active workspace can run on. Provider names only. */
+  /** Providers this user has a key for. Names only. */
   keyed: ReadonlySet<string>;
   routePreferences?: Readonly<Record<string, string>>;
-  /** Legacy active provider. imageProviderFor turns it into an image key when it can. */
   defaultProvider?: string | null;
   onSaveRoute?: (modelId: string, provider: string) => void;
   onOpenKeys: () => void;
+  /** Hand models plus fal image models from /api/models. */
   models?: readonly ImageModel[];
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
-  const route =
-    preferredRoute(model, keyed, [state.route, routePreferences?.[model.id], imageProviderFor(defaultProvider, [...keyed])])
-      ?.provider;
+  const route = preferredRoute(model, keyed, [
+    state.route,
+    routePreferences?.[model.id],
+    imageProviderFor(defaultProvider, [...keyed]),
+  ])?.provider;
   const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
   const cost =
-    estimateRouteCost(model, route, {
-      resolution,
-      count,
-      quality,
-      referenceImages: references.length,
-      megapixels: 1,
-    }) ?? 0;
+    estimateRouteCost(model, route, { resolution, count, quality, referenceImages: references.length, megapixels: 1 }) ?? 0;
   const counts = { Image: references.length, Video: 0, Audio: 0 };
   const bad = invalidMentions(prompt, counts);
   const uploading = references.some((r) => r.status !== "ready");
-  const modelAvail = availability(model, keyed);
-  const sorted = sortByAvailability(models, (item) => availability(item, keyed).available);
+  const modelAvail = availabilityFor(routeProviders(model.routes), keyed);
+  const sorted = sortByAvailability(models, (item) => availabilityFor(routeProviders(item.routes), keyed).available);
   const overLimit = references.length > caps.references.image;
   const limitMessage = overLimit
     ? `${model.name} takes up to ${caps.references.image} reference image${caps.references.image === 1 ? "" : "s"}`
@@ -112,7 +107,7 @@ export function ImageComposer({
 
   function changeModel(id: string) {
     const m = models.find((x) => x.id === id);
-    if (!m || !availability(m, keyed).available) return;
+    if (!m || !availabilityFor(routeProviders(m.routes), keyed).available) return;
     const res = m.capabilities.resolutions.includes(resolution)
       ? resolution
       : ((m.capabilities.resolutions[0] as ImageResolution | undefined) ?? resolution);
@@ -126,9 +121,9 @@ export function ImageComposer({
     });
   }
 
-  function changeRoute(provider: string) {
-    const open = availability({ routes: model.routes.filter((item) => item.provider === provider) }, keyed);
-    if (!open.available) return;
+  function changeRoute(provider: RouteProvider) {
+    if (!availabilityFor([provider], keyed).available) return;
+    if (!model.routes.some((item) => item.provider === provider)) return;
     onChange({ route: provider });
     onSaveRoute?.(model.id, provider);
   }
@@ -233,7 +228,7 @@ export function ImageComposer({
               }
               options={groupByFamily(sorted).flatMap((group) =>
                 group.models.map((m) => {
-                  const open = availability(m, keyed);
+                  const open = availabilityFor(routeProviders(m.routes), keyed);
                   return {
                     value: m.id,
                     group: group.family,
@@ -251,41 +246,34 @@ export function ImageComposer({
               onChange={changeModel}
               onOpenKeys={onOpenKeys}
             />
-            {model.routes.length > 1 && (
-              <span data-testid="image-route-picker" className="contents">
-                {model.routes.map((item) => {
-                  const choice = availability({ routes: [item] }, keyed);
-                  const blocked = !choice.available;
-                  const picked = item.provider === route;
-                  const each = estimateRouteCost(model, item.provider, { resolution, count: 1 });
-                  return (
-                    <button
-                      key={item.provider}
-                      type="button"
-                      data-testid="route-option"
-                      data-provider={item.provider}
-                      data-available={blocked ? "false" : "true"}
-                      aria-pressed={picked && !blocked}
-                      title={blocked ? availabilityHint(choice.needs) : PROVIDER_INFO[item.provider].label}
-                      onClick={() => {
-                        if (blocked) onOpenKeys();
-                        else changeRoute(item.provider);
-                      }}
-                      className={`h-9 rounded-xl px-2.5 text-xs ${
-                        blocked
-                          ? "cursor-not-allowed text-zinc-600"
-                          : picked
-                            ? "bg-white/15 text-white"
-                            : "bg-white/[0.06] text-zinc-300 hover:bg-white/10"
-                      }`}
-                    >
-                      {PROVIDER_INFO[item.provider].label}
-                      {each !== undefined && <span className="ml-1 tabular-nums text-zinc-500">${each.toFixed(3)}</span>}
-                    </button>
-                  );
-                })}
-              </span>
-            )}
+            {model.routes.length > 1 &&
+              model.routes.map((item) => {
+                const choice = availabilityFor([item.provider], keyed);
+                const blocked = !choice.available;
+                const picked = item.provider === route;
+                const each = estimateRouteCost(model, item.provider, { resolution, count: 1 });
+                return (
+                  <button
+                    key={item.provider}
+                    type="button"
+                    data-testid="route-option"
+                    data-provider={item.provider}
+                    data-available={blocked ? "false" : "true"}
+                    aria-pressed={picked && !blocked}
+                    onClick={() => (blocked ? onOpenKeys() : changeRoute(item.provider))}
+                    className={`h-9 rounded-xl px-2.5 text-xs ${
+                      blocked
+                        ? "cursor-not-allowed text-zinc-600"
+                        : picked
+                          ? "bg-white/15 text-white"
+                          : "bg-white/[0.06] text-zinc-300 hover:bg-white/10"
+                    }`}
+                  >
+                    {PROVIDER_INFO[item.provider].label}
+                    {each !== undefined && <span className="ml-1 tabular-nums text-zinc-500">${each.toFixed(3)}</span>}
+                  </button>
+                );
+              })}
             <Dropdown
               title="Aspect ratio"
               icon="⛶"

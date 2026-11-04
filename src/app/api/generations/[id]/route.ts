@@ -1,15 +1,14 @@
-import { errorResponse } from "@/lib/auth";
+import { errorResponse, requireUser } from "@/lib/auth";
 import { getCredentials } from "@/lib/keys";
-import { providerForWorkspace } from "@/lib/providers";
+import { providerForUser } from "@/lib/providers";
 import { cancelFal } from "@/lib/providers/fal";
 import { getGeneration, removeGeneration, syncGeneration } from "@/lib/store";
-import { requireCanModify, requireWorkspace } from "@/lib/workspaces";
 
 /** Returns the generation, refreshing it from the provider if it's still in flight. */
-export async function GET(request: Request, ctx: RouteContext<"/api/generations/[id]">) {
+export async function GET(_req: Request, ctx: RouteContext<"/api/generations/[id]">) {
   try {
-    const { workspace } = await requireWorkspace(request);
-    const gen = await syncGeneration(workspace.id, (await ctx.params).id);
+    const user = await requireUser();
+    const gen = await syncGeneration(user.id, (await ctx.params).id);
     if (!gen) return Response.json({ error: "Not found" }, { status: 404 });
     return Response.json(gen);
   } catch (e) {
@@ -18,26 +17,25 @@ export async function GET(request: Request, ctx: RouteContext<"/api/generations/
 }
 
 /** Cancels the upstream task when possible, then removes it locally. */
-export async function DELETE(request: Request, ctx: RouteContext<"/api/generations/[id]">) {
+export async function DELETE(_req: Request, ctx: RouteContext<"/api/generations/[id]">) {
   try {
-    const { user, workspace } = await requireWorkspace(request);
+    const user = await requireUser();
     const { id } = await ctx.params;
-    const gen = await getGeneration(workspace.id, id);
+    const gen = await getGeneration(user.id, id);
     if (!gen) return Response.json({ error: "Not found" }, { status: 404 });
-    requireCanModify(workspace, user, gen.createdBy);
-    const keyWorkspace = gen.keyWorkspaceId || workspace.id;
+    // Best effort: running tasks can't always be cancelled, and the key may be gone.
     if ((gen.route ?? gen.provider) === "fal") {
       if (gen.falCancelUrl) {
-        const creds = await getCredentials(keyWorkspace, "fal");
+        const creds = await getCredentials(user.id, "fal");
         if (creds) await cancelFal(creds.apiKey, gen.falCancelUrl).catch(() => {});
       }
     } else {
-      const provider = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
-      await providerForWorkspace(keyWorkspace, provider)
+      const providerId = gen.provider && gen.provider !== "fal" ? gen.provider : "modelark";
+      await providerForUser(user.id, providerId)
         .then((p) => p.deleteTask(gen.taskId))
         .catch(() => {});
     }
-    await removeGeneration(workspace.id, id);
+    await removeGeneration(user.id, id);
     return new Response(null, { status: 204 });
   } catch (e) {
     return errorResponse(e);

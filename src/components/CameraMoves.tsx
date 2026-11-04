@@ -1,11 +1,11 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { CAMERA_MOVES, type CameraMove } from "@/lib/registry";
+import { cameraPresets } from "@/lib/registry";
 
 /** Original glyphs for the composer. Not copied from a provider. */
-function MoveIcon({ id }: { id: CameraMove }) {
-  const mark: Record<CameraMove, ReactNode> = {
+function MoveIcon({ id }: { id: string }) {
+  const mark: Record<string, ReactNode> = {
     static: <path d="M22 11h9" />,
     "push-in": (
       <>
@@ -78,32 +78,49 @@ function MoveIcon({ id }: { id: CameraMove }) {
 
 export function CameraMoves({
   value,
-  onChange,
+  onToggle,
 }: {
-  value?: CameraMove;
-  onChange: (move: CameraMove | undefined) => void;
+  value: readonly string[];
+  onToggle: (id: string) => void;
 }) {
+  const categories = [...new Set(cameraPresets.map((preset) => preset.category))];
   return (
-    <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Camera move">
-      {CAMERA_MOVES.map((move) => {
-        const active = value === move.id;
-        return (
-          <button
-            key={move.id}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(active ? undefined : move.id)}
-            className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] leading-tight transition ${
-              active
-                ? "border-accent/70 bg-accent/10 text-accent"
-                : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-zinc-200"
-            }`}
-          >
-            <MoveIcon id={move.id} />
-            {move.label}
-          </button>
-        );
-      })}
+    <div className="space-y-2.5" role="group" aria-label="Camera moves">
+      {categories.map((category) => (
+        <div key={category}>
+          <p className="mb-1 text-[10px] font-medium tracking-wide text-zinc-500 uppercase">{category}</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {cameraPresets
+              .filter((preset) => preset.category === category)
+              .map((preset) => {
+                const order = value.indexOf(preset.id);
+                const active = order !== -1;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    aria-pressed={active}
+                    title={preset.description}
+                    onClick={() => onToggle(preset.id)}
+                    className={`relative flex flex-col items-center gap-1 rounded-lg border px-1 py-1.5 text-[10px] leading-tight transition ${
+                      active
+                        ? "border-accent/70 bg-accent/10 text-accent"
+                        : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-zinc-200"
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute top-1 left-1 grid size-3.5 place-items-center rounded-full bg-accent text-[9px] font-semibold text-ink">
+                        {order + 1}
+                      </span>
+                    )}
+                    <MoveIcon id={preset.id} />
+                    {preset.name}
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
