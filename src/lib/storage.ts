@@ -1,9 +1,11 @@
-// Users' assets in Cloudflare R2: every user gets their own bucket in the app's
-// Cloudflare account, managed over R2's S3 API (bindings are fixed at deploy time,
-// so they can't address per-user buckets). The `assets` table indexes every stored
-// object; usage and the storage quota are summed from it.
+// Users' assets in one Cloudflare R2 bucket (R2_BUCKET), addressed over the S3 API.
+// Every object lives at "<id>/<key>": id is the row's workspace id when it has one,
+// otherwise the user id. On this app those match — a personal workspace id is the
+// user id. Keys stored in D1 stay bare (images/…, videos/…, uploads/…) so listing
+// and isAssetKey keep working. The token can only read and write objects, so this
+// module does not create buckets or set CORS. The `assets` table indexes every
+// stored object; usage and the storage quota are summed from it.
 
-import { createHash } from "node:crypto";
 import { AwsClient } from "aws4fetch";
 import { all, env, first, run } from "./db";
 import { candidateUserIds, referencedKeySet, withoutReferenced } from "./inputs";
@@ -24,6 +26,11 @@ export interface Asset {
   parentId?: string | null;
   /** Catalog tool id, when a tool produced this file. */
   tool?: string | null;
+  /**
+   * Workspace id still stored on the row (0005, kept by 0008). Personal workspaces
+   * use the user id. Null on rows written without one.
+   */
+  workspaceId?: string | null;
 }
 
 /** Library details, stored as JSON. */
@@ -46,6 +53,7 @@ interface AssetRow {
   meta: string | null;
   parent_id: string | null;
   tool: string | null;
+  workspace_id?: string | null;
 }
 
 const toAsset = (r: AssetRow): Asset => ({
@@ -60,6 +68,7 @@ const toAsset = (r: AssetRow): Asset => ({
   meta: r.meta ? (JSON.parse(r.meta) as AssetMeta) : null,
   parentId: r.parent_id,
   tool: r.tool,
+  workspaceId: r.workspace_id ?? null,
 });
 
 export class StorageError extends Error {
@@ -75,27 +84,21 @@ export class StorageError extends Error {
 
 interface R2Config {
   endpoint: string;
-  prefix: string;
+  /** The shared bucket (R2_BUCKET). */
+  bucket: string;
   client: AwsClient;
 }
 
 function r2(): R2Config {
-  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET_PREFIX } = env();
-  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY)
+  const { R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_ENDPOINT, R2_BUCKET } = env();
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET)
     throw new StorageError(
-      "Storage isn't configured: set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
-      500,
-    );
-  const prefix = (R2_BUCKET_PREFIX || "seedance").toLowerCase();
-  // Bucket names: 3–63 chars of [a-z0-9-]. The prefix plus a 36-char user ID must fit.
-  if (!/^[a-z0-9][a-z0-9-]{0,20}$/.test(prefix))
-    throw new StorageError(
-      "R2_BUCKET_PREFIX must be 1–21 chars of a-z, 0-9 and '-', starting with a letter or digit",
+      "Storage isn't configured: set R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
       500,
     );
   return {
     endpoint: (R2_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`).replace(/\/+$/, ""),
-    prefix,
+    bucket: R2_BUCKET,
     client: new AwsClient({
       accessKeyId: R2_ACCESS_KEY_ID,
       secretAccessKey: R2_SECRET_ACCESS_KEY,
@@ -134,49 +137,34 @@ async function s3(
   });
 }
 
-// ---------------------------------------------------------------- buckets
+// ---------------------------------------------------------------- where objects live
 
-export async function getBucket(userId: string): Promise<string | undefined> {
-  return (await first<{ name: string }>("SELECT name FROM buckets WHERE user_id = ?", userId))?.name;
+interface Location {
+  bucket: string;
+  path: string;
 }
 
-/** Creates the user's bucket on first use. Idempotent, so concurrent or retried calls are safe. */
-export async function ensureBucket(userId: string): Promise<string> {
-  const existing = await getBucket(userId);
-  if (existing) return existing;
-  const cfg = r2();
-  const name = `${cfg.prefix}-${userId.toLowerCase()}`;
-  try {
-    await s3(cfg, objectUrl(cfg, name), { method: "PUT" });
-  } catch (e) {
-    // Created by a concurrent request, or by an earlier attempt that didn't get recorded.
-    if ((e as { code?: string }).code !== "BucketAlreadyOwnedByYou") throw e;
-  }
-  await run("INSERT OR IGNORE INTO buckets (user_id, name, created_at) VALUES (?, ?, ?)", userId, name, Date.now());
-  return name;
-}
+/** A new object: the shared bucket, under the owner's folder. */
+const newLocation = (cfg: R2Config, ownerId: string, key: string): Location => ({
+  bucket: cfg.bucket,
+  path: `${ownerId}/${key}`,
+});
 
 /**
- * Lets browsers PUT uploads straight into the bucket. Any origin is fine: every request
- * still needs a URL signed by the server, which is the actual access control.
+ * Where an asset's file (or its thumbnail, `key`) is. Folder is workspace id when
+ * the row has one, otherwise the user id. Assets still recorded in some other
+ * bucket stay at their bare key there.
  */
-async function ensureCors(userId: string, bucket: string) {
-  const row = await first<{ cors: number }>("SELECT cors FROM buckets WHERE user_id = ?", userId);
-  if (row?.cors) return;
-  const cfg = r2();
-  const xml =
-    "<CORSConfiguration><CORSRule>" +
-    "<AllowedOrigin>*</AllowedOrigin>" +
-    "<AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod>" +
-    "<AllowedHeader>content-type</AllowedHeader>" +
-    "<MaxAgeSeconds>3600</MaxAgeSeconds>" +
-    "</CORSRule></CORSConfiguration>";
-  await s3(cfg, `${objectUrl(cfg, bucket)}?cors`, {
-    method: "PUT",
-    body: xml,
-    headers: { "Content-Type": "application/xml", "Content-MD5": createHash("md5").update(xml).digest("base64") },
-  });
-  await run("UPDATE buckets SET cors = 1 WHERE user_id = ?", userId);
+const locate = (cfg: R2Config, asset: Asset, key = asset.key): Location =>
+  asset.bucket === cfg.bucket
+    ? newLocation(cfg, asset.workspaceId ?? asset.userId, key)
+    : { bucket: asset.bucket, path: key };
+
+const urlOf = (cfg: R2Config, loc: Location) => objectUrl(cfg, loc.bucket, loc.path);
+
+/** The shared bucket name. Throws if R2 isn't configured. Does not create a bucket. */
+export async function ensureBucket(): Promise<string> {
+  return r2().bucket;
 }
 
 // ---------------------------------------------------------------- assets
@@ -228,9 +216,8 @@ export async function putAsset(
   },
 ): Promise<Asset> {
   const cfg = r2();
-  const bucket = await ensureBucket(userId);
   const { body, bytes } = await uploadBody(source);
-  await s3(cfg, objectUrl(cfg, bucket, key), {
+  await s3(cfg, urlOf(cfg, newLocation(cfg, userId, key)), {
     method: "PUT",
     body,
     // Content-Length comes from the body: a byte array or a FixedLengthStream.
@@ -239,7 +226,7 @@ export async function putAsset(
   return recordAsset({
     userId,
     key,
-    bucket,
+    bucket: cfg.bucket,
     bytes,
     contentType,
     generationId,
@@ -276,13 +263,13 @@ async function recordAsset(asset: Asset): Promise<Asset> {
 
 export async function deleteAsset(asset: Asset) {
   const cfg = r2();
-  if (asset.meta?.thumb) await deleteObject(cfg, asset.bucket, asset.meta.thumb);
-  await deleteObject(cfg, asset.bucket, asset.key);
+  if (asset.meta?.thumb) await deleteObject(cfg, locate(cfg, asset, asset.meta.thumb));
+  await deleteObject(cfg, locate(cfg, asset));
   await run("DELETE FROM assets WHERE user_id = ? AND key = ?", asset.userId, asset.key);
 }
 
-async function deleteObject(cfg: R2Config, bucket: string, key: string) {
-  await s3(cfg, objectUrl(cfg, bucket, key), { method: "DELETE" }).catch((e) => {
+async function deleteObject(cfg: R2Config, loc: Location) {
+  await s3(cfg, urlOf(cfg, loc), { method: "DELETE" }).catch((e) => {
     if ((e as { upstreamStatus?: number }).upstreamStatus !== 404) throw e;
   });
 }
@@ -306,16 +293,14 @@ export async function deleteAssetsUnder(userId: string, prefix: string) {
 
 const UPLOAD_URL_TTL_S = 15 * 60;
 
-/** Signed URLs the browser PUTs files to, straight into the user's bucket. */
+/** Signed URLs the browser PUTs files to. CORS on the shared bucket is set outside this app. */
 export async function createUpload(userId: string, keys: string[]) {
   const cfg = r2();
-  const bucket = await ensureBucket(userId);
-  await ensureCors(userId, bucket);
-  return Promise.all(keys.map((key) => presign(cfg, "PUT", bucket, key, UPLOAD_URL_TTL_S)));
+  return Promise.all(keys.map((key) => presign(cfg, "PUT", newLocation(cfg, userId, key), UPLOAD_URL_TTL_S)));
 }
 
-async function headObject(cfg: R2Config, bucket: string, key: string) {
-  const res = await s3(cfg, objectUrl(cfg, bucket, key), { method: "HEAD" }).catch((e) => {
+async function headObject(cfg: R2Config, loc: Location) {
+  const res = await s3(cfg, urlOf(cfg, loc), { method: "HEAD" }).catch((e) => {
     if ((e as { upstreamStatus?: number }).upstreamStatus === 404) return undefined;
     throw e;
   });
@@ -333,14 +318,13 @@ async function headObject(cfg: R2Config, bucket: string, key: string) {
  */
 export async function completeUpload(userId: string, key: string, { name, meta }: { name: string; meta: AssetMeta }) {
   const cfg = r2();
-  const bucket = await ensureBucket(userId);
-  const file = await headObject(cfg, bucket, key);
+  const file = await headObject(cfg, newLocation(cfg, userId, key));
   if (!file) return undefined;
-  const thumb = meta.thumb ? await headObject(cfg, bucket, meta.thumb) : undefined;
+  const thumb = meta.thumb ? await headObject(cfg, newLocation(cfg, userId, meta.thumb)) : undefined;
   return recordAsset({
     userId,
     key,
-    bucket,
+    bucket: cfg.bucket,
     // The thumbnail counts toward the quota too.
     bytes: file.bytes + (thumb?.bytes ?? 0),
     contentType: file.contentType,
@@ -445,20 +429,19 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
 }
 
 /** A signed URL for the browser to PUT a thumbnail it made for a generated image or video. */
-export async function createThumbUpload(userId: string, asset: Asset) {
+export async function createThumbUpload(asset: Asset) {
   const cfg = r2();
-  await ensureCors(userId, asset.bucket);
-  return presign(cfg, "PUT", asset.bucket, thumbKeyFor(asset.key), UPLOAD_URL_TTL_S);
+  return presign(cfg, "PUT", locate(cfg, asset, thumbKeyFor(asset.key)), UPLOAD_URL_TTL_S);
 }
 
 /** Records a thumbnail the browser uploaded, if it's there and small. */
 export async function attachThumb(asset: Asset) {
   const cfg = r2();
   const key = thumbKeyFor(asset.key);
-  const thumb = await headObject(cfg, asset.bucket, key);
+  const thumb = await headObject(cfg, locate(cfg, asset, key));
   if (!thumb) return false;
   if (thumb.bytes > 1024 * 1024 || thumb.contentType !== "image/jpeg") {
-    await deleteObject(cfg, asset.bucket, key);
+    await deleteObject(cfg, locate(cfg, asset, key));
     return false;
   }
   await recordAsset({ ...asset, bytes: asset.bytes + thumb.bytes, meta: { ...asset.meta, thumb: key } });
@@ -471,8 +454,8 @@ export async function renameAsset(userId: string, key: string, name: string) {
 
 /** Removes an uploaded object that never got indexed (e.g. it failed validation). */
 export async function discardUpload(userId: string, key: string) {
-  const bucket = await getBucket(userId);
-  if (bucket) await deleteObject(r2(), bucket, key);
+  const cfg = r2();
+  await deleteObject(cfg, newLocation(cfg, userId, key));
 }
 
 /**
@@ -559,19 +542,21 @@ const PROVIDER_URL_TTL_S = 24 * 3600;
 async function presign(
   cfg: R2Config,
   method: "GET" | "PUT",
-  bucket: string,
-  key: string,
+  loc: Location,
   ttlSeconds: number,
   query: Record<string, string> = {},
 ) {
-  const url = new URL(objectUrl(cfg, bucket, key));
+  const url = new URL(urlOf(cfg, loc));
   url.searchParams.set("X-Amz-Expires", String(ttlSeconds));
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   return (await cfg.client.sign(new Request(url, { method }), { aws: { signQuery: true } })).url;
 }
 
 /** A link the video provider can download a reference from, without credentials. */
-export const providerUrl = (asset: Asset) => presign(r2(), "GET", asset.bucket, asset.key, PROVIDER_URL_TTL_S);
+export const providerUrl = (asset: Asset) => {
+  const cfg = r2();
+  return presign(cfg, "GET", locate(cfg, asset), PROVIDER_URL_TTL_S);
+};
 
 /**
  * Redirects to a short-lived signed URL, so the bytes (and the player's Range
@@ -583,7 +568,8 @@ export async function serveAsset(asset: Asset, opts: { downloadName?: string; th
     : {};
   // The thumbnail when asked for and there is one; otherwise the file itself.
   const key = opts.thumb && asset.meta?.thumb ? asset.meta.thumb : asset.key;
-  const location = await presign(r2(), "GET", asset.bucket, key, SIGNED_URL_TTL_S, query);
+  const cfg = r2();
+  const location = await presign(cfg, "GET", locate(cfg, asset, key), SIGNED_URL_TTL_S, query);
   return new Response(null, {
     status: 302,
     // Cache the redirect for well under the signature's lifetime.
@@ -602,7 +588,7 @@ export async function openAsset(asset: Asset, opts: { thumb?: boolean; range?: s
   if (opts.range) headers.Range = opts.range;
   let res: Response;
   try {
-    res = await s3(cfg, objectUrl(cfg, asset.bucket, key), { method: "GET", headers });
+    res = await s3(cfg, urlOf(cfg, locate(cfg, asset, key)), { method: "GET", headers });
   } catch (e) {
     if ((e as { upstreamStatus?: number }).upstreamStatus === 404) throw new StorageError("Not found", 404);
     throw e;

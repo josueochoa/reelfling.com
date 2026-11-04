@@ -57,7 +57,7 @@ setTestEnv({
   R2_ACCESS_KEY_ID: "r2-access",
   R2_SECRET_ACCESS_KEY: "r2-secret",
   R2_ENDPOINT: "https://r2.example.com",
-  R2_BUCKET_PREFIX: "dev",
+  R2_BUCKET: "reelfling-media",
   STORAGE_QUOTA_GB: "2",
 });
 

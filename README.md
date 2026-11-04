@@ -11,7 +11,7 @@ npm run dev                      # http://localhost:3000, signed in as DEV_USER_
 npm run preview                  # the real Workers runtime, locally (http://localhost:8787)
 ```
 
-`npm run dev` applies D1 migrations to a local database (`.wrangler/state`) first. Finished videos go to real R2, so `.dev.vars` needs R2 credentials; local buckets use the `dev` prefix.
+`npm run dev` applies D1 migrations to a local database (`.wrangler/state`) first. Finished videos go to R2, so `.dev.vars` needs object read/write credentials for the `R2_BUCKET` in `wrangler.jsonc`.
 
 **Config never goes in `.env*` files**: OpenNext bundles them into the deployed Worker. Non-secret settings are `vars` in `wrangler.jsonc`; secrets go in `.dev.vars` locally and `wrangler secret put` in production.
 
@@ -58,11 +58,11 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 
 ## Storage
 
-Every user gets a private R2 bucket named `<R2_BUCKET_PREFIX>-<user id>` in your Cloudflare account. It's created on their first upload, or at sign-in with Google. Finished videos are copied out of the provider, whose URLs expire after about 24 hours, and streamed into the bucket rather than buffered, since Workers have 128 MB of memory. Playback and downloads redirect to a signed URL that's valid for one hour, so the bytes go straight from R2 to the browser. R2 doesn't charge for egress.
+Every object lives in the one bucket named by `R2_BUCKET` (`reelfling-media`), at `<user id>/<key>`. A personal workspace id is the user id, so files written by the previous build under that id are found there. Keys in D1 stay bare (`images/…`, `videos/…`, `uploads/…`). The R2 token only needs object read and write: the app does not create buckets or set CORS. Finished videos are copied out of the provider, whose URLs expire after about 24 hours, and streamed into the bucket rather than buffered, since Workers have 128 MB of memory. Playback and downloads redirect to a signed URL that's valid for one hour, so the bytes go straight from R2 to the browser. R2 doesn't charge for egress.
 
 A cron trigger runs every minute and finishes generations nobody is watching (the user closed the tab): it syncs their status and copies the video into storage.
 
-Every stored object is indexed in the `assets` table, so per-user usage (shown in the account menu) is a `SUM(bytes)`. Each user gets `STORAGE_QUOTA_GB` (default 2). When it's full, new generations are refused before they reach the provider, so nothing is charged. All buckets share your account's R2 free tier (10 GB-month, 1M writes, 10M reads); beyond that it's $0.015/GB-month.
+Every stored object is indexed in the `assets` table, so per-user usage (shown in the account menu) is a `SUM(bytes)`. Each user gets `STORAGE_QUOTA_GB` (default 2). When it's full, new generations are refused before they reach the provider, so nothing is charged. The bucket uses your account's R2 free tier (10 GB-month, 1M writes, 10M reads); beyond that it's $0.015/GB-month.
 
 ## How it works
 

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const asset = await generatedAsset(request);
     if (!asset) return Response.json({ error: "Not found" }, { status: 404 });
     if (asset.meta?.thumb) return Response.json({ done: true });
-    return Response.json({ uploadUrl: await createThumbUpload(asset.userId, asset) });
+    return Response.json({ uploadUrl: await createThumbUpload(asset) });
   } catch (e) {
     return errorResponse(e);
   }
