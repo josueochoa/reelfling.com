@@ -28,7 +28,6 @@ export async function POST(request: Request) {
       prompt?: unknown;
       family?: unknown;
       cameras?: unknown;
-      looks?: unknown;
       references?: unknown;
     };
     const prompt = typeof body.prompt === "string" ? body.prompt : "";
@@ -53,7 +52,6 @@ export async function POST(request: Request) {
       prompt,
       family,
       cameras,
-      looks: stringList(body.looks, 8, 40),
       references: stringList(body.references, 30, 120),
     });
     return Response.json({ prompt: next });

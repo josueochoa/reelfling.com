@@ -12,8 +12,6 @@ interface Props {
   family: string;
   /** Camera preset ids. The server turns known ids into chip text. */
   cameras?: readonly string[];
-  /** Look names, when a look is selected. Item 13 fills this. */
-  looks?: readonly string[];
   /** Mention tokens and short names. No file URLs. */
   references?: readonly string[];
   keyed: ReadonlySet<string>;
@@ -29,7 +27,6 @@ export function PromptEnhance({
   onChange,
   family,
   cameras = [],
-  looks = [],
   references = [],
   keyed,
   onOpenKeys,
@@ -55,7 +52,7 @@ export function PromptEnhance({
     try {
       const body = await apiJson<{ prompt: string }>("/api/enhance", {
         method: "POST",
-        body: JSON.stringify({ prompt, family, cameras, looks, references }),
+        body: JSON.stringify({ prompt, family, cameras, references }),
       });
       setPending({ before: prompt, after: body.prompt });
     } catch (e) {
@@ -165,11 +162,11 @@ export function PromptEnhance({
             </button>
             <button
               type="button"
-              data-testid="enhance-undo"
+              data-testid="enhance-discard"
               onClick={undo}
               className="h-7 rounded-lg border border-white/10 px-2.5 text-xs text-zinc-300 hover:text-white"
             >
-              Undo
+              Discard
             </button>
           </div>
         </div>

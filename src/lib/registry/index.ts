@@ -57,7 +57,7 @@ export {
   compileCamera,
   keptCameraMoves,
 } from "./camera";
-export { estimateCost, estimateRouteCost, nearestRatio, ratioAllowed } from "./price";
+export { estimateCost, estimateRouteCost, nearestRatio, outputMegapixels, ratioAllowed } from "./price";
 export { mentionSyntax } from "./syntax";
 export { imageRequestError, videoRequestError } from "./validate";
 export { assertRegistry, parseModel } from "./parse";

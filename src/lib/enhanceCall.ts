@@ -35,22 +35,18 @@ function failureMessage(body: unknown, status: number, secret: string): string {
   return `Enhance failed (${status})`;
 }
 
+/** OpenAI chat completion body. fal's router returns this shape, not a wrapped `output` or `data`. */
 function completionText(body: unknown): string {
-  const read = (value: unknown): string => {
-    if (!value || typeof value !== "object") return "";
-    const choices = (value as { choices?: unknown }).choices;
-    const first = Array.isArray(choices) ? choices[0] : undefined;
-    if (!first || typeof first !== "object") return "";
-    const content = (first as { message?: { content?: unknown } }).message?.content;
-    if (typeof content === "string") return content;
-    if (!Array.isArray(content)) return "";
-    return content
-      .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
-      .join("");
-  };
   if (!body || typeof body !== "object") return "";
-  const rec = body as { output?: unknown; data?: unknown };
-  return read(body) || read(rec.output) || read(rec.data);
+  const choices = (body as { choices?: unknown }).choices;
+  const first = Array.isArray(choices) ? choices[0] : undefined;
+  if (!first || typeof first !== "object") return "";
+  const content = (first as { message?: { content?: unknown } }).message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string" ? (part as { text: string }).text : ""))
+    .join("");
 }
 
 function assertTarget(provider: EnhanceProvider, apiKey: string): string {
@@ -128,7 +124,6 @@ export interface RewriteInput {
   prompt: string;
   family: string;
   cameras: readonly string[];
-  looks: readonly string[];
   references: readonly string[];
 }
 
@@ -140,7 +135,6 @@ export async function rewritePrompt(input: RewriteInput): Promise<string> {
     family: input.family,
     guide: familyGuide(input.family),
     cameras: input.cameras,
-    looks: input.looks,
     references: input.references,
     marker: shield.marker,
   });

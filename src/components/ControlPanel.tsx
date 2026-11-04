@@ -239,7 +239,9 @@ export function ControlPanel({
     ? referenceVideos.reduce((sum, r) => sum + (r.item.duration ?? 0), 0)
     : undefined;
   const referenceImages = refs ? refList.filter((r) => r.item.kind === "image").length : undefined;
-  const routeProvider = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider])?.provider;
+  const chosenRoute = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider]);
+  const routeProvider = chosenRoute?.provider;
+  const native = nativeExpansionOf(model, chosenRoute);
   const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds, referenceImages };
   const cost = estimateRouteCost(model, routeProvider, estimateInput);
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
@@ -304,7 +306,6 @@ export function ControlPanel({
           )
           .join(" ") + " The files are still in your Uploads.";
       setNotice(message);
-      alert(message);
     }
     return added;
   }
@@ -470,7 +471,7 @@ export function ControlPanel({
       seed: caps.seed && seed.trim() !== "" ? Number(seed) : undefined,
       cameraMoves: moves.length && cameraMoves.length ? cameraMoves : undefined,
       cameraFixed: showFixed ? cameraFixed : undefined,
-      promptExpansion: nativeOn && nativeExpansionOf(model) ? true : undefined,
+      promptExpansion: nativeOn && native ? true : undefined,
       watermark: caps.watermark ? watermark : undefined,
       ...(frames
         ? {
@@ -621,7 +622,7 @@ export function ControlPanel({
             references={mentionItems.map((item) => (item.detail ? `${item.token} (${item.detail})` : item.token))}
             keyed={keyed}
             onOpenKeys={onOpenKeys}
-            native={nativeExpansionOf(model)}
+            native={native}
             nativeOn={nativeOn}
             onNativeOn={setNativeOn}
           />

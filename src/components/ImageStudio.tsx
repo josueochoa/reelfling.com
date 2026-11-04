@@ -240,9 +240,8 @@ export function ImageStudio({
 
   /** Back into the composer: prompt, settings and the reference images still in Uploads. */
   function reuse(gen: ImageGeneration) {
-    const found = models.find((model) => model.id === gen.model);
-    const model = found ?? state.model;
-    if (found && gen.route) saveRoute(found.id, gen.route);
+    // Reuse puts the stored route back on this generation. It does not save a preference.
+    const model = models.find((item) => item.id === gen.model) ?? state.model;
     setState({
       model,
       prompt: gen.prompt,

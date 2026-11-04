@@ -5,14 +5,16 @@ import { isOpenRouterHost } from "./providers/openrouter";
 import { isVideo } from "./registry";
 import { availabilityError, availabilityHint } from "./registry/availability";
 import { ALL_MODELS } from "./registry/generated";
+import { preferredRoute } from "./registry/routing";
+import type { Route } from "./registry/types";
 import { rewritePrompt } from "./enhanceCall";
 import {
   ENHANCE_MODEL,
+  FAMILY_GUIDES,
   applyNativeExpansion,
   enhanceAvailability,
   enhanceMessages,
   enhanceProvider,
-  expansionChoice,
   familyGuide,
   nativeExpansionOf,
   restoreShield,
@@ -101,7 +103,6 @@ describe("language instruction", () => {
       family: "Wan",
       guide: familyGuide("Wan"),
       cameras: ["Push in: Move closer to the subject."],
-      looks: ["Warm dusk"],
       references: ["@Image 1 (barco)"],
       marker: "RF",
     });
@@ -110,14 +111,18 @@ describe("language instruction", () => {
     assert.match(system, /Wan/);
     assert.match(system, /subject, the action, the place, and the light/);
     assert.match(system, /Push in: Move closer to the subject\./);
-    assert.match(system, /Warm dusk/);
     assert.match(system, /@Image 1 \(barco\)/);
+    assert.equal(system.includes("Look chips"), false);
     assert.equal(messages[1].content, prompt);
   });
 });
 
+function picked<T extends { routes: readonly Route[] }>(model: T, keyed: string[], prefer?: string) {
+  return preferredRoute(model, new Set(keyed), prefer ? [prefer] : []);
+}
+
 describe("native expansion", () => {
-  it("sends the Wan and MiniMax flags and does not call the LLM", () => {
+  it("sends the Wan and MiniMax flags for the fal route preferredRoute picks, and does not call the LLM", () => {
     let hits = 0;
     globalThis.fetch = (() => {
       hits++;
@@ -132,27 +137,61 @@ describe("native expansion", () => {
     const openrouterWan = ALL_MODELS.find((model) => model.id === "openrouter:alibaba/wan-3.0");
     assert.ok(openrouterWan && isVideo(openrouterWan));
 
-    assert.equal(expansionChoice(true, wan).callLlm, false);
-    assert.equal(expansionChoice(true, wan).flag?.field, "enable_prompt_expansion");
-    assert.equal(expansionChoice(true, wan).flag?.value, true);
-    assert.equal(expansionChoice(false, wan).callLlm, true);
-    assert.equal(expansionChoice(false, wan).flag, null);
-
-    const wanBody = applyNativeExpansion(falQueueInput({ prompt: "hola @Image 1" }, wan.inputs), wan, true);
+    const wanRoute = picked(wan, ["fal"], "fal");
+    assert.equal(wanRoute?.provider, "fal");
+    assert.equal(nativeExpansionOf(wan, wanRoute)?.field, "enable_prompt_expansion");
+    assert.equal(nativeExpansionOf(wan, wanRoute)?.value, true);
+    const wanBody = applyNativeExpansion(falQueueInput({ prompt: "hola @Image 1" }, wan.inputs), wan, wanRoute, true);
     assert.equal(wanBody.enable_prompt_expansion, true);
     assert.equal(wanBody.prompt, "hola @Image 1");
-    const wanImageBody = applyNativeExpansion(falQueueInput({ prompt: "hola" }, wanImage.inputs), wanImage, true);
+
+    const wanImageRoute = picked(wanImage, ["fal"], "fal");
+    const wanImageBody = applyNativeExpansion(falQueueInput({ prompt: "hola" }, wanImage.inputs), wanImage, wanImageRoute, true);
     assert.equal(wanImageBody.enable_prompt_expansion, true);
-    const miniBody = applyNativeExpansion(falQueueInput({ prompt: "hola" }, mini.inputs), mini, true);
+    const miniRoute = picked(mini, ["fal"], "fal");
+    const miniBody = applyNativeExpansion(falQueueInput({ prompt: "hola" }, mini.inputs), mini, miniRoute, true);
     assert.equal(miniBody.prompt_expansion_mode, "balanced");
-    const refBody = applyNativeExpansion(falQueueInput({ prompt: "hola" }, miniRef.inputs), miniRef, true);
+    const refRoute = picked(miniRef, ["fal"], "fal");
+    const refBody = applyNativeExpansion(falQueueInput({ prompt: "hola" }, miniRef.inputs), miniRef, refRoute, true);
     assert.equal(refBody.prompt_expansion_mode, "balanced");
 
-    const off = applyNativeExpansion(falQueueInput({ prompt: "hola" }, wan.inputs), wan, false);
+    const off = applyNativeExpansion(falQueueInput({ prompt: "hola" }, wan.inputs), wan, wanRoute, false);
     assert.equal("enable_prompt_expansion" in off, false);
-    assert.equal(nativeExpansionOf(extend), null);
-    assert.equal(nativeExpansionOf(openrouterWan), null);
+    assert.equal(nativeExpansionOf(extend, picked(extend, ["fal"], "fal")), null);
+    assert.equal(nativeExpansionOf(openrouterWan, picked(openrouterWan, ["openrouter"], "openrouter")), null);
+
+    // Same endpoints on one model. The toggle follows the route preferredRoute will submit.
+    const shared = {
+      capabilities: { promptExpansion: "optional" as const },
+      routes: [
+        { provider: "openrouter", endpoint: "alibaba/wan-3.0", mapper: "openrouter.video" },
+        { provider: "fal", endpoint: "alibaba/wan-3.0/text-to-video", mapper: "fal.queue" },
+      ] as Route[],
+    };
+    const openrouterPick = picked(shared, ["openrouter", "fal"], "openrouter");
+    assert.equal(openrouterPick?.provider, "openrouter");
+    assert.equal(nativeExpansionOf(shared, openrouterPick), null);
+    const dropped = applyNativeExpansion(falQueueInput({ prompt: "hola" }, wan.inputs), shared, openrouterPick, true);
+    assert.equal("enable_prompt_expansion" in dropped, false);
+    const falPick = picked(shared, ["openrouter", "fal"], "fal");
+    assert.equal(falPick?.provider, "fal");
+    assert.equal(nativeExpansionOf(shared, falPick)?.field, "enable_prompt_expansion");
+    const onlyOpenrouter = picked(shared, ["openrouter"], "fal");
+    assert.equal(onlyOpenrouter?.provider, "openrouter");
+    assert.equal(nativeExpansionOf(shared, onlyOpenrouter), null);
     assert.equal(hits, 0);
+  });
+});
+
+describe("family guides", () => {
+  it("uses each catalog family once, including Flux rather than FLUX", () => {
+    const families = new Set(ALL_MODELS.map((model) => model.family));
+    const keys = Object.keys(FAMILY_GUIDES);
+    assert.equal(new Set(keys).size, keys.length);
+    for (const key of keys) assert.equal(families.has(key), true, key);
+    assert.equal(keys.includes("FLUX"), false);
+    assert.match(familyGuide("Flux"), /subject, materials, light, and framing/);
+    assert.match(familyGuide("FLUX"), /Do not add a camera move the user did not ask for/);
   });
 });
 
@@ -199,7 +238,6 @@ describe("enhance call", () => {
       prompt,
       family: "Wan",
       cameras: ["Push in: Move closer to the subject."],
-      looks: [],
       references: ["@Image 1 (gato)"],
     });
     assert.equal(result, "El gato de @Image 1 salta #push-in");
@@ -222,12 +260,31 @@ describe("enhance call", () => {
       prompt,
       family: "MiniMax",
       cameras: [],
-      looks: ["Warm dusk"],
       references: ["@Image 1 (gato)"],
     });
     assert.equal(result, "El gato de @Image 1 brinca #push-in");
     const sent = JSON.parse(calls[0].body ?? "{}") as { messages: { content: string }[] };
-    assert.match(sent.messages[0].content, /Warm dusk/);
+    assert.match(sent.messages[0].content, /Lead with the subject/);
+  });
+
+  it("ignores a wrapped choices payload and reads the OpenAI body", async () => {
+    install(() => json(200, { output: { choices: [{ message: { content: "wrapped" } }] } }));
+    await assert.rejects(
+      () =>
+        rewritePrompt({
+          provider: "fal",
+          apiKey: FAL_KEY,
+          prompt: "hola",
+          family: "Wan",
+          cameras: [],
+          references: [],
+        }),
+      (error: Error) => {
+        assert.match(error.message, /empty rewrite/);
+        assert.equal(error.message.includes(FAL_KEY), false);
+        return true;
+      },
+    );
   });
 
   it("scrubs the key out of a provider error", async () => {
@@ -240,7 +297,6 @@ describe("enhance call", () => {
           prompt: "hola",
           family: "Wan",
           cameras: [],
-          looks: [],
           references: [],
         }),
       (error: Error) => {

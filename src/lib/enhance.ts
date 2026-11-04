@@ -26,8 +26,14 @@ export interface EnhanceMessage {
 
 /** A catalog model, or the slim picker copy of one. */
 export interface ExpansionModel {
-  routes: readonly { endpoint: string }[];
+  routes: readonly { provider: string; endpoint: string }[];
   capabilities: { promptExpansion: PromptExpansion };
+}
+
+/** The route `preferredRoute` already chose. The flag is only real on that fal endpoint. */
+export interface ExpansionRoute {
+  provider: string;
+  endpoint: string;
 }
 
 export interface NativeExpansion {
@@ -44,13 +50,14 @@ const MINIMAX_H3_ENDPOINT = /^minimax\/h3\//;
 
 /**
  * Wan `enable_prompt_expansion` and MiniMax H3 `prompt_expansion_mode`, checked on the
- * live fal schemas (4 Nov 2026, no key). Other expanders stay off until their flag is known.
- * OpenRouter Wan is `promptExpansion: false` in the catalog, so it does not match.
+ * live fal schemas (4 Nov 2026, no key). The flag is sent only when `route` is the fal
+ * route the composer will actually submit. A sibling OpenRouter route does not show the toggle.
  */
-export function nativeExpansionOf(model: ExpansionModel): NativeExpansion | null {
-  if (model.capabilities.promptExpansion === false) return null;
-  const endpoints = model.routes.map((route) => route.endpoint);
-  if (endpoints.some((endpoint) => WAN_ENDPOINT.test(endpoint))) {
+export function nativeExpansionOf(model: ExpansionModel, route: ExpansionRoute | null | undefined): NativeExpansion | null {
+  if (!route || route.provider !== "fal" || model.capabilities.promptExpansion === false) return null;
+  const chosen = model.routes.find((item) => item.provider === route.provider && item.endpoint === route.endpoint);
+  if (!chosen) return null;
+  if (WAN_ENDPOINT.test(chosen.endpoint)) {
     return {
       field: "enable_prompt_expansion",
       value: true,
@@ -58,7 +65,7 @@ export function nativeExpansionOf(model: ExpansionModel): NativeExpansion | null
       detail: "Wan rewrites this prompt. Enhance stays off.",
     };
   }
-  if (endpoints.some((endpoint) => MINIMAX_H3_ENDPOINT.test(endpoint))) {
+  if (MINIMAX_H3_ENDPOINT.test(chosen.endpoint)) {
     return {
       field: "prompt_expansion_mode",
       value: "balanced",
@@ -69,17 +76,15 @@ export function nativeExpansionOf(model: ExpansionModel): NativeExpansion | null
   return null;
 }
 
-/** Native on: send the flag and do not call the rewrite model. Otherwise the LLM may run. */
-export function expansionChoice(nativeOn: boolean, model: ExpansionModel | null | undefined) {
-  const flag = model ? nativeExpansionOf(model) : null;
-  if (nativeOn && flag) return { callLlm: false as const, flag };
-  return { callLlm: true as const, flag: null };
-}
-
-/** Adds the native flag to a fal queue body. No network. Off leaves the body unchanged. */
-export function applyNativeExpansion<T extends Record<string, unknown>>(input: T, model: ExpansionModel, enabled: boolean): T {
+/** Adds the native flag to a fal queue body. No network. Off, or a non-fal route, leaves the body unchanged. */
+export function applyNativeExpansion<T extends Record<string, unknown>>(
+  input: T,
+  model: ExpansionModel,
+  route: ExpansionRoute | null | undefined,
+  enabled: boolean,
+): T {
   if (!enabled) return input;
-  const native = nativeExpansionOf(model);
+  const native = nativeExpansionOf(model, route);
   if (!native) return input;
   return { ...input, [native.field]: native.value };
 }
@@ -95,7 +100,11 @@ export function enhanceProvider(keyed: ReadonlySet<string>): EnhanceProvider | n
   return null;
 }
 
-const GUIDES: Record<string, string> = {
+/**
+ * One line per catalog `family` string. `Flux` is the lineup name; `FLUX` is not a family.
+ * Families without an entry use the default.
+ */
+export const FAMILY_GUIDES: Record<string, string> = {
   Wan: "Name the subject, the action, the place, and the light. One motion at a time.",
   Alibaba: "Name the subject, the action, the place, and the light. One motion at a time.",
   MiniMax: "Lead with the subject and what it does, then the setting and the light. Short sentences.",
@@ -106,7 +115,6 @@ const GUIDES: Record<string, string> = {
   Google: "State what is in frame and what changes. Concrete nouns, one action.",
   Gemini: "State what is in frame and what changes. Concrete nouns, one action.",
   Flux: "Describe the picture: subject, materials, light, and framing.",
-  FLUX: "Describe the picture: subject, materials, light, and framing.",
   "FLUX.1": "Describe the picture: subject, materials, light, and framing.",
   "Black Forest Labs": "Describe the picture: subject, materials, light, and framing.",
   Grok: "Plain visual description: who or what, the action, the place, the light.",
@@ -118,11 +126,11 @@ const GUIDES: Record<string, string> = {
   "Nano Banana": "Describe the picture. For an edit, say what changes and what stays.",
 };
 
+const DEFAULT_GUIDE =
+  "Make the prompt specific and visual: subject, action, setting, light, and mood. Do not add a camera move the user did not ask for.";
+
 export function familyGuide(family: string): string {
-  return (
-    GUIDES[family] ??
-    "Make the prompt specific and visual: subject, action, setting, light, and mood. Do not add a camera move the user did not ask for."
-  );
+  return FAMILY_GUIDES[family] ?? DEFAULT_GUIDE;
 }
 
 export interface Shield {
@@ -228,7 +236,6 @@ export function enhanceMessages(input: {
   family: string;
   guide: string;
   cameras: readonly string[];
-  looks: readonly string[];
   references: readonly string[];
   marker: string;
 }): EnhanceMessage[] {
@@ -239,7 +246,6 @@ export function enhanceMessages(input: {
     "Keep the prompt's language. A Spanish prompt stays Spanish unless the user asks for English.",
     `The prompt may contain protected tokens like [[${input.marker}0]]. Copy each protected token through unchanged, once. Do not translate, renumber, or drop one.`,
     input.cameras.length ? `Camera chips already chosen, applied separately: ${input.cameras.join("; ")}.` : "",
-    input.looks.length ? `Look chips already chosen: ${input.looks.join("; ")}.` : "",
     input.references.length ? `References: ${input.references.join("; ")}.` : "",
     "Return only the rewritten prompt.",
   ].filter(Boolean);
