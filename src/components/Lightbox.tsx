@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { cameraMoveLabel, estimateCost } from "@/lib/registry";
+import { cameraSummary, estimateCost } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
 import type { ToolView } from "@/lib/toolTypes";
 import type { Generation } from "@/lib/types";
@@ -38,7 +38,7 @@ export function Lightbox({
   }, [onClose]);
 
   const model = lookupModel(gen.model);
-  const camera = cameraMoveLabel(gen.cameraMove);
+  const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
   const cost =
     model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
   const details: [string, React.ReactNode][] = [

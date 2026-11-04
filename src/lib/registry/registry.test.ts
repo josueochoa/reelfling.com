@@ -149,7 +149,7 @@ describe("model registry", () => {
     const banned = /from ["'][^"']*(?:registry\/generated|registry\/camera-apply|catalog\/(?:fal|openrouter)\.json)/;
     const index = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
     const instruction = "does not pan, tilt, zoom, or drift";
-    assert.equal(readFileSync(new URL("./camera-apply.ts", import.meta.url), "utf8").includes(instruction), true);
+    assert.equal(readFileSync(new URL("./camera-presets.json", import.meta.url), "utf8").includes(instruction), true);
     assert.equal(banned.test(index), false, "index.ts");
     assert.equal(index.includes(instruction), false, "index.ts instruction");
     assert.equal(JSON.stringify(MODELS).includes(instruction), false);
@@ -187,7 +187,7 @@ describe("openrouter camera passthrough", () => {
     assert.deepEqual(openRouterCamera(["camera_fixed"]), {
       fixed: true,
       prompt: true,
-      native: { static: { param: "camera_fixed", value: true } },
+      params: ["camera_fixed"],
     });
   });
 });
