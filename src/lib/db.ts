@@ -24,6 +24,11 @@ export interface AppEnv {
   /** Shared bucket. Objects are stored at `<user id>/<key>` inside it. */
   R2_BUCKET?: string;
   STORAGE_QUOTA_GB?: string;
+  /**
+   * Development only. When "1", provider calls (fal, video create) return a
+   * queued stand-in and the key is never sent. Ignored outside `next dev`.
+   */
+  DEV_MOCK_PROVIDERS?: string;
 }
 
 let envOverride: AppEnv | undefined;

@@ -65,7 +65,7 @@ export function Gallery() {
         <section>
           <h2 className="text-title">Modal</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(["sm", "md", "lg", "full"] as const).map((size) => (
+            {(["sm", "md", "lg", "xl", "full"] as const).map((size) => (
               <button
                 key={size}
                 type="button"

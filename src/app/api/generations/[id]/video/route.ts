@@ -17,5 +17,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/generations/
   if (!asset) return new Response("Video not ready", { status: 404 });
 
   const download = new URL(request.url).searchParams.has("download");
-  return serveAsset(asset, download ? { downloadName: `seedance-${id.slice(0, 8)}.mp4` } : {});
+  return serveAsset(asset, {
+    range: request.headers.get("range"),
+    ...(download ? { downloadName: `seedance-${id.slice(0, 8)}.mp4` } : {}),
+  });
 }

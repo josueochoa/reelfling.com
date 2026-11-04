@@ -1,4 +1,5 @@
 import { errorResponse, requireUser } from "@/lib/auth";
+import { isDevMockTask } from "@/lib/devMock";
 import { providerForUser } from "@/lib/providers";
 import { getGeneration, removeGeneration, syncGeneration } from "@/lib/store";
 
@@ -22,9 +23,12 @@ export async function DELETE(_req: Request, ctx: RouteContext<"/api/generations/
     const gen = await getGeneration(user.id, id);
     if (!gen) return Response.json({ error: "Not found" }, { status: 404 });
     // Best effort: running tasks can't always be cancelled, and the key may be gone.
-    await providerForUser(user.id, gen.provider ?? "modelark")
-      .then((p) => p.deleteTask(gen.taskId))
-      .catch(() => {});
+    // A dev stand-in never existed upstream, so the key stays put.
+    if (!isDevMockTask(gen.taskId)) {
+      await providerForUser(user.id, gen.provider ?? "modelark")
+        .then((p) => p.deleteTask(gen.taskId))
+        .catch(() => {});
+    }
     await removeGeneration(user.id, id);
     return new Response(null, { status: 204 });
   } catch (e) {

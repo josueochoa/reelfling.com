@@ -9,6 +9,7 @@
 import { AwsClient } from "aws4fetch";
 import { all, env, first, run } from "./db";
 import { candidateUserIds, referencedKeySet, withoutReferenced } from "./inputs";
+import { isLocalBucket, localProviderUrl } from "./localBucket";
 import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
 
 export interface Asset {
@@ -269,6 +270,13 @@ async function recordAsset(asset: Asset): Promise<Asset> {
 }
 
 export async function deleteAsset(asset: Asset) {
+  if (isLocalBucket(asset)) {
+    const { removeLocal } = await import("./localMedia");
+    if (asset.meta?.thumb) await removeLocal(asset.userId, asset.meta.thumb).catch(() => {});
+    await removeLocal(asset.userId, asset.key).catch(() => {});
+    await run("DELETE FROM assets WHERE user_id = ? AND key = ?", asset.userId, asset.key);
+    return;
+  }
   const cfg = r2();
   if (asset.meta?.thumb) await deleteObject(cfg, locate(cfg, asset, asset.meta.thumb));
   await deleteObject(cfg, locate(cfg, asset));
@@ -564,6 +572,7 @@ async function presign(
 
 /** A link the video provider can download a reference from, without credentials. */
 export const providerUrl = (asset: Asset) => {
+  if (isLocalBucket(asset)) return Promise.resolve(localProviderUrl(asset.key));
   const cfg = r2();
   return presign(cfg, "GET", locate(cfg, asset), PROVIDER_URL_TTL_S);
 };
@@ -572,7 +581,11 @@ export const providerUrl = (asset: Asset) => {
  * Redirects to a short-lived signed URL, so the bytes (and the player's Range
  * requests) go straight from R2 to the browser. R2 doesn't charge for egress.
  */
-export async function serveAsset(asset: Asset, opts: { downloadName?: string; thumb?: boolean } = {}) {
+export async function serveAsset(
+  asset: Asset,
+  opts: { downloadName?: string; thumb?: boolean; range?: string | null } = {},
+) {
+  if (isLocalBucket(asset)) return serveLocal(asset, opts);
   const query: Record<string, string> = opts.downloadName
     ? { "response-content-disposition": `attachment; filename="${opts.downloadName}"` }
     : {};
@@ -592,6 +605,16 @@ export async function serveAsset(asset: Asset, opts: { downloadName?: string; th
  * and return them directly, so the client never sees a signed URL.
  */
 export async function openAsset(asset: Asset, opts: { thumb?: boolean; range?: string | null } = {}) {
+  if (isLocalBucket(asset)) {
+    const opened = await serveLocal(asset, opts);
+    return {
+      status: opened.status,
+      body: opened.body,
+      contentType: opened.headers.get("content-type"),
+      contentLength: opened.headers.get("content-length"),
+      contentRange: opened.headers.get("content-range"),
+    };
+  }
   const cfg = r2();
   const key = opts.thumb && asset.meta?.thumb ? asset.meta.thumb : asset.key;
   const headers: Record<string, string> = {};
@@ -610,4 +633,24 @@ export async function openAsset(asset: Asset, opts: { thumb?: boolean; range?: s
     contentLength: res.headers.get("content-length"),
     contentRange: res.headers.get("content-range"),
   };
+}
+
+/** Dev fixture bytes. Same-origin, with Range, so a player can seek without R2. */
+async function serveLocal(asset: Asset, opts: { downloadName?: string; thumb?: boolean; range?: string | null }) {
+  const { readLocal } = await import("./localMedia");
+  const key = opts.thumb && asset.meta?.thumb ? asset.meta.thumb : asset.key;
+  const file = await readLocal(asset.userId, key, opts.range ?? null);
+  if (file.status === 404) return new Response("Not found", { status: 404 });
+  if (file.status === 416) {
+    return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${file.size}` } });
+  }
+  const headers = new Headers({
+    "Content-Type": opts.thumb ? "image/jpeg" : asset.contentType,
+    "Content-Length": file.contentLength,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, max-age=60",
+  });
+  if (file.contentRange) headers.set("Content-Range", file.contentRange);
+  if (opts.downloadName) headers.set("Content-Disposition", `attachment; filename="${opts.downloadName}"`);
+  return new Response(file.body, { status: file.status, headers });
 }

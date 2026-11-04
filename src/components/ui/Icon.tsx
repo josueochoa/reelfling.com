@@ -4,11 +4,18 @@ export {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
   Lock,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
   Pause,
   Play,
   RotateCcw,
+  Trash2,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 

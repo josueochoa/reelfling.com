@@ -1,4 +1,5 @@
 import { errorResponse, requireUser } from "@/lib/auth";
+import { devMockProviders } from "@/lib/devMock";
 import { listKeys } from "@/lib/keys";
 import { invalidMentions, normalizeMentions } from "@/lib/mentions";
 import { providerForUser } from "@/lib/providers";
@@ -110,8 +111,6 @@ export async function POST(request: Request) {
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
-    const provider = await providerForUser(user.id, route.provider);
-
     const caps = model.capabilities;
     if (!caps.audio) delete req.generateAudio;
     if (!caps.seed) delete req.seed;
@@ -140,7 +139,12 @@ export async function POST(request: Request) {
       0,
       CAMERA_MOVE_MAX,
     );
-    const { taskId } = await provider.createTask(
+    // Dev stand-in: record the job without calling the provider or sending a key.
+    const { taskId } = devMockProviders()
+      ? { taskId: `devmock-${crypto.randomUUID()}` }
+      : await (
+          await providerForUser(user.id, route.provider)
+        ).createTask(
       applyCameraMoves(model, {
         ...req,
         model: route.endpoint,

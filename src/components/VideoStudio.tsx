@@ -8,13 +8,15 @@ import { isVideo, MODELS, PROVIDER_INFO, type VideoModel } from "@/lib/registry"
 import { availabilityFor, routeProviders, sortByAvailability } from "@/lib/registry/availability";
 import { TERMINAL_STATUSES, type GenerateRequest, type Generation } from "@/lib/types";
 import { confirmToast, toast } from "@/components/ui/Toast";
+import { assetFileUrl } from "@/lib/uploads";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
-import { GenerationCard } from "./GenerationCard";
+import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 import type { Library, LibraryItem } from "./library";
 import type { ToolView } from "@/lib/toolTypes";
-import { Lightbox } from "./Lightbox";
 import { UploadsPanel } from "./UploadsPanel";
+import { Viewer } from "./Viewer";
+import { videoDetails } from "./viewer/details";
 
 const POLL_MS = 5000;
 
@@ -273,9 +275,28 @@ export function VideoStudio({
       </main>
 
       {open && (
-        <Lightbox
+        <OpenVideo
           gen={open}
+          loading={!library.loaded}
           onClose={() => setOpen(null)}
+          onPrev={
+            generations.findIndex((item) => item.id === open.id) > 0
+              ? () => {
+                  const index = generations.findIndex((item) => item.id === open.id);
+                  const prev = generations[index - 1];
+                  if (prev) setOpen(prev);
+                }
+              : undefined
+          }
+          onNext={
+            generations.findIndex((item) => item.id === open.id) < generations.length - 1
+              ? () => {
+                  const index = generations.findIndex((item) => item.id === open.id);
+                  const next = generations[index + 1];
+                  if (next) setOpen(next);
+                }
+              : undefined
+          }
           onReuse={() => reuse(open)}
           onUseAsReference={() => void referenceStoredVideo(open)}
           onExtend={open.lastFrameUrl ? () => reuse(open, open.lastFrameUrl) : undefined}
@@ -287,5 +308,82 @@ export function VideoStudio({
         />
       )}
     </div>
+  );
+}
+
+function videoRefs(gen: Generation) {
+  const refs: { src: string; alt: string }[] = [];
+  const add = (key?: string, alt?: string) => {
+    if (key) refs.push({ src: assetFileUrl(key), alt: alt || "Reference" });
+  };
+  add(gen.inputs.firstFrameKey, gen.inputs.firstFrameName ?? "Start frame");
+  add(gen.inputs.lastFrameKey, gen.inputs.lastFrameName ?? "End frame");
+  for (const block of gen.inputs.blocks ?? []) {
+    if (block.kind === "image") add(block.key, block.name ?? "Reference");
+  }
+  return refs;
+}
+
+function OpenVideo({
+  gen,
+  loading,
+  onClose,
+  onPrev,
+  onNext,
+  onReuse,
+  onUseAsReference,
+  onExtend,
+  onDelete,
+  tools,
+  keyed,
+  onOpenKeys,
+  onToolJob,
+}: {
+  gen: Generation;
+  loading: boolean;
+  onClose: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  onReuse: () => void;
+  onUseAsReference: () => void;
+  onExtend?: () => void;
+  onDelete: () => void;
+  tools: readonly ToolView[];
+  keyed: ReadonlySet<string>;
+  onOpenKeys: () => void;
+  onToolJob: () => void;
+}) {
+  const elapsed = useElapsed(gen);
+  const ready = gen.status === "succeeded";
+  const details = videoDetails(gen);
+  return (
+    <Viewer
+      label="Video"
+      title={details.find((row) => row.label === "Model")?.value ?? "Video"}
+      kind="video"
+      src={ready ? videoSrc(gen) : undefined}
+      alt={gen.prompt}
+      prompt={gen.prompt}
+      references={videoRefs(gen)}
+      details={details}
+      error={gen.error}
+      loading={loading}
+      pending={ready ? undefined : <StatusOverlay gen={gen} elapsed={elapsed} />}
+      onClose={onClose}
+      onPrev={onPrev}
+      onNext={onNext}
+      onReuse={onReuse}
+      onUseAsReference={ready && gen.stored ? onUseAsReference : undefined}
+      onExtend={onExtend}
+      onDelete={onDelete}
+      downloadHref={ready ? `${videoSrc(gen)}?download` : undefined}
+      tools={tools}
+      toolKind="video"
+      assetKey={gen.stored ? `videos/${gen.id}.mp4` : undefined}
+      toolAsset={{ duration: gen.duration }}
+      keyed={keyed}
+      onOpenKeys={onOpenKeys}
+      onToolJob={onToolJob}
+    />
   );
 }

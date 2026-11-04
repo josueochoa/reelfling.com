@@ -2,6 +2,7 @@
 // copied into the user's R2 bucket (see storage.ts).
 
 import { all, first, run } from "./db";
+import { isDevMockTask } from "./devMock";
 import { providerForUser, terminalPollUpdate } from "./providers";
 import { staleVideoFailure } from "./staleVideo";
 import { deleteGenerationAssets, getAsset, putAsset, videoKey, type Asset } from "./storage";
@@ -83,7 +84,7 @@ export async function syncGeneration(userId: string, id: string): Promise<Genera
   let gen = await getGeneration(userId, id);
   if (!gen) return undefined;
 
-  if (!TERMINAL_STATUSES.includes(gen.status)) {
+  if (!TERMINAL_STATUSES.includes(gen.status) && !isDevMockTask(gen.taskId)) {
     try {
       const task = await (await providerForUser(userId, gen.provider ?? "modelark")).getTask(gen.taskId);
       const done = TERMINAL_STATUSES.includes(task.status);

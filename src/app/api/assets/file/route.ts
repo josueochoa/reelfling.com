@@ -11,5 +11,9 @@ export async function GET(request: Request) {
   const asset = isAssetKey(key) ? await getAsset(user.id, key) : undefined;
   if (!asset) return new Response("Not found", { status: 404 });
   const name = asset.name ?? key.split("/").slice(-2).join("-");
-  return serveAsset(asset, { thumb: params.has("thumb"), downloadName: params.has("download") ? name : undefined });
+  return serveAsset(asset, {
+    thumb: params.has("thumb"),
+    range: request.headers.get("range"),
+    downloadName: params.has("download") ? name : undefined,
+  });
 }
