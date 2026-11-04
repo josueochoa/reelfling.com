@@ -3,6 +3,7 @@ import { listKeys } from "@/lib/keys";
 import { catalogModel } from "@/lib/registry/generated";
 import { routeChoiceError } from "@/lib/registry/routing";
 import { isRouteProvider, listRoutePreferences, setRoutePreference } from "@/lib/routes";
+import { listLooks } from "@/lib/savedLooks";
 import { storageUsage } from "@/lib/storage";
 
 /** The signed-in user, their saved keys (masked), the provider they generate with, storage used and how to sign out. */
@@ -15,6 +16,7 @@ export async function GET() {
       keys,
       storage,
       routePreferences: await listRoutePreferences(user.id),
+      looks: await listLooks(user.id),
       auth: { mode: authMode(), signOutUrl: signOutUrl() },
     });
   } catch (e) {

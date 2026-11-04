@@ -20,7 +20,9 @@ import { availabilityFor, availabilityHint, routeProviders, sortByAvailability }
 import { groupByFamily } from "@/lib/registry/badges";
 import { preferredRoute } from "@/lib/registry/routing";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
+import { compileLook, type LookChoice, type SavedLook } from "@/lib/registry/looks";
 import { Dropdown } from "./Dropdown";
+import { LookChips } from "./LookChips";
 import { UnlockHint } from "./UnlockHint";
 import { thumbSrc, type LibraryItem } from "./library";
 import { UploadOverlay } from "./MediaBlocks";
@@ -35,6 +37,7 @@ export interface ComposerState {
   quality: ImageQuality;
   count: number;
   route?: string;
+  look?: LookChoice;
 }
 
 const QUALITY_LABEL: Record<ImageQuality, string> = { auto: "Auto", low: "Low", medium: "Medium", high: "High" };
@@ -64,6 +67,8 @@ export function ImageComposer({
   defaultProvider,
   onSaveRoute,
   onOpenKeys,
+  savedLooks,
+  onLooks,
   models = HAND_MODELS,
   autoRatio,
 }: {
@@ -83,6 +88,8 @@ export function ImageComposer({
   defaultProvider?: string | null;
   onSaveRoute?: (modelId: string, provider: string) => void;
   onOpenKeys: () => void;
+  savedLooks: readonly SavedLook[];
+  onLooks: (next: SavedLook[]) => void;
   /** Hand models plus fal image models from /api/models. */
   models?: readonly ImageModel[];
   /**
@@ -92,6 +99,7 @@ export function ImageComposer({
   autoRatio?: string;
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
+  const looked = compileLook(model, prompt, state.look);
   const route = preferredRoute(model, keyed, [
     state.route,
     routePreferences?.[model.id],
@@ -201,6 +209,15 @@ export function ImageComposer({
                 : "Describe the image you want…"
             }
           />
+          {looked.prompt.trim() !== prompt.trim() && (
+            <div className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-label leading-relaxed text-fg-muted">
+              <p className="mb-1 text-label tracking-wide text-fg-subtle uppercase">Prompt sent</p>
+              <p data-testid="prompt-preview">{looked.prompt}</p>
+            </div>
+          )}
+          <div className="max-h-72 overflow-y-auto px-1">
+            <LookChips value={state.look ?? {}} onChange={(look) => onChange({ look })} looks={savedLooks} onLooks={onLooks} />
+          </div>
           <PromptEnhance
             prompt={prompt}
             onChange={(next) => onChange({ prompt: next })}

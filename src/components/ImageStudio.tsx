@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { confirmToast, toast } from "@/components/ui/Toast";
 import { imageModels, imageProviderFor, nearestRatio, PROVIDER_INFO, ratioAllowed, type ImageModel } from "@/lib/registry";
+import { keptLook, lookIsEmpty, paletteUsesSwatch, type SavedLook } from "@/lib/registry/looks";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
@@ -15,6 +16,7 @@ import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
 import { api, apiJson, type Me } from "./api";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
+import { resolvePaletteSwatch, type SwatchMemory } from "./paletteSwatch";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
 import { UploadsPanel } from "./UploadsPanel";
 import { Viewer } from "./Viewer";
@@ -55,6 +57,8 @@ export function ImageStudio({
   tools,
   onToolJob,
   catalogModels,
+  savedLooks,
+  onLooks,
 }: {
   ref?: React.Ref<StudioTabHandle>;
   me: Me | null;
@@ -66,6 +70,8 @@ export function ImageStudio({
   onToolJob: () => void;
   /** fal image models from /api/models. Null until that request returns. */
   catalogModels?: readonly ImageModel[] | null;
+  savedLooks: readonly SavedLook[];
+  onLooks: (next: SavedLook[]) => void;
 }) {
   const [gens, setGens] = useState<ImageGeneration[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -76,8 +82,10 @@ export function ImageStudio({
     resolution: "2k",
     quality: "high",
     count: 1,
+    look: {},
   });
   const [refIds, setRefIds] = useState<string[]>([]);
+  const swatchMemory = useRef<SwatchMemory | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -200,6 +208,22 @@ export function ImageStudio({
     setSubmitting(true);
     try {
       const { model, ratio, resolution } = state;
+      const choice = keptLook(state.look);
+      let refs = references.flatMap((item) => (item.key ? [item.key] : []));
+      let lookSwatch: string | undefined;
+      if (paletteUsesSwatch(model, choice)) {
+        const resolved = await resolvePaletteSwatch(library, choice, swatchMemory.current, refs, (key) =>
+          library.items.some((item) => item.key === key && item.status === "ready"),
+        );
+        swatchMemory.current = resolved.memory;
+        refs = resolved.keys;
+        lookSwatch = resolved.memory?.key;
+        if (refs.length > model.capabilities.references.image) {
+          setError(`${model.name} doesn't have room for the palette swatch. Remove a reference and try again.`);
+          return;
+        }
+        if (resolved.added && !refIds.includes(resolved.added.id)) setRefIds([...refIds, resolved.added.id]);
+      }
       upsert(
         await apiJson<ImageGeneration>("/api/images", {
           method: "POST",
@@ -211,7 +235,9 @@ export function ImageStudio({
             resolution,
             quality: model.capabilities.qualities ? state.quality : undefined,
             count: state.count,
-            references: references.map((r) => r.key),
+            references: refs,
+            ...(!lookIsEmpty(choice) ? { look: choice } : {}),
+            ...(lookSwatch ? { lookSwatch } : {}),
             ...(imageRoute ? { route: imageRoute } : {}),
           }),
         }),
@@ -266,8 +292,16 @@ export function ImageStudio({
       quality: gen.quality ?? state.quality,
       count: gen.count,
       route: gen.route,
+      look: keptLook(gen.look),
     });
-    setRefIds(gen.references.filter((k) => byId.has(k)));
+    swatchMemory.current =
+      gen.lookSwatch && gen.look?.colors?.length ? { key: gen.lookSwatch, colors: gen.look.colors.join(",") } : undefined;
+    setRefIds(
+      gen.references.flatMap((key) => {
+        const item = library.items.find((entry) => entry.key === key || entry.id === key);
+        return item ? [item.id] : [];
+      }),
+    );
     setOpen(null);
   }
 
@@ -404,6 +438,8 @@ export function ImageStudio({
             onOpenKeys={onOpenKeys}
             models={models}
             autoRatio={autoRatio}
+            savedLooks={savedLooks}
+            onLooks={onLooks}
           />
         </div>
       </div>

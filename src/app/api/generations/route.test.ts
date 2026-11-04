@@ -263,6 +263,41 @@ describe("POST /api/generations", () => {
     assert.deepEqual(calls, []);
   });
 
+  it("rejects malformed middleFrames with 400 and does not call the provider", async () => {
+    const kling = modelFor("kling/v4/image-to-video");
+    const base = { ...requestFor(kling), lastFrame: "https://cdn.example/end.jpg" };
+    const shapes: [string, unknown][] = [
+      ["string", "https://cdn.example/mid.jpg"],
+      ["object", { url: "https://cdn.example/mid.jpg" }],
+      ["number", 1],
+      ["non-string entry", [1]],
+      ["object entry", [{ url: "https://cdn.example/mid.jpg" }]],
+      ["empty entry", [""]],
+      ["null entry", [null]],
+      ["invalid entry", ["not-a-url"]],
+      ["http entry", ["http://cdn.example/mid.jpg"]],
+      ["key entry", [KEY]],
+    ];
+    for (const [label, middleFrames] of shapes) {
+      installFetch(true);
+      const res = await post({ ...base, middleFrames });
+      const text = await res.text();
+      assert.equal(res.status, 400, `${label} ${text}`);
+      assert.equal(JSON.parse(text).error, "Keyframes must be a list of images");
+      assert.equal(text.includes(KEY), false, label);
+      assert.deepEqual(calls, [], label);
+    }
+    installFetch(true);
+    const upload = await post({ ...base, middleFrames: ["upload:uploads/mid.jpg"] });
+    const uploadText = await upload.text();
+    assert.equal(upload.status, 400, uploadText);
+    assert.equal(JSON.parse(uploadText).error, "A reference is no longer in your uploads. Remove it and add it again.");
+    assert.equal(uploadText.includes(KEY), false);
+    assert.deepEqual(calls, []);
+    const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
+    assert.equal(rows.n, 0);
+  });
+
   it("rejects a missing continueFrom before any provider call", async () => {
     const model = modelFor("xai/grok-imagine-video/v1.5/image-to-video");
     installFetch(true);

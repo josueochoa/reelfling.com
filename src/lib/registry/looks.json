@@ -1,0 +1,126 @@
+{
+  "line": {
+    "default": "{line}.",
+    "Seedance": "Look: {line}.",
+    "ByteDance": "Look: {line}.",
+    "Kling": "Visual: {line}.",
+    "Google": "Style: {line}.",
+    "Gemini": "Style: {line}.",
+    "MiniMax": "Style, {line}.",
+    "H3": "Style, {line}.",
+    "Alibaba": "Picture style: {line}.",
+    "Nano Banana": "Direction: {line}.",
+    "GPT Image": "Style direction: {line}.",
+    "Flux": "Treatment: {line}.",
+    "FLUX.1": "Treatment: {line}.",
+    "Black Forest Labs": "Treatment: {line}.",
+    "Grok": "Note: {line}.",
+    "Wan": "Scene: {line}.",
+    "Wan-2.2": "Scene: {line}.",
+    "Seedream": "Still: {line}.",
+    "Ideogram": "Image: {line}.",
+    "Recraft": "Design: {line}.",
+    "Luma": "Shot: {line}.",
+    "Runway": "Clip: {line}."
+  },
+  "swatch": {
+    "default": "Match the attached color swatch.",
+    "Seedance": "Look: match the attached color swatch.",
+    "ByteDance": "Look: match the attached color swatch.",
+    "Kling": "Visual: follow the attached color swatch.",
+    "Google": "Style: match the attached color swatch.",
+    "Gemini": "Style: match the attached color swatch.",
+    "MiniMax": "Style, match the attached color swatch.",
+    "Alibaba": "Picture style: match the attached color swatch.",
+    "Nano Banana": "Direction: match the attached color swatch.",
+    "GPT Image": "Style direction: the attached color swatch is the palette.",
+    "Flux": "Treatment: match the attached color swatch.",
+    "Grok": "Note: match the attached color swatch.",
+    "Wan": "Scene: match the attached color swatch."
+  },
+  "colors": {
+    "default": "Palette colors: {colors}.",
+    "Seedance": "Look: palette colors {colors}.",
+    "ByteDance": "Look: palette colors {colors}.",
+    "Kling": "Visual: palette colors {colors}.",
+    "Google": "Style: palette colors {colors}.",
+    "Gemini": "Style: palette colors {colors}.",
+    "MiniMax": "Style, palette colors {colors}.",
+    "Alibaba": "Picture style: palette colors {colors}.",
+    "Nano Banana": "Direction: palette colors {colors}.",
+    "GPT Image": "Style direction: palette colors {colors}.",
+    "Flux": "Treatment: palette colors {colors}.",
+    "Grok": "Note: palette colors {colors}.",
+    "Wan": "Scene: palette colors {colors}."
+  },
+  "groups": [
+    {
+      "id": "camera",
+      "label": "Camera",
+      "options": [
+        { "id": "auto", "name": "Auto" },
+        { "id": "pocket", "name": "Pocket", "line": "tight framing, held close to the subject" },
+        { "id": "shoulder-rig", "name": "Shoulder rig", "line": "a loose following move that stays with the subject" },
+        { "id": "studio-head", "name": "Studio head", "line": "locked, steady framing" },
+        { "id": "box-camera", "name": "Box camera", "line": "straight-on framing, the subject centered" }
+      ]
+    },
+    {
+      "id": "lens",
+      "label": "Lens",
+      "options": [
+        { "id": "auto", "name": "Auto" },
+        { "id": "close-glass", "name": "Close glass", "line": "a wide view with stretched edges" },
+        { "id": "street-glass", "name": "Street glass", "line": "a natural perspective" },
+        { "id": "reach-glass", "name": "Reach glass", "line": "a compressed perspective that pulls the background forward" },
+        { "id": "soft-glass", "name": "Soft glass", "line": "soft edges and a gentle falloff" }
+      ]
+    },
+    {
+      "id": "aperture",
+      "label": "Aperture",
+      "options": [
+        { "id": "auto", "name": "Auto" },
+        { "id": "wide-open", "name": "Wide open", "line": "shallow depth of field, the background falling soft" },
+        { "id": "middle-stop", "name": "Middle stop", "line": "moderate depth of field" },
+        { "id": "pinched", "name": "Pinched", "line": "deep focus from foreground to background" }
+      ]
+    },
+    {
+      "id": "lighting",
+      "label": "Lighting",
+      "options": [
+        { "id": "auto", "name": "Auto" },
+        { "id": "open-shade", "name": "Open shade", "line": "lit by open shade" },
+        { "id": "window-side", "name": "Window side", "line": "lit from a side window" },
+        { "id": "hard-spot", "name": "Hard spot", "line": "lit by one hard beam" },
+        { "id": "lamp-practicals", "name": "Lamp practicals", "line": "lit by warm practical light" },
+        { "id": "flat-sky", "name": "Flat sky", "line": "lit by flat overcast light" }
+      ]
+    },
+    {
+      "id": "palette",
+      "label": "Palette",
+      "options": [
+        { "id": "auto", "name": "Auto" },
+        { "id": "warm-paper", "name": "Warm paper", "line": "a warm paper palette" },
+        { "id": "cool-metal", "name": "Cool metal", "line": "a cool metal palette" },
+        { "id": "dust", "name": "Dust", "line": "a dusty muted palette" },
+        { "id": "ink-lime", "name": "Ink and lime", "line": "black ink with a single lime accent" },
+        { "id": "custom", "name": "Custom" }
+      ]
+    },
+    {
+      "id": "era",
+      "label": "Era",
+      "options": [
+        { "id": "auto", "name": "Auto" },
+        { "id": "hand-crank", "name": "Hand crank", "line": "set in the early hand-crank years" },
+        { "id": "chrome-years", "name": "Chrome years", "line": "set in the chrome-trimmed years" },
+        { "id": "tape-decade", "name": "Tape decade", "line": "set in the home-tape decade" },
+        { "id": "early-web", "name": "Early web", "line": "set in the early web years" },
+        { "id": "right-now", "name": "Right now", "line": "set in the present day" }
+      ]
+    }
+  ]
+}
