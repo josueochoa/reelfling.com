@@ -138,7 +138,6 @@ export function VideoStudio({
   function reuse(gen: Generation, asFirstFrame?: string) {
     setOpen(null);
     const picked = reuseSelection(catalog(), gen.model, gen.route);
-    if (picked.route) saveRoute(picked.id, picked.route);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // Don't claim files were deleted while the library is still loading.
     const restored = asFirstFrame || !library.loaded ? undefined : restoreInputs(gen, available);

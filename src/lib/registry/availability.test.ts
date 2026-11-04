@@ -80,7 +80,7 @@ describe("availability", () => {
     assert.ok(noRefs && isVideo(noRefs) && noRefs.capabilities.references.total === 0);
     const providers = routeProviders(withRefs.routes);
     assert.equal(availabilityFor(providers, new Set()).available, false);
-    assert.equal(availabilityHint(availabilityFor(providers, new Set()).needs), "needs an ArgoLink, fal or OpenRouter key");
+    assert.equal(availabilityHint(availabilityFor(providers, new Set()).needs), "needs an ArgoLink key");
     assert.equal(availabilityFor(providers, new Set(["argolink"])).available, true);
   });
 });

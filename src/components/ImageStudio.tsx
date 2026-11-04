@@ -233,7 +233,6 @@ export function ImageStudio({
   /** Back into the composer: prompt, settings and the reference images still in Uploads. */
   function reuse(gen: ImageGeneration) {
     const model = getImageModel(gen.model) ?? state.model;
-    if (gen.route) saveRoute(model.id, gen.route);
     setState({
       model,
       prompt: gen.prompt,
