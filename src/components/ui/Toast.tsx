@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useId, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { pushLock, redactSecrets } from "./a11y";
 import { X } from "./Icon";
 
@@ -124,6 +124,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 function ToastCard({ item }: { item: ToastItem }) {
   const ref = useRef<HTMLDivElement>(null);
+  const messageId = useId();
   const confirm = item.confirm;
 
   useEffect(() => {
@@ -138,13 +139,17 @@ function ToastCard({ item }: { item: ToastItem }) {
   return (
     <div
       ref={ref}
-      role="status"
+      role={confirm ? "alertdialog" : "status"}
+      aria-modal={confirm ? true : undefined}
+      aria-labelledby={confirm ? messageId : undefined}
       className={`pointer-events-auto rounded-lg border bg-surface-3 p-3 text-fg shadow-2xl shadow-black/40 ${
         item.tone === "error" ? "border-red-400/40" : "border-line"
       }`}
     >
       <div className="flex items-start gap-3">
-        <p className="min-w-0 flex-1 text-body whitespace-pre-line">{item.message}</p>
+        <p id={messageId} className="min-w-0 flex-1 text-body whitespace-pre-line">
+          {item.message}
+        </p>
         {!confirm && (
           <button
             type="button"

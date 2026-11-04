@@ -9,6 +9,7 @@ export {
   Pause,
   Play,
   RotateCcw,
+  Trash2,
   X,
 } from "lucide-react";
 

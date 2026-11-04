@@ -2,7 +2,7 @@
 
 // The Assets tab: everything in the user's bucket, generated and uploaded, in one place.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
 import { Play } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
@@ -16,10 +16,10 @@ import { MediaVisual, UploadOverlay, useLazyThumbs, usePlayer } from "./MediaBlo
 import { MediaPreview } from "./MediaPreview";
 import { formatBytes } from "./UserMenu";
 
-const KINDS: { value: UploadKind | "all"; label: string; icon: string }[] = [
+const KINDS: { value: UploadKind | "all"; label: string; icon: ReactNode }[] = [
   { value: "all", label: "All assets", icon: "▦" },
   { value: "image", label: "Images", icon: "▣" },
-  { value: "video", label: "Videos", icon: "" },
+  { value: "video", label: "Videos", icon: <Play className="size-3.5" aria-hidden /> },
   { value: "audio", label: "Audio", icon: "♪" },
 ];
 const SOURCES: { value: AssetSource | "all"; label: string }[] = [
@@ -165,9 +165,7 @@ export function AssetsStudio({
                   kind === k.value ? "bg-white/10 text-white ring-1 ring-accent/50" : "text-zinc-300 hover:bg-white/5"
                 }`}
               >
-                <span className="grid size-7 place-items-center rounded-lg bg-white/10 text-xs">
-                  {k.value === "video" ? <Play className="size-3.5" aria-hidden /> : k.icon}
-                </span>
+                <span className="grid size-7 place-items-center rounded-lg bg-white/10 text-xs">{k.icon}</span>
                 <span className="flex-1">{k.label}</span>
                 <span className="text-right text-[11px] leading-tight text-zinc-500 tabular-nums">
                   {s.count}

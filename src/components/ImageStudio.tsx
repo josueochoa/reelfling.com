@@ -368,7 +368,7 @@ export function ImageStudio({
       </div>
 
       {libraryOpen && (
-        <Modal size="full" onClose={() => setLibraryOpen(false)} label="Uploads" showClose={false} className="bg-ink">
+        <Modal size="full" surface="ink" onClose={() => setLibraryOpen(false)} label="Uploads" showClose={false}>
           <UploadsPanel
             library={library}
             selected={new Map(references.map((r, i) => [r.id, `@Image ${i + 1}`]))}
@@ -451,7 +451,7 @@ function ImageLightbox({
   ];
 
   return (
-    <Modal size="lg" onClose={onClose} label="Image" showClose={false} className="lg:max-w-6xl">
+    <Modal size="lg" width={1300} onClose={onClose} label="Image" showClose={false}>
       <div className="flex max-h-[92dvh] flex-col lg:flex-row">
         <div className="relative grid min-h-[300px] flex-1 place-items-center bg-black">
           {/* eslint-disable-next-line @next/next/no-img-element */}

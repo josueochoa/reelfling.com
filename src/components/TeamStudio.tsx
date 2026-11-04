@@ -434,7 +434,7 @@ function AssetTile({ teamId, asset, meId }: { teamId: string; asset: TeamAsset; 
         )}
       </div>
       {open && (
-        <Modal size="lg" onClose={() => setOpen(false)} label={asset.name} className="bg-black">
+        <Modal size="lg" surface="black" onClose={() => setOpen(false)} label={asset.name}>
           <video
             src={fileUrl}
             controls

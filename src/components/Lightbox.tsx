@@ -73,7 +73,7 @@ export function Lightbox({
   ]);
 
   return (
-    <Modal size="lg" onClose={onClose} label="Generation" showClose={false} className="lg:max-w-6xl">
+    <Modal size="lg" width={1200} onClose={onClose} label="Generation" showClose={false}>
       <div className="flex max-h-[92dvh] flex-col lg:flex-row">
         <div className="relative grid min-h-[300px] flex-1 place-items-center bg-black">
           {ready ? (
