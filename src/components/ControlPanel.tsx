@@ -53,6 +53,8 @@ export interface Preset {
   cameraMove?: string;
   /** Provider this generation ran on. Reuse sends it again. */
   route?: string;
+  /** Set when this generation continues another clip. */
+  continueFrom?: string;
 }
 
 /** A frame is a library item, or a one-off URL that isn't in the library. */
@@ -477,6 +479,13 @@ export function ControlPanel({
         ? {
             firstFrame: caps.frames.start ? framePayload(firstFrame) : undefined,
             lastFrame: caps.frames.end && framePayload(firstFrame) ? framePayload(lastFrame) : undefined,
+            ...(caps.frames.start &&
+            framePayload(firstFrame) &&
+            preset.continueFrom &&
+            preset.firstFrameKey &&
+            frameItem(firstFrame)?.key === preset.firstFrameKey
+              ? { continueFrom: preset.continueFrom }
+              : {}),
           }
         : {
             referenceImages: refValues("image"),

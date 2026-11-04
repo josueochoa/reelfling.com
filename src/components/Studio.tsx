@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ImageModel, VideoModel } from "@/lib/registry";
 import { rememberModels } from "@/lib/registry/lookup";
-import type { ToolView } from "@/lib/toolTypes";
+import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
 import { FalStudio, type FalTabHandle } from "./FalStudio";
@@ -34,6 +34,7 @@ export function Studio() {
   const [openRouterModels, setOpenRouterModels] = useState<VideoModel[] | null>(null);
   const [catalogImages, setCatalogImages] = useState<ImageModel[] | null>(null);
   const [tools, setTools] = useState<ToolView[]>([]);
+  const [extendOffers, setExtendOffers] = useState<ExtendOffer[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const library = useLibrary();
   const video = useRef<StudioTabHandle>(null);
@@ -46,12 +47,15 @@ export function Studio() {
   }, [loadMe]);
   // Slim picker list. The generated catalog stays on the server.
   useEffect(() => {
-    apiJson<{ models: VideoModel[]; images?: ImageModel[]; tools?: ToolView[] }>("/api/models")
+    apiJson<{ models: VideoModel[]; images?: ImageModel[]; tools?: ToolView[]; extend?: ExtendOffer[] }>(
+      "/api/models",
+    )
       .then((body) => {
         rememberModels(body.models);
         setOpenRouterModels(body.models);
         setCatalogImages(body.images ?? []);
         setTools(body.tools ?? []);
+        setExtendOffers(body.extend ?? []);
       })
       .catch(() => setOpenRouterModels([]));
   }, []);
@@ -98,6 +102,7 @@ export function Studio() {
           onOpenKeys={openKeys}
           openRouterModels={openRouterModels}
           tools={tools}
+          extendOffers={extendOffers}
           onToolJob={showToolJob}
         />
       </div>

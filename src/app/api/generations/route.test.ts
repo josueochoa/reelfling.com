@@ -217,4 +217,17 @@ describe("POST /api/generations", () => {
       assert.notDeepEqual(sent, falQueueInput(input));
     }
   });
+
+  it("rejects a missing continueFrom before any provider call", async () => {
+    const model = modelFor("xai/grok-imagine-video/v1.5/image-to-video");
+    installFetch(true);
+    const res = await post({ ...requestFor(model), continueFrom: "missing-generation" });
+    const text = await res.text();
+    assert.equal(res.status, 400, text);
+    assert.equal(JSON.parse(text).error, "That video is no longer in your feed.");
+    assert.equal(text.includes(KEY), false);
+    assert.deepEqual(calls, []);
+    const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
+    assert.equal(rows.n, 0);
+  });
 });

@@ -569,6 +569,38 @@ export const providerUrl = (asset: Asset) => {
 };
 
 /**
+ * Headers for a file this origin streams itself. A redirect to R2 is cross-origin,
+ * and drawing that video to a canvas taints it. This response stays on our origin.
+ */
+export function ownMediaHeaders(upstream: {
+  contentType?: string | null;
+  contentLength?: string | null;
+  contentRange?: string | null;
+}): Headers {
+  const headers = new Headers();
+  headers.set("Content-Type", upstream.contentType || "application/octet-stream");
+  headers.set("Cache-Control", "private, no-store");
+  headers.set("Accept-Ranges", "bytes");
+  headers.set("X-Content-Type-Options", "nosniff");
+  if (upstream.contentLength) headers.set("Content-Length", upstream.contentLength);
+  if (upstream.contentRange) headers.set("Content-Range", upstream.contentRange);
+  return headers;
+}
+
+/** Streams the object. Range is forwarded so a video element can seek. */
+export async function streamAsset(asset: Asset, request: Request): Promise<Response> {
+  const opened = await openAsset(asset, { range: request.headers.get("range") });
+  return new Response(opened.body, {
+    status: opened.status,
+    headers: ownMediaHeaders({
+      contentType: opened.contentType || asset.contentType,
+      contentLength: opened.contentLength,
+      contentRange: opened.contentRange,
+    }),
+  });
+}
+
+/**
  * Redirects to a short-lived signed URL, so the bytes (and the player's Range
  * requests) go straight from R2 to the browser. R2 doesn't charge for egress.
  */
