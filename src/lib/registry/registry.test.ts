@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { openRouterCamera, openRouterPrice } from "../../../scripts/catalog-map.mjs";
+import { openRouterCamera, openRouterModel, openRouterPrice } from "../../../scripts/catalog-map.mjs";
 import type { GenerateRequest } from "../types";
 import { ALL_MODELS, openRouterPickerModels } from "./generated";
 import { MAPPERS } from "./mappers";
@@ -104,6 +104,86 @@ describe("model registry", () => {
     assert.ok(seedance);
     const fiveSeconds = estimateCost(seedance, { resolution: "720p", duration: 5 });
     assert.ok(fiveSeconds !== undefined && Math.abs(fiveSeconds - 0.76) < 0.02);
+  });
+
+  it("bills ArgoLink Seedance 2.5 reference video at the with-video rate", () => {
+    const model = getModel("seedance-2.5");
+    assert.ok(model);
+    const shown = (input: Parameters<typeof estimateCost>[1]) => estimateCost(model, input)?.toFixed(2);
+    // 30 × $0.0874. Reference images and generated audio are not an input.
+    assert.equal(shown({ resolution: "480p", duration: 30 }), "2.62");
+    assert.equal(shown({ resolution: "480p", duration: 30, audio: true }), "2.62");
+    // 30 + floor(23) = 53 billed seconds × $0.0523.
+    assert.equal(shown({ resolution: "480p", duration: 30, referenceVideoSeconds: 23 }), "2.77");
+    assert.equal(shown({ resolution: "480p", duration: 30, referenceVideoSeconds: 23, audio: true }), "2.77");
+    // A short clip hits ceil(30 × 5/3) = 50 × $0.0523.
+    assert.equal(shown({ resolution: "480p", duration: 30, referenceVideoSeconds: 2 }), "2.62");
+    assert.equal(shown({ resolution: "480p", duration: 30, referenceVideoSeconds: 0.4 }), "2.62");
+    // Official example: 5s output + 2.4s reference floors to 7, then the 9s minimum.
+    assert.equal(estimateCost(model, { resolution: "480p", duration: 5, referenceVideoSeconds: 2.4 }), 9 * 0.0523);
+    // Post-run: billed_seconds already include the reference. Don't multiply them by $0.0874.
+    const billed = estimateCost(model, {
+      resolution: "480p",
+      duration: 53,
+      referenceVideoSeconds: 0,
+      durationIsBilled: true,
+    });
+    assert.equal(billed, 53 * 0.0523);
+    assert.notEqual(billed?.toFixed(2), (53 * 0.0874).toFixed(2));
+    // No reference video. Billed seconds above the output (a provider minimum)
+    // stay on the normal rate, not the with-video rate.
+    const noReference = estimateCost(model, { resolution: "480p", duration: 50 });
+    assert.equal(noReference, 50 * 0.0874);
+    // The other ArgoLink Seedance routes publish their own with-video rates.
+    const others = [
+      ["seedance-2.0", "4k", 0.397],
+      ["seedance-2.0-fast", "720p", 0.0607],
+      ["seedance-2.0-mini", "480p", 0.0179],
+    ] as const;
+    for (const [id, resolution, perSecond] of others) {
+      const entry = getModel(id);
+      assert.ok(entry);
+      const cost = estimateCost(entry, { resolution, duration: 5, referenceVideoSeconds: 2.4 });
+      assert.ok(cost !== undefined && Math.abs(cost - 9 * perSecond) < 1e-8, id);
+    }
+  });
+
+  it("adds reference-video seconds on a token price and switches to the with-video rate", () => {
+    // fal Seedance 2.5 reference-to-video: $0.0214 / 1k tokens, × 0.6 with any video reference.
+    // 10s 720p 16:9 is 216,000 tokens (~$4.62); an 8s reference makes 388,800 tokens (~$4.99).
+    const fal = {
+      price: {
+        type: "tokens" as const,
+        usdPerToken: 0.0000214,
+        usdPerTokenWithVideo: 0.0000214 * 0.6,
+        fps: 24,
+        pixels: { "720p": { width: 1280, height: 720 } },
+      },
+    };
+    const imagesOnly = estimateCost(fal, { resolution: "720p", duration: 10 });
+    const withVideo = estimateCost(fal, { resolution: "720p", duration: 10, referenceVideoSeconds: 8 });
+    assert.ok(imagesOnly !== undefined && Math.abs(imagesOnly - 4.6224) < 1e-9);
+    assert.ok(withVideo !== undefined && Math.abs(withVideo - 4.992192) < 1e-9);
+    assert.equal(estimateCost(fal, { resolution: "720p", duration: 10, audio: true }), imagesOnly);
+
+    const openrouter = ALL_MODELS.find((model) => model.id === "openrouter:bytedance/seedance-2.5");
+    assert.ok(openrouter && openrouter.group === "video");
+    assert.deepEqual(openrouter.capabilities.references, { image: 50, video: 50, audio: 50, total: 50 });
+    assert.equal(openrouter.tasks.includes("ref2v"), true);
+    assert.equal(openrouter.price?.type === "tokens" && openrouter.price.usdPerTokenWithVideo, 0.0000064);
+    const cold = estimateCost(openrouter, { resolution: "480p", duration: 30 });
+    const referenced = estimateCost(openrouter, { resolution: "480p", duration: 30, referenceVideoSeconds: 23 });
+    const tokensPerSecond = (864 * 480 * 24) / 1024;
+    assert.ok(cold !== undefined && Math.abs(cold - 30 * tokensPerSecond * 0.0000107) < 1e-8);
+    assert.ok(referenced !== undefined && Math.abs(referenced - 53 * tokensPerSecond * 0.0000064) < 1e-8);
+
+    const modelark = getModel("dreamina-seedance-2-0-260128");
+    assert.ok(modelark);
+    const perSecond = (1280 * 720 * 24) / 1024;
+    const plain = estimateCost(modelark, { resolution: "720p", duration: 5 });
+    const video = estimateCost(modelark, { resolution: "720p", duration: 5, referenceVideoSeconds: 4 });
+    assert.ok(plain !== undefined && Math.abs(plain - 5 * perSecond * 0.000007) < 1e-8);
+    assert.ok(video !== undefined && Math.abs(video - 9 * perSecond * 0.0000043) < 1e-8);
   });
 
   it("keeps extreme image ratios off higher resolutions without checking the model name", () => {
@@ -218,6 +298,44 @@ describe("openrouter price formulas", () => {
     assert.equal(seedance.type, "tokens");
     assert.equal(seedance.byResolution["720p"], 0.000007);
     assert.equal(seedance.pixels["1080p"].width, 1920);
+
+    const withVideo = openRouterPrice({
+      supported_resolutions: ["480p", "720p", "1080p"],
+      pricing_skus: {
+        video_tokens: "0.0000107",
+        video_tokens_1080p: "0.0000117",
+        video_tokens_with_video_input: "0.0000064",
+        video_tokens_1080p_with_video_input: "0.000007",
+      },
+    }) as {
+      type: string;
+      usdPerTokenWithVideo: number;
+      byResolutionWithVideo: Record<string, number>;
+    };
+    assert.equal(withVideo.type, "tokens");
+    assert.equal(withVideo.usdPerTokenWithVideo, 0.0000064);
+    assert.equal(withVideo.byResolutionWithVideo["480p"], 0.0000064);
+    assert.equal(withVideo.byResolutionWithVideo["1080p"], 0.000007);
+
+    const seedance25 = openRouterModel({
+      id: "bytedance/seedance-2.5",
+      name: "ByteDance: Seedance 2.5",
+      description: "up to 50 image, video, and audio reference assets",
+      supported_resolutions: ["480p", "720p"],
+      supported_aspect_ratios: ["16:9"],
+      supported_durations: [4, 5, 30],
+      supported_frame_images: ["first_frame", "last_frame"],
+      generate_audio: true,
+      seed: true,
+      pricing_skus: { video_tokens: "0.0000107", video_tokens_with_video_input: "0.0000064" },
+    }) as {
+      tasks: string[];
+      capabilities: { references: { image: number; video: number; audio: number; total: number } };
+      price: { usdPerTokenWithVideo: number };
+    };
+    assert.deepEqual(seedance25.capabilities.references, { image: 50, video: 50, audio: 50, total: 50 });
+    assert.equal(seedance25.tasks.includes("ref2v"), true);
+    assert.equal(seedance25.price.usdPerTokenWithVideo, 0.0000064);
 
     const upscale = openRouterPrice({
       pricing_skus: { cents_per_megapixel_second_precise: "3.5" },

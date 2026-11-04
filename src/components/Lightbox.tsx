@@ -39,8 +39,19 @@ export function Lightbox({
 
   const model = lookupModel(gen.model);
   const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
+  const billed = gen.billedSeconds;
+  // billed_seconds already include reference video. Use the with-video rate only
+  // when this job had one. A longer bill on its own (a provider minimum) stays
+  // on the normal rate.
+  const hadReferenceVideo = gen.inputs.videos > 0;
   const cost =
-    model && estimateCost(model, { resolution: gen.resolution, duration: gen.billedSeconds ?? gen.duration, audio: gen.generateAudio });
+    model &&
+    estimateCost(model, {
+      resolution: gen.resolution,
+      duration: billed ?? gen.duration,
+      audio: gen.generateAudio,
+      ...(hadReferenceVideo && billed !== undefined ? { referenceVideoSeconds: 0, durationIsBilled: true } : {}),
+    });
   const details: [string, React.ReactNode][] = [
     ["Model", model?.name ?? gen.model],
     ["Provider", gen.provider ?? "modelark"],
