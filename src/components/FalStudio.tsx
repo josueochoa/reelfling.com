@@ -3,7 +3,7 @@
 // Any fal endpoint: an id plus a JSON input. Field errors from a 422 render here, inline.
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
+import { shouldCancelFal, shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
 import { assetFileUrl } from "@/lib/uploads";
 import { api, type Me } from "./api";
 
@@ -20,6 +20,15 @@ const STATUS_LABEL: Record<FalJobView["status"], string> = {
   succeeded: "Succeeded",
   failed: "Failed",
 };
+
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <>{Math.max(0, Math.round((now - since) / 1000))}s</>;
+}
 
 function FieldErrors({ fields }: { fields?: FalFieldError[] }) {
   if (!fields?.length) return null;
@@ -192,15 +201,30 @@ export function FalStudio({
                       >
                         {STATUS_LABEL[job.status]}
                       </span>
-                      <p className="truncate font-mono text-xs text-zinc-400">{job.endpointId}</p>
+                      <p className={`truncate text-xs ${job.tool ? "text-zinc-200" : "font-mono text-zinc-400"}`}>
+                        {job.tool?.name ?? job.endpointId}
+                      </p>
                     </div>
                     {job.prompt && <p className="mt-2 line-clamp-3 text-sm text-zinc-200">{job.prompt}</p>}
+                    {needsPoll(job) && (
+                      <div className="mt-3">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                          <div className="shimmer h-full w-1/2 rounded-full bg-accent/80" />
+                        </div>
+                        <p className="mt-1.5 text-[11px] text-zinc-500">
+                          {STATUS_LABEL[job.status]}
+                          {job.queuePosition !== undefined ? ` · position ${job.queuePosition}` : ""}
+                          {" · "}
+                          <Elapsed since={job.createdAt} />
+                        </p>
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={() => void remove(job)}
                     className="shrink-0 rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-red-300"
                   >
-                    Delete
+                    {shouldCancelFal(job.status) ? "Cancel" : "Delete"}
                   </button>
                 </div>
                 {(job.status === "failed" || job.error) && (

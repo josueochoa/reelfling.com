@@ -419,9 +419,16 @@ export function falModel(spec, raw, unit) {
     });
   }
   if (group === "tool") {
+    // One media kind per tool. image_url and video_url come from the live input schema.
+    const video = hasKey(props, /video_url/);
+    const image = hasKey(props, /image_url/);
+    const accepts = video && !image ? "video" : image ? "image" : undefined;
     return compact({
       ...base,
-      capabilities: compact({ resolutions: resolutions.length ? resolutions : undefined }),
+      capabilities: compact({
+        accepts,
+        resolutions: resolutions.length ? resolutions : undefined,
+      }),
     });
   }
   return compact({

@@ -20,6 +20,10 @@ export interface Asset {
   /** Library uploads: display name. */
   name?: string | null;
   meta?: AssetMeta | null;
+  /** Asset key this file was made from. The parent row is not changed. */
+  parentId?: string | null;
+  /** Catalog tool id, when a tool produced this file. */
+  tool?: string | null;
 }
 
 /** Library details, stored as JSON. */
@@ -40,6 +44,8 @@ interface AssetRow {
   created_at: number;
   name: string | null;
   meta: string | null;
+  parent_id: string | null;
+  tool: string | null;
 }
 
 const toAsset = (r: AssetRow): Asset => ({
@@ -52,6 +58,8 @@ const toAsset = (r: AssetRow): Asset => ({
   createdAt: r.created_at,
   name: r.name,
   meta: r.meta ? (JSON.parse(r.meta) as AssetMeta) : null,
+  parentId: r.parent_id,
+  tool: r.tool,
 });
 
 export class StorageError extends Error {
@@ -206,11 +214,17 @@ export async function putAsset(
     source,
     contentType,
     generationId = null,
+    parentId = null,
+    tool = null,
+    name = null,
   }: {
     key: string;
     source: Response;
     contentType: string;
     generationId?: string | null;
+    parentId?: string | null;
+    tool?: string | null;
+    name?: string | null;
   },
 ): Promise<Asset> {
   const cfg = r2();
@@ -222,17 +236,29 @@ export async function putAsset(
     // Content-Length comes from the body: a byte array or a FixedLengthStream.
     headers: { "Content-Type": contentType },
   });
-  return recordAsset({ userId, key, bucket, bytes, contentType, generationId, createdAt: Date.now() });
+  return recordAsset({
+    userId,
+    key,
+    bucket,
+    bytes,
+    contentType,
+    generationId,
+    createdAt: Date.now(),
+    parentId,
+    tool,
+    name,
+  });
 }
 
 async function recordAsset(asset: Asset): Promise<Asset> {
   const { userId, key, bucket, bytes, contentType, generationId } = asset;
   await run(
-    `INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name, meta)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO assets (user_id, key, bucket, bytes, content_type, generation_id, created_at, name, meta, parent_id, tool)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (user_id, key) DO UPDATE SET
        bucket = excluded.bucket, bytes = excluded.bytes, content_type = excluded.content_type,
-       created_at = excluded.created_at, name = excluded.name, meta = excluded.meta`,
+       created_at = excluded.created_at, name = excluded.name, meta = excluded.meta,
+       parent_id = excluded.parent_id, tool = excluded.tool`,
     userId,
     key,
     bucket,
@@ -242,6 +268,8 @@ async function recordAsset(asset: Asset): Promise<Asset> {
     asset.createdAt,
     asset.name ?? null,
     asset.meta ? JSON.stringify(asset.meta) : null,
+    asset.parentId ?? null,
+    asset.tool ?? null,
   );
   return asset;
 }
@@ -376,16 +404,27 @@ export async function listAssets(userId: string): Promise<AssetItem[]> {
       hasThumb: !!a.meta?.thumb,
       createdAt: a.createdAt,
     };
-    if (a.key.startsWith("uploads/")) return [{ ...base, source: "upload", name: a.name ?? a.key.split("/").pop()! }];
+    const lineage = {
+      ...(a.parentId ? { parentId: a.parentId } : {}),
+      ...(a.tool ? { tool: a.tool } : {}),
+    };
+    if (a.key.startsWith("uploads/"))
+      return [{ ...base, source: "upload", name: a.name ?? a.key.split("/").pop()! }];
     if (a.key.startsWith("fal/")) {
       const job = a.generationId ? fal.get(a.generationId) : undefined;
       if (!job) return [];
       return [
         {
           ...base,
-          source: "generated",
-          name: job.prompt.slice(0, 120) || "Untitled",
-          generation: { id: job.id, tab: "fal", model: job.model, prompt: job.prompt },
+          ...lineage,
+          source: a.tool ? "processed" : "generated",
+          name: (a.tool && a.name) || job.prompt.slice(0, 120) || a.name || "Untitled",
+          generation: {
+            id: job.id,
+            tab: "fal",
+            model: a.tool ?? job.model,
+            prompt: a.tool ? a.name || "" : job.prompt,
+          },
         },
       ];
     }
