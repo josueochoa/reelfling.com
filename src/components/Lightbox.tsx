@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
 import { cameraSummary, estimateCost } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
+import { X } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
 import type { ToolView } from "@/lib/toolTypes";
 import type { Generation } from "@/lib/types";
 import { formatSecs, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
@@ -34,12 +35,6 @@ export function Lightbox({
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
   const canReference = ready && !!gen.stored;
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   const model = lookupModel(gen.model);
   const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
@@ -78,11 +73,8 @@ export function Lightbox({
   ]);
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-black/85 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="m-auto flex max-h-[92dvh] w-[min(1200px,94vw)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-panel lg:flex-row"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal size="lg" width={1200} onClose={onClose} label="Generation" showClose={false}>
+      <div className="flex max-h-[92dvh] flex-col lg:flex-row">
         <div className="relative grid min-h-[300px] flex-1 place-items-center bg-black">
           {ready ? (
             <video src={videoSrc(gen)} controls autoPlay loop playsInline className="max-h-[92dvh] w-full" />
@@ -94,7 +86,7 @@ export function Lightbox({
           <div className="flex items-start justify-between">
             <h2 className="text-xs font-medium tracking-wide text-zinc-400 uppercase">Prompt</h2>
             <button onClick={onClose} className="text-zinc-500 hover:text-white" aria-label="Close">
-              ✕
+              <X className="size-4" aria-hidden />
             </button>
           </div>
           <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-200">{gen.prompt || "—"}</p>
@@ -146,6 +138,6 @@ export function Lightbox({
           </div>
         </aside>
       </div>
-    </div>
+    </Modal>
   );
 }

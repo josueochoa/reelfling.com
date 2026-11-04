@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { X } from "@/components/ui/Icon";
+import { toast } from "@/components/ui/Toast";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
@@ -29,7 +31,10 @@ function useImagePicker(onFiles: (urls: string[]) => void, onFile?: (file: File)
     const results = await Promise.allSettled([...files].map(readAsDataUrl));
     const ok = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
     const failed = results.find((r) => r.status === "rejected");
-    if (failed) alert((failed as PromiseRejectedResult).reason.message);
+    if (failed) {
+      const reason = (failed as PromiseRejectedResult).reason;
+      toast(reason instanceof Error ? reason.message : "Couldn't read that image.", { tone: "error" });
+    }
     if (ok.length) onFiles(ok);
   }
 
@@ -93,7 +98,7 @@ export function ImageSlot({
           className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-xs"
           aria-label={`Remove ${label}`}
         >
-          ✕
+          <X className="size-3" aria-hidden />
         </button>
       </div>
     );

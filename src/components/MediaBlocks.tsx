@@ -3,6 +3,7 @@
 // Visual blocks for assets, shared by the References box, the Uploads picker and Assets.
 
 import { useEffect, useRef, useState } from "react";
+import { Pause, Play } from "@/components/ui/Icon";
 import { fileSrc, thumbSrc, type LibraryItem } from "./library";
 
 export function formatDuration(seconds?: number) {
@@ -114,12 +115,12 @@ export function PlayButton({
       aria-label={playing ? "Pause" : "Play"}
       className={`grid size-7 shrink-0 place-items-center rounded-full bg-white/90 text-[10px] text-ink hover:bg-white ${className}`}
     >
-      {playing ? "❚❚" : "▶"}
+      {playing ? <Pause className="size-3" aria-hidden /> : <Play className="size-3" aria-hidden />}
     </button>
   );
 }
 
-/** The item's picture: image thumbnail, video frame with ▶ and length, or a waveform block. */
+/** The item's picture: image thumbnail, video frame with a play icon and length, or a waveform block. */
 export function MediaVisual({
   item,
   player,
@@ -129,7 +130,7 @@ export function MediaVisual({
   item: LibraryItem;
   player: Player;
   compact?: boolean;
-  /** Makes a video's ▶ open the preview (instead of being decoration). */
+  /** Makes a video's play icon open the preview (instead of being decoration). */
   onPreview?: () => void;
 }) {
   const thumb = thumbSrc(item);
@@ -176,12 +177,14 @@ export function MediaVisual({
                 }}
                 aria-label={`Play ${item.name}`}
                 title="Play"
-                className="pointer-events-auto grid size-9 place-items-center rounded-full bg-black/60 text-xs text-white transition hover:scale-110 hover:bg-black/80"
+                className="pointer-events-auto grid size-9 place-items-center rounded-full bg-black/60 text-white transition hover:bg-black/80 motion-safe:hover:scale-110"
               >
-                ▶
+                <Play className="size-4" aria-hidden />
               </button>
             ) : (
-              <span className="grid size-7 place-items-center rounded-full bg-black/50 text-[10px] text-white">▶</span>
+              <span className="grid size-7 place-items-center rounded-full bg-black/50 text-white">
+                <Play className="size-3.5" aria-hidden />
+              </span>
             )}
           </span>
           {/* Small blocks carry a mention label along the bottom instead. */}

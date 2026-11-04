@@ -3,6 +3,7 @@
 // The Image tab's prompt bar: reference images, prompt, model and settings, Generate.
 
 import { useRef } from "react";
+import { X } from "@/components/ui/Icon";
 import {
   estimateRouteCost,
   imageModels,
@@ -165,9 +166,9 @@ export function ImageComposer({
                   <button
                     onClick={() => onRemoveReference(i)}
                     aria-label={`Remove image ${i + 1}`}
-                    className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/70 text-[8px] opacity-0 group-hover:opacity-100"
+                    className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded-full bg-black/70 opacity-0 group-hover:opacity-100"
                   >
-                    ✕
+                    <X className="size-2.5" aria-hidden />
                   </button>
                 </div>
               ))}
