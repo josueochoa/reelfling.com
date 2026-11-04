@@ -240,12 +240,8 @@ describe("fal lineup catalog", () => {
     const withImage = { ratio: "auto", resolution: "2k", references: 1, autoRatio: "16:9" };
     const noImage = { ratio: "auto", resolution: "2k", references: 0 };
     const shownWithImage = imagePriceMegapixels(z, withImage);
-    const savedWithImage = imagePriceMegapixels(z, withImage);
-    assert.equal(shownWithImage, savedWithImage);
     assert.equal(shownWithImage, outputMegapixels(undefined, "16:9"));
     const shownAlone = imagePriceMegapixels(z, noImage);
-    const savedAlone = imagePriceMegapixels(z, noImage);
-    assert.equal(shownAlone, savedAlone);
     assert.equal(shownAlone, outputMegapixels(undefined, "1:1"));
     assert.ok(shownWithImage < shownAlone);
     const cost = (megapixels: number) => estimateRouteCost(z, "fal", { resolution: "2k", count: 1, megapixels });
