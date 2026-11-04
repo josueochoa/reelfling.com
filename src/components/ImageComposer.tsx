@@ -2,11 +2,11 @@
 
 // The Image tab's prompt bar: reference images, prompt, model and settings, Generate.
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import {
   estimateRouteCost,
   imageModels,
-  outputMegapixels,
+  imagePriceMegapixels,
   imageProviderFor,
   PROVIDER_INFO,
   ratioAllowed,
@@ -39,25 +39,6 @@ export interface ComposerState {
 const QUALITY_LABEL: Record<ImageQuality, string> = { auto: "Auto", low: "Low", medium: "Medium", high: "High" };
 const HAND_MODELS = imageModels();
 
-/** Pixel size of a reference, so aspect "auto" is priced from that image. */
-function useImageBox(src: string | undefined) {
-  const [box, setBox] = useState<{ src: string; width: number; height: number } | null>(null);
-  useEffect(() => {
-    if (!src) return;
-    let gone = false;
-    const img = new Image();
-    img.onload = () => {
-      if (!gone && img.naturalWidth > 0 && img.naturalHeight > 0)
-        setBox({ src, width: img.naturalWidth, height: img.naturalHeight });
-    };
-    img.src = src;
-    return () => {
-      gone = true;
-    };
-  }, [src]);
-  return src && box?.src === src ? { width: box.width, height: box.height } : null;
-}
-
 function Mark({ mark }: { mark?: string }) {
   if (!mark) return null;
   return (
@@ -83,6 +64,7 @@ export function ImageComposer({
   onSaveRoute,
   onOpenKeys,
   models = HAND_MODELS,
+  autoRatio,
 }: {
   state: ComposerState;
   onChange: (patch: Partial<ComposerState>) => void;
@@ -102,6 +84,11 @@ export function ImageComposer({
   onOpenKeys: () => void;
   /** Hand models plus fal image models from /api/models. */
   models?: readonly ImageModel[];
+  /**
+   * Nearest allowed ratio for the first reference when aspect is Auto.
+   * The image route prices this same value.
+   */
+  autoRatio?: string;
 }) {
   const { model, prompt, ratio, resolution, quality, count } = state;
   const route = preferredRoute(model, keyed, [
@@ -112,10 +99,8 @@ export function ImageComposer({
   const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
-  const autoSrc = ratio === "auto" && references[0] ? thumbSrc(references[0]) : undefined;
-  const autoBox = useImageBox(autoSrc);
-  const sized = caps.resolutions.includes(resolution) ? resolution : undefined;
-  const megapixels = outputMegapixels(sized, ratio, ratio === "auto" ? autoBox : null);
+  const priceInput = { ratio, resolution, references: references.length, autoRatio };
+  const megapixels = imagePriceMegapixels(model, priceInput);
   const cost =
     estimateRouteCost(model, route, { resolution, count, quality, referenceImages: references.length, megapixels }) ?? 0;
   const counts = { Image: references.length, Video: 0, Audio: 0 };
@@ -330,7 +315,7 @@ export function ImageComposer({
                 options={caps.resolutions.map((r) => ({
                   value: r,
                   label: r.toUpperCase(),
-                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: outputMegapixels(r, ratio, ratio === "auto" ? autoBox : null) }) ?? 0).toFixed(3)} per image`,
+                  hint: `$${(estimateRouteCost(model, route, { resolution: r, count: 1, quality, megapixels: imagePriceMegapixels(model, { ratio, resolution: r, references: references.length, autoRatio }) }) ?? 0).toFixed(3)} per image`,
                 }))}
                 onChange={(r) =>
                   onChange({

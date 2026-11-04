@@ -9,6 +9,7 @@ import { applyCameraMoves, CAMERA_MOVE_MAX } from "@/lib/registry/camera";
 import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
 import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { preferredRoute } from "@/lib/registry/routing";
+import type { FalInputMap, StudioProviderId } from "@/lib/registry/types";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { insertGeneration, listGenerations } from "@/lib/store";
@@ -103,6 +104,18 @@ async function referenceVideoSecondsOf(userId: string, req: GenerateRequest): Pr
   return sum;
 }
 
+type VideoRun =
+  | { provider: "fal"; endpoint: string; inputs: FalInputMap }
+  | { provider: StudioProviderId; endpoint: string };
+
+/** Studio providers, or a fal video whose queue body was checked. */
+function videoRun(route: { provider: string; endpoint: string }, inputs: FalInputMap | undefined): VideoRun | undefined {
+  if (route.provider === "fal" && FAL_VIDEO_ENDPOINTS.has(route.endpoint) && inputs)
+    return { provider: "fal", endpoint: route.endpoint, inputs };
+  if (isStudioProvider(route.provider)) return { provider: route.provider, endpoint: route.endpoint };
+  return undefined;
+}
+
 function frameFields(media: ResolvedMedia | undefined, keyName: "firstFrameKey" | "lastFrameKey") {
   if (!media?.key) return {};
   const nameKey = keyName === "firstFrameKey" ? "firstFrameName" : "lastFrameName";
@@ -124,16 +137,15 @@ export async function POST(request: Request) {
     const route = preferredRoute(model, keyed, [explicit, saved, user.activeProvider]);
     // ModelArk, ArgoLink, and OpenRouter have a studio body. A fal video route is
     // allowed only when its queue body was checked against that endpoint's schema.
-    const falVideo = !!route && route.provider === "fal" && FAL_VIDEO_ENDPOINTS.has(route.endpoint) && !!model.inputs;
-    if (!route || (!isStudioProvider(route.provider) && !falVideo))
-      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
+    const run = route && videoRun(route, model.inputs);
+    if (!run) return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
     const referenceVideoSeconds = await referenceVideoSecondsOf(user.id, req);
     const estimate =
-      estimateRouteCost(model, route.provider, {
+      estimateRouteCost(model, run.provider, {
         resolution: req.resolution,
         duration: req.duration,
         audio: !!req.generateAudio,
@@ -173,7 +185,7 @@ export async function POST(request: Request) {
     delete withoutExpansion.promptExpansion;
     const providerReq = applyCameraMoves(model, {
       ...withoutExpansion,
-      model: route.endpoint,
+      model: run.endpoint,
       prompt: normalizeMentions(req.prompt, mentionSyntax(model.refSyntax)),
       firstFrame: first?.url,
       lastFrame: last?.url,
@@ -183,13 +195,13 @@ export async function POST(request: Request) {
     });
     let taskId: string;
     let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
-    if (falVideo && model.inputs) {
+    if (run.provider === "fal") {
       const creds = await getCredentials(user.id, "fal");
       if (!creds) return Response.json({ error: "Add your fal API key in Settings first." }, { status: 400 });
       const submission = await submitFal(
         creds.apiKey,
-        route.endpoint,
-        applyNativeExpansion(falQueueInput(providerReq, model.inputs), model, route, nativeOn),
+        run.endpoint,
+        applyNativeExpansion(falQueueInput(providerReq, run.inputs), model, run, nativeOn),
       );
       taskId = submission.requestId;
       falUrls = {
@@ -197,11 +209,9 @@ export async function POST(request: Request) {
         falResponseUrl: submission.responseUrl,
         falCancelUrl: submission.cancelUrl,
       };
-    } else if (isStudioProvider(route.provider)) {
-      const provider = await providerForUser(user.id, route.provider);
-      ({ taskId } = await provider.createTask(providerReq));
     } else {
-      return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
+      const provider = await providerForUser(user.id, run.provider);
+      ({ taskId } = await provider.createTask(providerReq));
     }
     const now = Date.now();
     const inputs: GenerationInputs = {
@@ -216,7 +226,7 @@ export async function POST(request: Request) {
     };
     const gen: Generation = {
       id: crypto.randomUUID(),
-      provider: route.provider,
+      provider: run.provider,
       taskId,
       status: "queued",
       model: req.model,
@@ -229,8 +239,8 @@ export async function POST(request: Request) {
       seed: req.seed,
       ...(cameraMoves.length ? { cameraMoves } : {}),
       inputs,
-      route: route.provider,
-      routeEndpoint: route.endpoint,
+      route: run.provider,
+      routeEndpoint: run.endpoint,
       estimatedCost: estimate,
       ...falUrls,
       createdAt: now,
