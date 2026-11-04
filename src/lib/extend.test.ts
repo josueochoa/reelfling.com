@@ -11,7 +11,7 @@ import { buildModelArkVideo } from "./registry/bodies";
 import { ALL_MODELS } from "./registry/generated";
 import { toolLimitError } from "./registry/tool-forms";
 import { isVideo } from "./registry/types";
-import { groupFeed, isNumberedSequence, nextSequencePart } from "./sequence";
+import { groupFeed, isNumberedSequence } from "./sequence";
 import type { GenerateRequest } from "./types";
 
 const FRAME = "https://cdn.example/frame.jpg";
@@ -134,15 +134,6 @@ describe("native extend", () => {
 
 describe("sequence grouping", () => {
   it("numbers parts and keeps an unrelated clip on its own", () => {
-    assert.deepEqual(nextSequencePart({ id: "a" }, []), {
-      sequenceId: "a",
-      part: 2,
-      sourcePatch: { sequenceId: "a", part: 1 },
-    });
-    const again = nextSequencePart({ id: "a", sequenceId: "a", part: 1 }, [1, 2]);
-    assert.equal(again.part, 3);
-    assert.equal(again.sourcePatch, undefined);
-
     const groups = groupFeed([
       { id: "a", sequenceId: "a", part: 1, createdAt: 1 },
       { id: "job", sequenceId: "a", part: 2, createdAt: 5 },

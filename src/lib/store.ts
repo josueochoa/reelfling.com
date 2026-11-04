@@ -132,7 +132,7 @@ function uniqueConstraintFailed(e: unknown) {
   return e instanceof Error && e.message.includes("UNIQUE constraint failed");
 }
 
-async function insertNextPart(userId: string, sequenceId: string, sourceId: string, anchor: number) {
+async function insertNextPart(userId: string, sequenceId: string, sourceId: string, sourcePart: number) {
   const row = await first<{ part: number }>(
     CLAIM_PART,
     userId,
@@ -140,7 +140,7 @@ async function insertNextPart(userId: string, sequenceId: string, sourceId: stri
     sourceId,
     Date.now(),
     sequenceId,
-    anchor,
+    sourcePart,
     userId,
     sequenceId,
     userId,
@@ -163,13 +163,12 @@ export async function continueSequence(
   if (!source) return undefined;
   const sequenceId = source.sequenceId || source.id;
   const rawPart = source.part ?? 1;
-  const anchor = Math.max(rawPart, 0);
   let part: number;
   try {
-    part = await insertNextPart(userId, sequenceId, source.id, anchor);
+    part = await insertNextPart(userId, sequenceId, source.id, rawPart);
   } catch (e) {
     if (!uniqueConstraintFailed(e)) throw e;
-    part = await insertNextPart(userId, sequenceId, source.id, anchor);
+    part = await insertNextPart(userId, sequenceId, source.id, rawPart);
   }
   if (source.sequenceId !== sequenceId || source.part == null)
     await updateGeneration(userId, source.id, { sequenceId, part: rawPart });
