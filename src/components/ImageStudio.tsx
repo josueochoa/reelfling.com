@@ -419,7 +419,7 @@ export function ImageStudio({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4">
         <div className="pointer-events-auto mx-auto max-w-4xl">
           <ImageComposer
             state={state}

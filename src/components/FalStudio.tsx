@@ -252,7 +252,7 @@ export function FalStudio({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4">
         <form
           className="pointer-events-auto mx-auto max-w-3xl space-y-2 rounded-2xl border border-white/10 bg-panel/95 p-3 shadow-2xl shadow-black/40 backdrop-blur"
           onSubmit={(e) => {

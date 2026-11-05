@@ -215,7 +215,7 @@ export function ImageComposer({
               <p data-testid="prompt-preview">{looked.prompt}</p>
             </div>
           )}
-          <div className="max-h-72 overflow-y-auto px-1">
+          <div className="max-h-[min(18rem,26dvh)] overflow-y-auto px-1 [scrollbar-color:rgb(255_255_255/0.15)_transparent] [scrollbar-width:thin]">
             <LookChips value={state.look ?? {}} onChange={(look) => onChange({ look })} looks={savedLooks} onLooks={onLooks} />
           </div>
           <PromptEnhance
@@ -376,20 +376,23 @@ export function ImageComposer({
           </div>
         </div>
 
-        <button
-          type="button"
-          data-testid="generate"
-          onClick={onGenerate}
-          disabled={!canGenerate}
-          className={`flex w-32 shrink-0 flex-col items-center justify-center rounded-2xl transition disabled:cursor-not-allowed ${
-            modelAvail.available
-              ? "bg-accent text-ink shadow-lg shadow-accent/20 hover:brightness-105 disabled:opacity-40"
-              : "cursor-not-allowed bg-white/10 text-zinc-500"
-          }`}
-        >
-          <span className="text-sm font-bold tracking-wide uppercase">{submitting ? "Starting…" : "Generate"}</span>
-          <span className="text-xs opacity-70">~${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>
-        </button>
+        {/* Fills a short composer; stays button-sized at the bottom when the looks are open. */}
+        <div className="flex w-32 shrink-0 flex-col justify-end">
+          <button
+            type="button"
+            data-testid="generate"
+            onClick={onGenerate}
+            disabled={!canGenerate}
+            className={`flex max-h-44 min-h-0 flex-1 flex-col items-center justify-center rounded-2xl transition disabled:cursor-not-allowed ${
+              modelAvail.available
+                ? "bg-accent text-ink shadow-lg shadow-accent/20 hover:brightness-105 disabled:opacity-40"
+                : "cursor-not-allowed bg-white/10 text-zinc-500"
+            }`}
+          >
+            <span className="text-sm font-bold tracking-wide uppercase">{submitting ? "Starting…" : "Generate"}</span>
+            <span className="text-xs opacity-70">~${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>
+          </button>
+        </div>
       </div>
 
       <input
