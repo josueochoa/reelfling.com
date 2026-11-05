@@ -33,7 +33,8 @@
   "preview_urls": false,
   "observability": { "enabled": true },
   // Non-secret settings. Secrets (AUTH_SECRET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-  // GOOGLE_CLIENT_SECRET) go in .dev.vars locally and `wrangler secret put` in production.
+  // GOOGLE_CLIENT_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET) go in .dev.vars locally
+  // and `wrangler secret put` in production.
   "vars": {
     // "access" (Cloudflare Access in front of the app) or "google" (built-in Google sign-in).
     "AUTH_MODE": "access",
@@ -44,6 +45,8 @@
     "R2_ACCOUNT_ID": "fca019314f738e7878872679ea3604c6",
     // One bucket. Objects are "<user id>/<key>" (a personal workspace id is the user id).
     "R2_BUCKET": "reelfling-media",
-    "STORAGE_QUOTA_GB": "2"
+    // Stripe price ids of the paid plans (src/lib/plans.ts). Empty: not for sale yet.
+    "STRIPE_PRICE_PLUS": "",
+    "STRIPE_PRICE_PRO": ""
   }
 }

@@ -1,4 +1,5 @@
 import type { AuthMode, User } from "@/lib/auth";
+import type { Billing } from "@/lib/billing";
 import type { KeySummary } from "@/lib/keys";
 import type { SavedLook } from "@/lib/registry/looks";
 import type { storageUsage } from "@/lib/storage";
@@ -7,6 +8,7 @@ export interface Me {
   user: User;
   keys: KeySummary[];
   storage: Awaited<ReturnType<typeof storageUsage>>;
+  billing: Billing;
   /** Saved provider per model id. */
   routePreferences?: Record<string, string>;
   /** Named looks. Absent until /api/me has been read. */

@@ -59,7 +59,6 @@ setTestEnv({
   R2_SECRET_ACCESS_KEY: "r2-secret",
   R2_ENDPOINT: "https://r2.example.com",
   R2_BUCKET: "reelfling-media",
-  STORAGE_QUOTA_GB: "2",
 });
 
 const { createToolJob, cancelFalJob, getFalJob, removeFalJob, syncFalJob } = await import("./falJobs");

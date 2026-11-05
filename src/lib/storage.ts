@@ -7,8 +7,10 @@
 // stored object; usage and the storage quota are summed from it.
 
 import { AwsClient } from "aws4fetch";
+import { planFor } from "./billing";
 import { all, env, first, run } from "./db";
 import { candidateUserIds, referencedKeySet, withoutReferenced } from "./inputs";
+import { GB } from "./plans";
 import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
 
 export interface Asset {
@@ -523,15 +525,16 @@ export async function deleteOrphanUploads(prefix: string, olderThanMs: number) {
 
 // ---------------------------------------------------------------- usage & quota
 
-const GB = 1024 ** 3;
-
+/** What a user has stored, and how much their plan allows. */
 export async function storageUsage(userId: string) {
-  const row = await first<{ objects: number; bytes: number }>(
-    "SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE user_id = ?",
-    userId,
-  );
-  const quotaGb = Number(env().STORAGE_QUOTA_GB) || 2;
-  return { objects: row?.objects ?? 0, bytes: row?.bytes ?? 0, quotaBytes: Math.round(quotaGb * GB) };
+  const [row, plan] = await Promise.all([
+    first<{ objects: number; bytes: number }>(
+      "SELECT COUNT(*) AS objects, COALESCE(SUM(bytes), 0) AS bytes FROM assets WHERE user_id = ?",
+      userId,
+    ),
+    planFor(userId),
+  ]);
+  return { objects: row?.objects ?? 0, bytes: row?.bytes ?? 0, quotaBytes: plan.storageGb * GB };
 }
 
 /** Thrown before a generation or upload that would go over the user's quota. */
@@ -539,7 +542,10 @@ export async function assertStorageAvailable(userId: string, extraBytes = 0) {
   const { bytes, quotaBytes } = await storageUsage(userId);
   if (bytes + extraBytes > quotaBytes || bytes >= quotaBytes) {
     const gb = +(quotaBytes / GB).toFixed(1);
-    throw new StorageError(`Your storage is full (${gb} GB). Delete some videos to keep generating.`, 403);
+    throw new StorageError(
+      `Your storage is full (${gb} GB). Delete some files, or upgrade your plan, to keep generating.`,
+      403,
+    );
   }
 }
 

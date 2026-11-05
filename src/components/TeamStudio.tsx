@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Play } from "@/components/ui/Icon";
+import { PLANS, TEAM_PLANS_LABEL } from "@/lib/plans";
 import type { TeamAsset, TeamAuthor, TeamGeneration, TeamMember, TeamSummary } from "@/lib/teamPolicy";
 import { teamMediaUrl } from "@/lib/teamPolicy";
 import { apiJson, type Me } from "./api";
@@ -42,7 +43,7 @@ function who(author: TeamAuthor, meId?: string) {
   return author.id === meId ? `${label} (you)` : label;
 }
 
-export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
+export function TeamStudio({ me, active, onUpgrade }: { me: Me | null; active: boolean; onUpgrade: () => void }) {
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TeamDetail | null>(null);
@@ -200,6 +201,8 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
 
   const role = detail?.team.role;
   const meId = me?.user.id;
+  // Creating and inviting need a plan with Teams. Until /api/me loads, assume yes.
+  const canOwn = !me || PLANS[me.billing.plan].teams;
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -227,24 +230,36 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
           ))}
           {teams.length === 0 && <p className="px-1 text-sm text-zinc-500">No teams yet.</p>}
         </div>
-        <form onSubmit={onCreate} className="mt-4 space-y-2" data-testid="team-create">
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="New team name"
-            maxLength={60}
-            aria-label="New team name"
-            data-testid="team-name"
-            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none placeholder:text-zinc-600"
-          />
-          <button
-            type="submit"
-            disabled={busy || !name.trim()}
-            className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-ink disabled:opacity-40"
-          >
-            Create team
-          </button>
-        </form>
+        {!canOwn ? (
+          <div className="mt-4 space-y-2" data-testid="team-upgrade">
+            <p className="px-1 text-xs text-zinc-500">Creating a team is part of the {TEAM_PLANS_LABEL} plans.</p>
+            <button
+              onClick={onUpgrade}
+              className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-ink"
+            >
+              Upgrade to create a team
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={onCreate} className="mt-4 space-y-2" data-testid="team-create">
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="New team name"
+              maxLength={60}
+              aria-label="New team name"
+              data-testid="team-name"
+              className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none placeholder:text-zinc-600"
+            />
+            <button
+              type="submit"
+              disabled={busy || !name.trim()}
+              className="w-full rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-ink disabled:opacity-40"
+            >
+              Create team
+            </button>
+          </form>
+        )}
       </aside>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
@@ -282,11 +297,11 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
               <div className="flex gap-2">
                 {role === "owner" && (
                   <button
-                    onClick={onInvite}
+                    onClick={canOwn ? onInvite : onUpgrade}
                     disabled={busy}
                     className="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-ink disabled:opacity-40"
                   >
-                    Invite link
+                    {canOwn ? "Invite link" : "Upgrade to invite"}
                   </button>
                 )}
                 {role === "owner" ? (

@@ -1,7 +1,10 @@
 // Team rows. Keys and buckets are not here: generations keep using the caller's own.
+// Creating a team and adding people need the owner on a plan with Teams; joining is free.
 
+import { planFor, requireTeamsPlan } from "./billing";
 import { randomToken, sha256 } from "./crypto";
 import { all, env, first, run } from "./db";
+import { TEAM_PLANS_LABEL } from "./plans";
 import {
   canReadTeamItem,
   cleanTeamName,
@@ -62,6 +65,7 @@ export async function createTeam(ownerId: string, rawName: unknown): Promise<Tea
   } catch (e) {
     throw new TeamError((e as Error).message);
   }
+  await requireTeamsPlan(ownerId);
   const id = crypto.randomUUID();
   const now = Date.now();
   const db = env().DB;
@@ -138,6 +142,7 @@ export async function removeMember(teamId: string, actorId: string, memberId: st
 export async function createInvite(teamId: string, userId: string, origin: string) {
   const { me } = await membership(teamId, userId);
   if (me.role !== "owner") throw new TeamError("Only the owner can invite members");
+  await requireTeamsPlan(userId, `Inviting people is part of the ${TEAM_PLANS_LABEL} plans.`);
   const token = randomToken();
   const now = Date.now();
   const expiresAt = now + INVITE_TTL_MS;
@@ -173,6 +178,15 @@ export async function acceptInvite(userId: string, token: unknown) {
     throw new TeamError("Invite is invalid or expired", 404);
   const hash = sha256(token);
   const now = Date.now();
+  // An open link stops adding people while the owner's plan doesn't include Teams.
+  const open = await first<{ owner_id: string }>(
+    `SELECT t.owner_id FROM team_invites i JOIN teams t ON t.id = i.team_id
+     WHERE i.token_hash = ? AND i.used_by IS NULL AND i.expires_at > ?`,
+    hash,
+    now,
+  );
+  if (open && !(await planFor(open.owner_id)).teams)
+    throw new TeamError("This team isn't taking new members right now. Ask its owner to check their plan.");
   const db = env().DB;
   await db.batch([
     db.prepare(CLAIM_INVITE_SQL).bind(userId, hash, now),

@@ -5,12 +5,14 @@
 // and in-flight polling.
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { toast } from "@/components/ui/Toast";
 import type { ImageModel, VideoModel } from "@/lib/registry";
 import type { SavedLook } from "@/lib/registry/looks";
 import { rememberModels } from "@/lib/registry/lookup";
 import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
+import { PlanDialog } from "./Billing";
 import { FalStudio, type FalTabHandle } from "./FalStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
@@ -37,6 +39,7 @@ export function Studio() {
   const [tools, setTools] = useState<ToolView[]>([]);
   const [extendOffers, setExtendOffers] = useState<ExtendOffer[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
   const library = useLibrary();
   const video = useRef<StudioTabHandle>(null);
   const image = useRef<StudioTabHandle>(null);
@@ -45,6 +48,20 @@ export function Studio() {
   const loadMe = useCallback(() => apiJson<Me>("/api/me").then(setMe), []);
   useEffect(() => {
     loadMe();
+  }, [loadMe]);
+  // Back from Stripe (?billing=success|cancelled|portal): pick up the new plan right away
+  // rather than waiting for the webhook.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const billing = url.searchParams.get("billing");
+    if (!billing) return;
+    url.searchParams.delete("billing");
+    window.history.replaceState(null, "", url);
+    if (billing === "cancelled") return;
+    void apiJson("/api/billing/sync", { method: "POST" })
+      .then(loadMe)
+      .then(() => billing === "success" && toast("Thanks! Your new plan is active."))
+      .catch((e: Error) => toast(e.message, { tone: "error" }));
   }, [loadMe]);
   // Slim picker list. The generated catalog stays on the server.
   useEffect(() => {
@@ -96,7 +113,9 @@ export function Studio() {
             </a>
           ))}
         </nav>
-        <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
+        <div className="ml-auto">
+          {me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} onOpenPlan={() => setPlanOpen(true)} />}
+        </div>
       </header>
 
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${tab === "video" ? "" : "hidden"}`}>
@@ -134,7 +153,7 @@ export function Studio() {
         <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
-        <TeamStudio me={me} active={tab === "team"} />
+        <TeamStudio me={me} active={tab === "team"} onUpgrade={() => setPlanOpen(true)} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio
@@ -156,6 +175,7 @@ export function Studio() {
       </div>
 
       {keysOpen && me && <KeysDialog me={me} onClose={() => setKeysOpen(false)} onChanged={loadMe} />}
+      {planOpen && me && <PlanDialog me={me} onClose={() => setPlanOpen(false)} />}
     </div>
   );
 }

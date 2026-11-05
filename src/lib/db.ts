@@ -23,7 +23,14 @@ export interface AppEnv {
   R2_ENDPOINT?: string;
   /** Shared bucket. Objects are stored at `<user id>/<key>` inside it. */
   R2_BUCKET?: string;
-  STORAGE_QUOTA_GB?: string;
+  /** Stripe (billing). Without the secret key, billing is off and everyone is on Free. */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  /** Which Stripe price is each paid plan. */
+  STRIPE_PRICE_PLUS?: string;
+  STRIPE_PRICE_PRO?: string;
+  /** Tests point this at a fake Stripe. */
+  STRIPE_API_BASE?: string;
 }
 
 let envOverride: AppEnv | undefined;

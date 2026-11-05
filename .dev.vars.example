@@ -12,6 +12,14 @@ R2_SECRET_ACCESS_KEY=
 # Optional override of the S3 endpoint. Leave unset for https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com.
 # R2_ENDPOINT=
 
+# Stripe, optional: without it billing is off and everyone is on Free. Use test mode keys
+# locally: Developers → API keys, and the webhook's signing secret
+# (`stripe listen --forward-to localhost:3000/api/stripe/webhook` prints one for local use).
+# STRIPE_SECRET_KEY=sk_test_…
+# STRIPE_WEBHOOK_SECRET=whsec_…
+# STRIPE_PRICE_PLUS=price_…
+# STRIPE_PRICE_PRO=price_…
+
 # Local dev only (ignored in production): who you're signed in as, since there's
 # no Cloudflare Access on localhost.
 DEV_USER_EMAIL=dev@localhost.test

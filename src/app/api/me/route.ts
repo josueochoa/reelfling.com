@@ -1,4 +1,5 @@
 import { authMode, errorResponse, requireUser, signOutUrl } from "@/lib/auth";
+import { getBilling } from "@/lib/billing";
 import { listKeys } from "@/lib/keys";
 import { catalogModel } from "@/lib/registry/generated";
 import { routeChoiceError } from "@/lib/registry/routing";
@@ -6,15 +7,16 @@ import { isRouteProvider, listRoutePreferences, setRoutePreference } from "@/lib
 import { listLooks } from "@/lib/savedLooks";
 import { storageUsage } from "@/lib/storage";
 
-/** The signed-in user, their saved keys (masked), the provider they generate with, storage used and how to sign out. */
+/** The signed-in user, their saved keys (masked), the provider they generate with, plan, storage used and how to sign out. */
 export async function GET() {
   try {
     const user = await requireUser();
-    const [keys, storage] = await Promise.all([listKeys(user.id), storageUsage(user.id)]);
+    const [keys, storage, billing] = await Promise.all([listKeys(user.id), storageUsage(user.id), getBilling(user.id)]);
     return Response.json({
       user,
       keys,
       storage,
+      billing,
       routePreferences: await listRoutePreferences(user.id),
       looks: await listLooks(user.id),
       auth: { mode: authMode(), signOutUrl: signOutUrl() },

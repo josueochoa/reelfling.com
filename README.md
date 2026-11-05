@@ -20,12 +20,17 @@ npm run preview                  # the real Workers runtime, locally (http://loc
 One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU limit is too low for Next.js):
 
 1. `npx wrangler login`, then `npx wrangler d1 create seedance-studio` and put the `database_id` into `wrangler.jsonc`.
-2. **R2**: dashboard → R2 → *Manage API tokens* → *Create Account API token* with **Admin Read & Write** (it creates a bucket per user). Set `R2_ACCOUNT_ID` in `wrangler.jsonc`, and the keys as secrets:
+2. **R2**: create the bucket and let browsers upload to it: `npx wrangler r2 bucket create reelfling-media`, then `npx wrangler r2 bucket cors set reelfling-media --file r2-cors.json`. Then dashboard → R2 → *Manage API tokens* → create a token with **Object Read & Write** on that bucket. Set `R2_ACCOUNT_ID` in `wrangler.jsonc`, and the keys as secrets:
    `npx wrangler secret put R2_ACCESS_KEY_ID`, `npx wrangler secret put R2_SECRET_ACCESS_KEY`.
 3. `npx wrangler secret put AUTH_SECRET` with the output of `openssl rand -base64 32`. **Back it up**: it encrypts users' saved API keys, and they can't be decrypted without it.
 4. `npx wrangler queues create reelfling-image-jobs` (for the Image tab).
 5. `npm run deploy`. It builds, applies D1 migrations, and deploys.
 6. **Cloudflare Access** (Zero Trust, free for up to 50 users): pick a team name, enable the *One-time PIN* login method, then add a *self-hosted application* for the app's domain with an *Allow* policy (e.g. emails ending in `@yourcompany.com`). Put the team domain (`https://<team>.cloudflareaccess.com`) and the application's *AUD tag* into `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` in `wrangler.jsonc`, and deploy again. Make sure the `*.workers.dev` address is covered by Access too, or turn it off.
+7. **Stripe**, optional (see [Plans & billing](#plans--billing)). Until it's set up, the plan dialog says "Coming soon" and everyone is on Free.
+   - Create a product per paid plan (Plus, Pro) with a recurring price; put the price ids in `STRIPE_PRICE_PLUS` / `STRIPE_PRICE_PRO` in `wrangler.jsonc`.
+   - Developers → Webhooks → add an endpoint `https://<domain>/api/stripe/webhook` for `checkout.session.completed` and `customer.subscription.created`, `.updated`, `.deleted`. Then `npx wrangler secret put STRIPE_WEBHOOK_SECRET` (its signing secret) and `npx wrangler secret put STRIPE_SECRET_KEY`.
+   - Settings → Billing → *Customer portal*: allow switching plans between the two products, updating payment methods, invoices and cancelling (at period end).
+   - With Cloudflare Access: add a second Access application for the path `<domain>/api/stripe/webhook` with a **Bypass** policy (Everyone), or Stripe can't reach the webhook. The route checks Stripe's signature instead.
 
 ## Tabs
 
@@ -62,7 +67,23 @@ Every object lives in the one bucket named by `R2_BUCKET` (`reelfling-media`), a
 
 A cron trigger runs every minute and finishes generations nobody is watching (the user closed the tab): it syncs their status and copies the video into storage.
 
-Every stored object is indexed in the `assets` table, so per-user usage (shown in the account menu) is a `SUM(bytes)`. Each user gets `STORAGE_QUOTA_GB` (default 2). When it's full, new generations are refused before they reach the provider, so nothing is charged. The bucket uses your account's R2 free tier (10 GB-month, 1M writes, 10M reads); beyond that it's $0.015/GB-month.
+Every stored object is indexed in the `assets` table, so per-user usage (shown in the account menu) is a `SUM(bytes)`. How much each user gets depends on their plan (below). When it's full, new generations are refused before they reach the provider, so nothing is charged. The bucket uses your account's R2 free tier (10 GB-month, 1M writes, 10M reads); beyond that it's $0.015/GB-month.
+
+## Plans & billing
+
+| Plan | Storage | Teams |
+|---|---|---|
+| Free | 1 GB | can join |
+| Plus | 5 GB | can create |
+| Pro | 20 GB | can create |
+
+Plans are defined in `src/lib/plans.ts`; prices live in Stripe.
+
+- **Storage is per person**: every file counts against whoever made it. A team doesn't hold files, so it has no storage of its own.
+- **Teams**: creating a team and making invite links need Plus or Pro; anyone can join. If an owner drops to Free, their teams stay visible to members but stop taking new members until the owner upgrades again.
+- **Subscribing**: the *Plan & billing* dialog (account menu) sends people to Stripe Checkout. Plan changes, cards, invoices and cancelling go through Stripe's Customer Portal, so nobody ends up with two subscriptions.
+- **Keeping in step**: Stripe's webhook (`/api/stripe/webhook`) re-fetches the subscription on every event and records the plan on the user, so repeated or out-of-order events are harmless. Coming back from Checkout or the portal also re-reads it (`/api/billing/sync`), so the new plan shows before the webhook lands. `past_due` keeps the plan while Stripe retries the card; when Stripe gives up or the subscription ends, the user is back on Free. Nothing is ever deleted: over the limit just means no new files until they make room or upgrade.
+- **Comps**: set `users.plan_override` (e.g. `'pro'`) to give someone a plan without Stripe.
 
 ## How it works
 
@@ -83,7 +104,8 @@ Cron    ──► /api/cron/sweep             every minute (worker.ts): finish u
 - `src/lib/auth.ts`, `google.ts`, `keys.ts`, `crypto.ts`: Access JWT verification / Google sessions, encrypted keys.
 - `src/lib/db.ts`: the Worker env and D1 helpers. Schema: `migrations/`.
 - `src/lib/store.ts`: per-user generations. Copies finished videos into storage.
-- `src/lib/storage.ts`: per-user R2 buckets (S3 API via `aws4fetch`), the `assets` index, usage, quota and serving.
+- `src/lib/storage.ts`: the shared R2 bucket (S3 API via `aws4fetch`), the `assets` index, usage, quota and serving.
+- `src/lib/plans.ts`, `billing.ts`: plans, and Stripe Checkout, Customer Portal and webhook (plain `fetch`, no SDK).
 - `worker.ts`: Worker entry, the OpenNext app plus the cron handler. `wrangler.jsonc`: bindings, vars, cron.
 - `src/components/`: studio UI (control panel, generation feed, lightbox).
 
@@ -100,7 +122,7 @@ Cron    ──► /api/cron/sweep             every minute (worker.ts): finish u
 Every reference is a file in the user's **Uploads** library (`uploads/` in their bucket). Files dropped into the References box are added to it; the Uploads panel lets you browse, filter, search, rename and delete them, and click to add or remove a reference. Generations use library files but don't own them, so deleting a generation keeps them.
 
 1. The browser prepares the file: checks type, size and length, converts images to JPEG/PNG, and makes a JPEG thumbnail (images, video) or waveform peaks (audio).
-2. `POST /api/uploads` checks the type, size and quota, and returns 15-minute signed PUT URLs for the file and its thumbnail. Each bucket gets a CORS rule the first time.
+2. `POST /api/uploads` checks the type, size and quota, and returns 15-minute signed PUT URLs for the file and its thumbnail. The bucket's CORS rule (`r2-cors.json`) lets the browser PUT them.
 3. The browser PUTs them straight to R2, with a progress bar, so large files never pass through the Worker.
 4. `POST /api/uploads/complete` checks what actually landed (a signed URL can't limit size), then records the name, duration, peaks and thumbnail, and counts the bytes toward the quota.
 5. The generation request references files as `upload:<key>`. The server swaps those for 24-hour signed links the provider downloads from.
