@@ -1,9 +1,11 @@
-// fal and OpenRouter catalogs, plus hand-checked tools (catalog/upscale.json, catalog/extend.json).
+// fal and OpenRouter catalogs, plus hand-checked tools
+// (catalog/upscale.json, catalog/extend.json, catalog/lipsync.json).
 // Server and tests only — client components import ./index, which is the hand-written
-// ModelArk and ArgoLink entries. catalog:sync does not write upscale.json or extend.json.
+// ModelArk and ArgoLink entries. catalog:sync does not write those hand-checked files.
 
 import extendCatalog from "./catalog/extend.json" with { type: "json" };
 import falCatalog from "./catalog/fal.json" with { type: "json" };
+import lipsyncCatalog from "./catalog/lipsync.json" with { type: "json" };
 import openRouterCatalog from "./catalog/openrouter.json" with { type: "json" };
 import upscaleCatalog from "./catalog/upscale.json" with { type: "json" };
 import { HAND_MODELS } from "./hand";
@@ -23,6 +25,7 @@ export const GENERATED_MODELS: readonly ModelEntry[] = [
   ...fromCatalog(openRouterCatalog as CatalogFile),
   ...fromCatalog(upscaleCatalog as CatalogFile),
   ...fromCatalog(extendCatalog as CatalogFile),
+  ...fromCatalog(lipsyncCatalog as CatalogFile),
 ];
 
 /** Hand-written entries plus the generated catalogs. */
@@ -68,6 +71,8 @@ export function openRouterPickerModels(): VideoModel[] {
  * reference_video_urls, and reference_audio_urls, which is what that schema publishes.
  * blackforestlabs/flux-3/keyframes-to-video maps frames into its `keyframes` array
  * (`image_url` + `frame_index`, max 10). Checked the same day, still with no key.
+ * Lip sync is not a studio route. Those endpoints live in catalog/lipsync.json and
+ * run only as tool jobs, after the same schema check.
  */
 export const FAL_VIDEO_ENDPOINTS = new Set<string>([
   "kling/v4/text-to-video",

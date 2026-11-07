@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       toolId?: string;
       assetIds?: unknown;
       params?: unknown;
+      audioId?: unknown;
     };
     const creds = await getCredentials(user.id, "fal");
     if (!creds) return Response.json({ error: availabilityError(["fal"]) }, { status: 400 });
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     if (body.toolId?.trim()) {
       const job = await createToolJob(
         user.id,
-        { toolId: body.toolId.trim(), assetIds: body.assetIds, params: body.params },
+        { toolId: body.toolId.trim(), assetIds: body.assetIds, params: body.params, audioId: body.audioId },
         creds.apiKey,
       );
       return Response.json(publicFalJob(job), { status: 201 });

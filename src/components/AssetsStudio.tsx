@@ -11,7 +11,15 @@ import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl, type AssetItem, type AssetSource, type UploadKind } from "@/lib/uploads";
 import { apiJson, type Me } from "./api";
-import { fileSrc, fromServer, thumbSrc, type Library, type LibraryItem } from "./library";
+import {
+  fileSrc,
+  fromServer,
+  thumbSrc,
+  toolAudios,
+  uploadToolAudio,
+  type Library,
+  type LibraryItem,
+} from "./library";
 import { OwnerBadge, ownerName, useTeamRefresh } from "./Owner";
 import { BulkUpscale } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
@@ -430,6 +438,8 @@ export function AssetsStudio({
             setPreviewId(null);
             onToolJob();
           }}
+          audios={toolAudios(library.items)}
+          onUploadAudio={(file) => uploadToolAudio(library, file)}
           lineage={lineageFor(
             previewing,
             items.filter((other) => other.owner?.id === previewing.owner?.id),

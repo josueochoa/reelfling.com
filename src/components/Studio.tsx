@@ -131,7 +131,7 @@ export function Studio() {
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
-        <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
+        <FalStudio ref={fal} me={me} onOpenKeys={openKeys} tools={tools} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
         <TeamStudio

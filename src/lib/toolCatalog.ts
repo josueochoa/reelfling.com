@@ -1,5 +1,6 @@
 // Which catalog entries can run as tools. The generated catalog is imported here, on the server.
 
+import { lipsyncTools } from "./lipsync";
 import { routeProviders } from "./registry/availability";
 import { catalogModel } from "./registry/generated";
 import { buildToolBody, formFor, TOOL_FORMS } from "./registry/tool-forms";
@@ -17,6 +18,8 @@ export interface RunnableTool extends ToolView {
   endpoint: string;
   mapper: "fal.queue";
   inputKey: string;
+  /** Second library file, when the tool takes audio as well as the asset on screen. */
+  audioKey?: string;
 }
 
 /**
@@ -45,12 +48,13 @@ export function runnableTools(): RunnableTool[] {
       inputKey: form.inputKey,
     });
   }
+  tools.push(...lipsyncTools());
   return tools;
 }
 
 /** Slim list for the Tools menu. No endpoint ids. */
 export function publicTools(): ToolView[] {
-  return runnableTools().map(({ id, name, description, accepts, fields, menu, quote }) => {
+  return runnableTools().map(({ id, name, description, accepts, fields, menu, quote, needsAudio }) => {
     const model = catalogModel(id);
     return {
       id,
@@ -60,6 +64,7 @@ export function publicTools(): ToolView[] {
       fields,
       ...(menu ? { menu } : {}),
       ...(quote ? { quote } : {}),
+      ...(needsAudio ? { needsAudio: true } : {}),
       providers: model ? routeProviders(model.routes) : [],
     };
   });

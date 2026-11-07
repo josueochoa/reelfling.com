@@ -21,7 +21,7 @@ import { GenerationCard, StatusOverlay, useElapsed, videoDownloadHref, videoSrc 
 import { OwnerBadge, ownerName, useTeamRefresh } from "./Owner";
 import { TemplateForm } from "./TemplateForm";
 import { TemplateGallery, type FilterId } from "./TemplateGallery";
-import { thumbSrc, type Library, type LibraryItem } from "./library";
+import { thumbSrc, toolAudios, uploadToolAudio, type Library, type LibraryItem } from "./library";
 import { useLazyThumbs } from "./MediaBlocks";
 import { UploadsPanel } from "./UploadsPanel";
 import { Viewer } from "./Viewer";
@@ -620,6 +620,8 @@ export function VideoStudio({
             setOpen(null);
             onToolJob();
           }}
+          audios={toolAudios(library.items)}
+          onUploadAudio={(file) => uploadToolAudio(library, file)}
         />
       )}
     </div>
@@ -659,6 +661,8 @@ function OpenVideo({
   keyed,
   onOpenKeys,
   onToolJob,
+  audios,
+  onUploadAudio,
 }: {
   gen: Generation;
   onClose: () => void;
@@ -676,6 +680,8 @@ function OpenVideo({
   keyed: ReadonlySet<string>;
   onOpenKeys: () => void;
   onToolJob: () => void;
+  audios: ReturnType<typeof toolAudios>;
+  onUploadAudio: (file: File) => Promise<ReturnType<typeof toolAudios>[number]>;
 }) {
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
@@ -713,6 +719,8 @@ function OpenVideo({
       keyed={keyed}
       onOpenKeys={onOpenKeys}
       onToolJob={onToolJob}
+      audios={audios}
+      onUploadAudio={onUploadAudio}
     />
   );
 }

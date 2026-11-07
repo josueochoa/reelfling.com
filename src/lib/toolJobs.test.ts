@@ -161,7 +161,7 @@ const videoTools: ToolView[] = [{ id: "video-tool", name: "Clip", description: "
 describe("tool catalog", () => {
   it("offers background removal for images and upscale for images and videos", () => {
     const tools = runnableTools();
-    assert.equal(tools.length, 7);
+    assert.equal(tools.length, 11);
     assert.equal(tools[0].id, "fal:fal-ai/birefnet/v2");
     assert.equal(tools[0].accepts, "image");
     assert.equal(tools[0].endpoint, ENDPOINT);
@@ -184,8 +184,17 @@ describe("tool catalog", () => {
         "fal:fal-ai/seedvr/upscale/video",
         "fal:topaz/upscale/video/precision",
         "fal:fal-ai/flashvsr/upscale/video",
+        "fal:fal-ai/sync-lipsync/v3",
+        "fal:fal-ai/kling-video/lipsync/audio-to-video",
+        "fal:veed/lipsync/v2",
+        "fal:fal-ai/latentsync",
       ],
     );
+    const sync = publicTools().find((tool) => tool.id === "fal:fal-ai/sync-lipsync/v3");
+    assert.equal(sync?.needsAudio, true);
+    assert.equal(sync?.menu, "Lip sync");
+    assert.equal(sync?.quote?.type, "per_second");
+    assert.equal(publicTools().some((tool) => "endpoint" in tool && tool.needsAudio), false);
     assert.deepEqual(toolsForKind(tools, "audio"), []);
     assert.deepEqual(
       toolsForKind([...imageTools, ...videoTools], "image").map((tool) => tool.id),
@@ -217,6 +226,7 @@ describe("tool catalog", () => {
       assert.equal(text.includes("registry/generated"), false, file);
       assert.equal(text.includes("catalog/fal"), false, file);
       assert.equal(text.includes("catalog/upscale"), false, file);
+      assert.equal(text.includes("catalog/lipsync"), false, file);
       assert.equal(text.includes("tool-forms"), false, file);
       assert.equal(text.includes("toolCatalog"), false, file);
     }
@@ -541,6 +551,83 @@ describe("tool jobs", () => {
     database.prepare("DELETE FROM fal_jobs WHERE id = ?").run(prior);
     database.prepare("DELETE FROM generations WHERE id = ?").run(genId);
     database.prepare("DELETE FROM assets WHERE user_id = ? AND key = ?").run(USER, output);
+  });
+
+  it("rejects a lip-sync pair outside the endpoint's duration limit before calling fal", async () => {
+    const audio = "uploads/voice-short.wav";
+    database
+      .prepare(
+        "INSERT INTO assets (user_id, key, bucket, bytes, content_type, created_at, name, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(USER, audio, "dev-user-1", 1000, "audio/wav", 8, "short.wav", JSON.stringify({ duration: 8 }));
+    database
+      .prepare("UPDATE assets SET meta = ?, content_type = ? WHERE user_id = ? AND key = ?")
+      .run(JSON.stringify({ duration: 12 }), "video/mp4", USER, VIDEO);
+    install(() => {
+      throw new Error("fal was called");
+    });
+    await assert.rejects(
+      () =>
+        createToolJob(
+          USER,
+          { toolId: "fal:fal-ai/kling-video/lipsync/audio-to-video", assetIds: [VIDEO], audioId: audio, params: {} },
+          KEY,
+        ),
+      /2–10s/,
+    );
+    assert.equal(calls.length, 0);
+    database.prepare("DELETE FROM assets WHERE user_id = ? AND key = ?").run(USER, audio);
+  });
+
+  it("maps lip sync onto the published fields and links the output to the source video", async () => {
+    const audio = "uploads/voice.wav";
+    const output = "https://v3.fal.media/files/mock/lipsync.mp4";
+    database
+      .prepare(
+        "INSERT INTO assets (user_id, key, bucket, bytes, content_type, created_at, name, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(USER, audio, "dev-user-1", 2000, "audio/wav", 9, "voice.wav", JSON.stringify({ duration: 8 }));
+    database
+      .prepare("UPDATE assets SET meta = ? WHERE user_id = ? AND key = ?")
+      .run(JSON.stringify({ duration: 4 }), USER, VIDEO);
+    install((call) => {
+      if (call.method === "POST") return submitResponse();
+      if (call.url.endsWith("/status")) return json(200, { status: "COMPLETED", request_id: "req_tool" });
+      if (call.url === RESPONSE_URL) {
+        return json(200, { video: { url: output, content_type: "video/mp4", file_name: "lipsync.mp4" } });
+      }
+      if (call.url === output) {
+        return new Response(new Uint8Array(32), { headers: { "content-type": "video/mp4", "content-length": "32" } });
+      }
+      return new Response(null, { status: 200 });
+    });
+    const created = await createToolJob(
+      USER,
+      {
+        toolId: "fal:fal-ai/sync-lipsync/v3",
+        assetIds: [VIDEO],
+        audioId: audio,
+        params: { sync_mode: "loop" },
+      },
+      KEY,
+    );
+    assert.equal(created.endpointId, "fal-ai/sync-lipsync/v3");
+    assert.deepEqual(created.tool?.inputAssetIds, [VIDEO, audio]);
+    assert.equal(created.tool?.params.sync_mode, "loop");
+    assert.equal(created.tool?.params.audio_url, undefined);
+    const posted = JSON.parse(calls[0].body!) as Record<string, string>;
+    assert.deepEqual(Object.keys(posted).sort(), ["audio_url", "sync_mode", "video_url"]);
+    assert.equal(posted.sync_mode, "loop");
+    assert.equal(posted.video_url.includes(VIDEO), true);
+    assert.equal(posted.audio_url.includes(audio), true);
+    assert.equal(posted.video_url.includes(KEY), false);
+    assert.equal(JSON.stringify(created).includes(KEY), false);
+    const done = await syncFalJob(USER, created.id);
+    assert.equal(done?.status, "succeeded");
+    const row = childRows().find((item) => item.tool === "fal:fal-ai/sync-lipsync/v3");
+    assert.equal(row?.parent_id, VIDEO);
+    assert.equal(row?.content_type, "video/mp4");
+    assertKeyStayedOnFal();
   });
 });
 

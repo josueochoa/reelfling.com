@@ -22,6 +22,7 @@ import { Modal } from "@/components/ui/Modal";
 import { toast } from "@/components/ui/Toast";
 import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { Waveform } from "./MediaBlocks";
+import type { ToolAudioChoice } from "./library";
 import { ToolsMenu } from "./ToolsMenu";
 import {
   clock,
@@ -84,6 +85,8 @@ export function Viewer({
   onToolJob,
   lineage,
   extra,
+  audios,
+  onUploadAudio,
 }: {
   label: string;
   title?: string;
@@ -125,6 +128,8 @@ export function Viewer({
   onToolJob?: () => void;
   lineage?: ViewerLineage;
   extra?: React.ReactNode;
+  audios?: readonly ToolAudioChoice[];
+  onUploadAudio?: (file: File) => Promise<ToolAudioChoice>;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -433,6 +438,8 @@ export function Viewer({
                         onOpenKeys={onOpenKeys}
                         onStarted={() => onToolJob?.()}
                         label="Tools"
+                        audios={audios}
+                        onUploadAudio={onUploadAudio}
                       />
                     ) : (
                       <p className="text-body text-fg-muted">No tools for this file.</p>

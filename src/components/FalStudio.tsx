@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { shouldCancelFal, shouldPollFal, type FalFieldError, type FalJobView } from "@/lib/falTypes";
 import { availabilityFor, availabilityHint } from "@/lib/registry/availability";
+import type { ToolView } from "@/lib/toolTypes";
 import { assetFileUrl } from "@/lib/uploads";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { api, type Me } from "./api";
@@ -70,10 +71,13 @@ export function FalStudio({
   ref,
   me,
   onOpenKeys,
+  tools,
 }: {
   ref?: React.Ref<FalTabHandle>;
   me: Me | null;
   onOpenKeys: () => void;
+  /** Catalog tools, to tell which jobs took a source video plus audio. */
+  tools: readonly ToolView[];
 }) {
   const [jobs, setJobs] = useState<FalJobView[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -214,6 +218,15 @@ export function FalStudio({
                       <p className={`truncate text-xs ${job.tool ? "text-zinc-200" : "font-mono text-zinc-400"}`}>
                         {job.tool?.name ?? job.endpointId}
                       </p>
+                      {job.tool?.inputAssetIds[0] && tools.find((tool) => tool.id === job.tool?.id)?.needsAudio && (
+                        <a
+                          href={assetFileUrl(job.tool.inputAssetIds[0], { owner: job.owner?.id })}
+                          data-testid="source-video"
+                          className="mt-1 inline-block text-body text-fg underline"
+                        >
+                          Source video
+                        </a>
+                      )}
                     </div>
                     {job.prompt && <p className="mt-2 line-clamp-3 text-sm text-zinc-200">{job.prompt}</p>}
                     {needsPoll(job) && (
