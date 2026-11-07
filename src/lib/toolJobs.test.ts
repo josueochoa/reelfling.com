@@ -130,9 +130,6 @@ database
   .prepare("INSERT INTO users (id, email, name, created_at) VALUES (?, ?, ?, ?)")
   .run(USER, "dev@localhost.test", "Dev", 1);
 database
-  .prepare("INSERT INTO buckets (user_id, name, created_at, cors) VALUES (?, ?, ?, ?)")
-  .run(USER, "dev-user-1", 1, 1);
-database
   .prepare(
     "INSERT INTO assets (user_id, key, bucket, bytes, content_type, created_at, name) VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
