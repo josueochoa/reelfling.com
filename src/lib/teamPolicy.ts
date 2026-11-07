@@ -1,6 +1,9 @@
-// Who may see a teammate's work. Pure: no database, no keys, no storage.
+// What a teammate may see of someone's work. Pure: no database, no keys, no storage.
 
-import { isAssetKey, uploadKindOf, type UploadKind } from "./uploads";
+import type { FalJobView } from "./falTypes";
+import type { ImageGeneration } from "./images";
+import type { Generation } from "./types";
+import { uploadKindOf, type AssetItem, type UploadKind } from "./uploads";
 
 export type TeamRole = "owner" | "member";
 
@@ -25,30 +28,6 @@ export interface TeamMember {
   joinedAt: number;
 }
 
-export interface TeamGeneration {
-  id: string;
-  ownerId: string;
-  kind: "video" | "image" | "fal";
-  prompt: string;
-  model: string;
-  status: string;
-  stored: boolean;
-  createdAt: number;
-  author: TeamAuthor;
-}
-
-export interface TeamAsset {
-  ownerId: string;
-  key: string;
-  kind: UploadKind;
-  name: string;
-  contentType: string;
-  bytes: number;
-  createdAt: number;
-  hasThumb: boolean;
-  author: TeamAuthor;
-}
-
 export function cleanTeamName(name: unknown): string {
   if (typeof name !== "string") throw new Error("Name the team");
   const trimmed = name.trim();
@@ -56,64 +35,31 @@ export function cleanTeamName(name: unknown): string {
   return trimmed;
 }
 
-/**
- * Read access exists only while both people are current members.
- * A non-member, or a member who was removed, is not in `memberIds`.
- */
-export function visibleTeamItems<T extends { ownerId: string }>(
-  memberIds: readonly string[],
-  viewerId: string,
-  items: readonly T[],
-): T[] {
-  if (!viewerId || !memberIds.includes(viewerId)) return [];
-  const members = new Set(memberIds);
-  return items.filter((item) => item.ownerId && members.has(item.ownerId));
-}
-
-export function canReadTeamItem(memberIds: readonly string[], viewerId: string, ownerId: string): boolean {
-  return visibleTeamItems(memberIds, viewerId, [{ ownerId }]).length === 1;
-}
-
 export function publicAuthor(author: TeamAuthor): TeamAuthor {
   return { id: author.id, name: author.name, email: author.email };
 }
 
-function stringField(data: Record<string, unknown>, key: string): string {
-  const value = data[key];
-  return typeof value === "string" ? value : "";
+/** A teammate's video generation. The provider task id and its URLs stay with the owner. */
+export function teammateGeneration(gen: Generation, owner: TeamAuthor): Generation {
+  const view: Generation = { ...gen, taskId: "", owner: publicAuthor(owner) };
+  delete view.remoteVideoUrl;
+  delete view.falStatusUrl;
+  delete view.falResponseUrl;
+  delete view.falCancelUrl;
+  return view;
 }
 
-function promptOf(data: Record<string, unknown>): string {
-  const direct = stringField(data, "prompt");
-  if (direct) return direct;
-  const request = data.request;
-  if (!request || typeof request !== "object") return "";
-  return stringField(request as Record<string, unknown>, "prompt");
+export function teammateImage(gen: ImageGeneration, owner: TeamAuthor): ImageGeneration {
+  return { ...gen, owner: publicAuthor(owner) };
 }
 
-/** Fields a teammate may see. Provider URLs and key material on the stored JSON are dropped. */
-export function publicTeamGeneration(input: {
-  id: string;
-  ownerId: string;
-  kind: TeamGeneration["kind"];
-  createdAt: number;
-  data: unknown;
-  author: TeamAuthor;
-}): TeamGeneration {
-  const data = input.data && typeof input.data === "object" ? (input.data as Record<string, unknown>) : {};
-  const images = Array.isArray(data.images) ? data.images.length : 0;
-  const outputs = Array.isArray(data.outputs) ? data.outputs.length : 0;
-  return {
-    id: input.id,
-    ownerId: input.ownerId,
-    kind: input.kind,
-    prompt: promptOf(data),
-    model: stringField(data, "model") || stringField(data, "endpointId"),
-    status: stringField(data, "status"),
-    stored: data.stored === true || images > 0 || outputs > 0,
-    createdAt: input.createdAt,
-    author: publicAuthor(input.author),
-  };
+/** Takes the public view, which already has no fal URLs or raw request. */
+export function teammateFalJob(job: FalJobView, owner: TeamAuthor): FalJobView {
+  return { ...job, owner: publicAuthor(owner) };
+}
+
+export function teammateAsset(item: AssetItem, owner: TeamAuthor): AssetItem {
+  return { ...item, owner: publicAuthor(owner) };
 }
 
 export function assetKind(contentType: string): UploadKind | undefined {
@@ -129,33 +75,7 @@ export function assetKind(contentType: string): UploadKind | undefined {
   );
 }
 
-/** One asset row for the team view. Anything that isn't a library file is omitted. */
-export function publicTeamAsset(input: {
-  ownerId: string;
-  key: string;
-  name: string | null;
-  contentType: string;
-  bytes: number;
-  createdAt: number;
-  hasThumb: boolean;
-  author: TeamAuthor;
-}): TeamAsset | undefined {
-  const kind = assetKind(input.contentType);
-  if (!kind || !isAssetKey(input.key)) return undefined;
-  return {
-    ownerId: input.ownerId,
-    key: input.key,
-    kind,
-    name: input.name?.trim() || input.key.split("/").pop() || "Untitled",
-    contentType: input.contentType,
-    bytes: input.bytes,
-    createdAt: input.createdAt,
-    hasThumb: input.hasThumb,
-    author: publicAuthor(input.author),
-  };
-}
-
-/** image/*, video/*, or audio/* with no parameters. Anything else is not served from the team route. */
+/** image/*, video/*, or audio/* with no parameters. Anything else is not served to a teammate. */
 export function teamMediaContentType(contentType: string | null | undefined): string | undefined {
   if (!contentType) return undefined;
   const mime = contentType.split(";")[0].trim().toLowerCase();
@@ -163,21 +83,15 @@ export function teamMediaContentType(contentType: string | null | undefined): st
   return mime;
 }
 
-/** Same-origin media URL. The server checks membership; this carries no signature and no key. */
-export function teamMediaUrl(teamId: string, ownerId: string, key: string, thumb = false): string {
-  const params = new URLSearchParams({ owner: ownerId, key });
-  if (thumb) params.set("thumb", "1");
-  return `/api/teams/${encodeURIComponent(teamId)}/media?${params}`;
-}
-
 /**
- * Headers for a proxied object. No redirect, no signed URL, and no shared cache:
+ * Headers for a teammate's file. No redirect, no signed URL, and no shared cache:
  * the bytes were authorized for this request only.
  */
 export function teamMediaHeaders(upstream: {
   contentType?: string | null;
   contentLength?: string | null;
   contentRange?: string | null;
+  downloadName?: string;
 }): Headers {
   const headers = new Headers();
   headers.set("Content-Type", upstream.contentType || "application/octet-stream");
@@ -189,5 +103,7 @@ export function teamMediaHeaders(upstream: {
   headers.set("Accept-Ranges", "bytes");
   if (upstream.contentLength) headers.set("Content-Length", upstream.contentLength);
   if (upstream.contentRange) headers.set("Content-Range", upstream.contentRange);
+  if (upstream.downloadName)
+    headers.set("Content-Disposition", `attachment; filename="${upstream.downloadName.replace(/["\\\r\n]/g, "_")}"`);
   return headers;
 }

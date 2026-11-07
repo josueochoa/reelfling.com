@@ -2,7 +2,7 @@
 
 // The Image tab's prompt bar: reference images, prompt, model and settings, Generate.
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { X } from "@/components/ui/Icon";
 import {
   estimateRouteCost,
@@ -20,7 +20,7 @@ import { availabilityFor, availabilityHint, routeProviders, sortByAvailability }
 import { groupByFamily } from "@/lib/registry/badges";
 import { preferredRoute } from "@/lib/registry/routing";
 import { invalidMentions, mentionToken } from "@/lib/mentions";
-import { compileLook, type LookChoice, type SavedLook } from "@/lib/registry/looks";
+import { compileLook, keptLook, LOOK_GROUPS, type LookChoice, type SavedLook } from "@/lib/registry/looks";
 import { Dropdown } from "./Dropdown";
 import { LookChips } from "./LookChips";
 import { UnlockHint } from "./UnlockHint";
@@ -108,6 +108,10 @@ export function ImageComposer({
   const caps = model.capabilities;
   const editor = useRef<PromptEditorHandle>(null);
   const input = useRef<HTMLInputElement>(null);
+  // Closed by default so the composer covers less of the grid. The button shows how many are set.
+  const [looksOpen, setLooksOpen] = useState(false);
+  const kept = keptLook(state.look);
+  const lookCount = LOOK_GROUPS.filter((group) => kept[group]).length;
   const priceInput = { ratio, resolution, references: references.length, autoRatio };
   const megapixels = imagePriceMegapixels(model, priceInput);
   const cost =
@@ -155,7 +159,7 @@ export function ImageComposer({
         </div>
       )}
 
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row">
         <div className="min-w-0 flex-1 space-y-2">
           {references.length > 0 && (
             <div className="flex flex-wrap gap-2 px-1 pt-1">
@@ -185,6 +189,7 @@ export function ImageComposer({
 
           <PromptEditor
             ref={editor}
+            compact
             value={prompt}
             onChange={(p) => onChange({ prompt: p })}
             onSubmit={() => canGenerate && onGenerate()}
@@ -215,9 +220,14 @@ export function ImageComposer({
               <p data-testid="prompt-preview">{looked.prompt}</p>
             </div>
           )}
-          <div className="max-h-72 overflow-y-auto px-1">
-            <LookChips value={state.look ?? {}} onChange={(look) => onChange({ look })} looks={savedLooks} onLooks={onLooks} />
-          </div>
+          {looksOpen && (
+            <div
+              id="image-looks"
+              className="max-h-[min(18rem,26dvh)] overflow-y-auto px-1 [scrollbar-color:rgb(255_255_255/0.15)_transparent] [scrollbar-width:thin]"
+            >
+              <LookChips value={state.look ?? {}} onChange={(look) => onChange({ look })} looks={savedLooks} onLooks={onLooks} />
+            </div>
+          )}
           <PromptEnhance
             prompt={prompt}
             onChange={(next) => onChange({ prompt: next })}
@@ -255,6 +265,19 @@ export function ImageComposer({
               className="h-9 rounded-xl bg-white/[0.06] px-3 text-sm text-zinc-200 hover:bg-white/10"
             >
               Uploads
+            </button>
+            <button
+              type="button"
+              onClick={() => setLooksOpen((o) => !o)}
+              aria-expanded={looksOpen}
+              aria-controls="image-looks"
+              title="Camera, lens, light, palette and era"
+              className={`h-9 rounded-xl px-3 text-sm hover:bg-white/10 ${
+                looksOpen ? "bg-white/15 text-white" : "bg-white/[0.06] text-zinc-200"
+              }`}
+            >
+              Look
+              {lookCount > 0 && <span className="ml-1.5 text-accent tabular-nums">{lookCount}</span>}
             </button>
             <span className="mx-0.5 h-5 w-px bg-white/10" />
             <Dropdown
@@ -376,20 +399,23 @@ export function ImageComposer({
           </div>
         </div>
 
-        <button
-          type="button"
-          data-testid="generate"
-          onClick={onGenerate}
-          disabled={!canGenerate}
-          className={`flex w-32 shrink-0 flex-col items-center justify-center rounded-2xl transition disabled:cursor-not-allowed ${
-            modelAvail.available
-              ? "bg-accent text-ink shadow-lg shadow-accent/20 hover:brightness-105 disabled:opacity-40"
-              : "cursor-not-allowed bg-white/10 text-zinc-500"
-          }`}
-        >
-          <span className="text-sm font-bold tracking-wide uppercase">{submitting ? "Starting…" : "Generate"}</span>
-          <span className="text-xs opacity-70">~${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>
-        </button>
+        {/* Full width under the prompt on phones. Beside it, fills a short composer and stays button-sized when the looks are open. */}
+        <div className="flex shrink-0 flex-col justify-end sm:w-32">
+          <button
+            type="button"
+            data-testid="generate"
+            onClick={onGenerate}
+            disabled={!canGenerate}
+            className={`flex min-h-12 flex-1 flex-col items-center justify-center rounded-2xl transition sm:max-h-44 sm:min-h-0 disabled:cursor-not-allowed ${
+              modelAvail.available
+                ? "bg-accent text-ink shadow-lg shadow-accent/20 hover:brightness-105 disabled:opacity-40"
+                : "cursor-not-allowed bg-white/10 text-zinc-500"
+            }`}
+          >
+            <span className="text-sm font-bold tracking-wide uppercase">{submitting ? "Starting…" : "Generate"}</span>
+            <span className="text-xs opacity-70">~${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>
+          </button>
+        </div>
       </div>
 
       <input

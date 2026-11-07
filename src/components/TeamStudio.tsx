@@ -1,16 +1,11 @@
 "use client";
 
-// A team is a shared read-only view. Creating, inviting, and removing members
-// happens here. Generations still run on each person's own key and storage.
+// Team membership: creating, inviting, and removing members. Teammates' work shows
+// in the Video, Image, Fal and Assets tabs. Each person keeps their own key and storage.
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Play } from "@/components/ui/Icon";
-import type { TeamAsset, TeamAuthor, TeamGeneration, TeamMember, TeamSummary } from "@/lib/teamPolicy";
-import { teamMediaUrl } from "@/lib/teamPolicy";
+import type { TeamAuthor, TeamMember, TeamSummary } from "@/lib/teamPolicy";
 import { apiJson, type Me } from "./api";
-import { Viewer } from "./Viewer";
-import { formatCreated } from "./viewer/model";
-import { formatBytes } from "./UserMenu";
 
 const STORAGE_KEY = "reelfling.team";
 
@@ -32,28 +27,30 @@ interface TeamDetail {
   members: TeamMember[];
 }
 
-interface TeamFeed {
-  generations: TeamGeneration[];
-  assets: TeamAsset[];
-}
-
 function who(author: TeamAuthor, meId?: string) {
   const label = author.name ? `${author.name} · ${author.email}` : author.email;
   return author.id === meId ? `${label} (you)` : label;
 }
 
-export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
+export function TeamStudio({
+  me,
+  active,
+  onChanged,
+}: {
+  me: Me | null;
+  active: boolean;
+  /** Membership changed, so the other tabs' lists of teammates' work are stale. */
+  onChanged: () => void;
+}) {
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TeamDetail | null>(null);
-  const [feed, setFeed] = useState<TeamFeed | null>(null);
   const [name, setName] = useState("");
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [openVideo, setOpenVideo] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
   const applyList = useCallback((next: TeamSummary[], prefer: string | null | undefined) => {
@@ -63,9 +60,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
     setSelected(picked.selected);
     if (picked.denied || !picked.selected) {
       setDetail(null);
-      setFeed(null);
       setInviteUrl(null);
-      setOpenVideo(null);
     }
   }, []);
 
@@ -94,21 +89,16 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
   useEffect(() => {
     if (!active || !selected) return;
     let cancel = false;
-    Promise.all([
-      apiJson<TeamDetail>(`/api/teams/${selected}`),
-      apiJson<TeamFeed>(`/api/teams/${selected}/feed`),
-    ])
-      .then(([nextDetail, nextFeed]) => {
+    apiJson<TeamDetail>(`/api/teams/${selected}`)
+      .then((nextDetail) => {
         if (cancel) return;
         setDetail(nextDetail);
-        setFeed(nextFeed);
         setError(null);
         setDenied(false);
       })
       .catch((e: Error) => {
         if (cancel) return;
         setDetail(null);
-        setFeed(null);
         setInviteUrl(null);
         setDenied(true);
         setError(e.message === "Not found" ? "You don't have access to this team." : e.message);
@@ -130,6 +120,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
       setName("");
       await loadList(team.id);
       setRevision((n) => n + 1);
+      onChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -162,6 +153,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
     try {
       await apiJson(`/api/teams/${selected}/members/${memberId}`, { method: "DELETE" });
       setRevision((n) => n + 1);
+      onChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -176,6 +168,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
     try {
       await apiJson(`/api/teams/${selected}/leave`, { method: "POST", body: "{}" });
       await loadList(null);
+      onChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -191,6 +184,7 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
       await apiJson(`/api/teams/${selected}`, { method: "DELETE" });
       setInviteUrl(null);
       await loadList(null);
+      onChanged();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -212,7 +206,6 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
               onClick={() => {
                 setDenied(false);
                 setSelected(team.id);
-                setOpenVideo(null);
                 sessionStorage.setItem(STORAGE_KEY, team.id);
               }}
               className={`w-full rounded-lg px-2.5 py-2 text-left text-sm ${
@@ -262,21 +255,22 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
           <div className="max-w-md">
             <h1 className="text-lg font-semibold">Team</h1>
             <p className="mt-1 text-sm text-zinc-400">
-              A team lets everyone in it see everyone&apos;s generations and assets. Each person still generates with
-              their own key, into their own storage.
+              Everyone on a team sees each other&apos;s generations and assets in the Video, Image, Fal and Assets
+              tabs. Each person still generates with their own key, into their own storage.
             </p>
           </div>
         )}
-        {detail && feed && (
-          <div data-testid="team-feed">
+        {detail && (
+          <div data-testid="team-detail">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h1 className="text-lg font-semibold" data-testid="team-title">
                   {detail.team.name}
                 </h1>
                 <p className="mt-1 max-w-xl text-sm text-zinc-400">
-                  Read-only. You can see what teammates made. A generation still uses the maker&apos;s own key and
-                  their own storage. You can&apos;t edit or delete someone else&apos;s work here.
+                  Everyone here sees each other&apos;s work in the other tabs, marked with who made it. You can open,
+                  download, and reuse a teammate&apos;s settings, but not delete it. Each person generates with their
+                  own key, into their own storage.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -361,152 +355,9 @@ export function TeamStudio({ me, active }: { me: Me | null; active: boolean }) {
                 ))}
               </ul>
             </section>
-
-            <section className="mt-6">
-              <h2 className="text-sm font-medium text-zinc-300">Generations</h2>
-              {feed.generations.length === 0 ? (
-                <p className="mt-2 text-sm text-zinc-500">No generations from the people on this team yet.</p>
-              ) : (
-                <ul className="mt-2 space-y-2">
-                  {feed.generations.map((gen) => (
-                    <li key={`${gen.kind}-${gen.id}`} className="rounded-xl border border-white/10 px-3 py-3" data-testid="team-generation">
-                      <p className="text-xs text-zinc-500">
-                        {who(gen.author, meId)} · {gen.kind} · {gen.status || "unknown"}
-                        {gen.model ? ` · ${gen.model}` : ""}
-                      </p>
-                      <p className="mt-1 text-sm text-zinc-100">{gen.prompt || "Untitled"}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="mt-6">
-              <h2 className="text-sm font-medium text-zinc-300">Assets</h2>
-              {feed.assets.length === 0 ? (
-                <p className="mt-2 text-sm text-zinc-500">No assets from the people on this team yet.</p>
-              ) : (
-                <>
-                  <ul className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-3">
-                    {feed.assets.map((asset) => (
-                      <AssetTile
-                        key={`${asset.ownerId}:${asset.key}`}
-                        teamId={detail.team.id}
-                        asset={asset}
-                        meId={meId}
-                        onOpen={asset.kind === "video" ? () => setOpenVideo(`${asset.ownerId}:${asset.key}`) : undefined}
-                      />
-                    ))}
-                  </ul>
-                  <TeamVideo
-                    teamId={detail.team.id}
-                    assets={feed.assets}
-                    openId={openVideo}
-                    meId={meId}
-                    onOpen={setOpenVideo}
-                    onClose={() => setOpenVideo(null)}
-                  />
-                </>
-              )}
-            </section>
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function TeamVideo({
-  teamId,
-  assets,
-  openId,
-  meId,
-  onOpen,
-  onClose,
-}: {
-  teamId: string;
-  assets: TeamAsset[];
-  openId: string | null;
-  meId?: string;
-  onOpen: (id: string) => void;
-  onClose: () => void;
-}) {
-  if (!openId) return null;
-  const videos = assets.filter((item) => item.kind === "video");
-  const at = videos.findIndex((item) => `${item.ownerId}:${item.key}` === openId);
-  const asset = videos[at];
-  if (!asset) return null;
-  const prev = videos[at - 1];
-  const next = videos[at + 1];
-  return (
-    <Viewer
-      label={asset.name}
-      title={who(asset.author, meId)}
-      kind="video"
-      src={teamMediaUrl(teamId, asset.ownerId, asset.key)}
-      poster={asset.hasThumb ? teamMediaUrl(teamId, asset.ownerId, asset.key, true) : undefined}
-      alt={asset.name}
-      prompt={asset.name}
-      details={[{ label: "Created", value: formatCreated(asset.createdAt) }]}
-      onClose={onClose}
-      onPrev={prev ? () => onOpen(`${prev.ownerId}:${prev.key}`) : undefined}
-      onNext={next ? () => onOpen(`${next.ownerId}:${next.key}`) : undefined}
-    />
-  );
-}
-
-function AssetTile({
-  teamId,
-  asset,
-  meId,
-  onOpen,
-}: {
-  teamId: string;
-  asset: TeamAsset;
-  meId?: string;
-  onOpen?: () => void;
-}) {
-  const [failed, setFailed] = useState(false);
-  const fileUrl = teamMediaUrl(teamId, asset.ownerId, asset.key);
-  // The grid never points a <video> at the file. Same as the Assets grid: a thumbnail
-  // image, and the file loads only when the tile is opened.
-  const thumbUrl = asset.hasThumb ? teamMediaUrl(teamId, asset.ownerId, asset.key, true) : undefined;
-  return (
-    <li className="overflow-hidden rounded-xl border border-white/10" data-testid="team-asset">
-      <div className="relative grid aspect-video place-items-center bg-white/5">
-        {asset.kind === "audio" || (asset.kind === "video" && (!thumbUrl || failed)) ? (
-          <span className="text-xs tracking-wide text-zinc-500 uppercase">{asset.kind}</span>
-        ) : (
-          // Authenticated same-origin bytes. next/image would fetch them without the session.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={thumbUrl ?? fileUrl}
-            alt=""
-            onError={() => setFailed(true)}
-            referrerPolicy="no-referrer"
-            className="h-full w-full object-contain"
-          />
-        )}
-        {asset.kind === "video" && (
-          <button
-            type="button"
-            onClick={onOpen}
-            aria-label={`Play ${asset.name}`}
-            data-testid="team-video"
-            className="absolute inset-0 grid place-items-center"
-          >
-            <span className="grid size-9 place-items-center rounded-full bg-black/60 text-white">
-              <Play className="size-4" aria-hidden />
-            </span>
-          </button>
-        )}
-      </div>
-      <div className="px-2.5 py-2">
-        <p className="truncate text-sm">{asset.name}</p>
-        <p className="truncate text-xs text-zinc-500">
-          {who(asset.author, meId)} · {formatBytes(asset.bytes)}
-        </p>
-      </div>
-    </li>
   );
 }

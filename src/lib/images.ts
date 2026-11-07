@@ -25,6 +25,7 @@ import type { LookChoice } from "./registry/looks";
 import { catalogModel } from "./registry/generated";
 import { isImage } from "./registry/types";
 import { deleteGenerationAssets, getAsset, providerUrl, putAsset } from "./storage";
+import type { TeamAuthor } from "./teamPolicy";
 
 export type ImageStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -60,6 +61,8 @@ export interface ImageGeneration {
   updatedAt: number;
   startedAt?: number;
   completedAt?: number;
+  /** Who made it, when it's a teammate's. Read-only to this viewer. Absent on the viewer's own. */
+  owner?: TeamAuthor;
 }
 
 const parse = (row?: { data: string }) => (row ? (JSON.parse(row.data) as ImageGeneration) : undefined);

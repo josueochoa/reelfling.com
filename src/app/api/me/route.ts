@@ -5,18 +5,20 @@ import { routeChoiceError } from "@/lib/registry/routing";
 import { isRouteProvider, listRoutePreferences, setRoutePreference } from "@/lib/routes";
 import { listLooks } from "@/lib/savedLooks";
 import { storageUsage } from "@/lib/storage";
+import { teammates } from "@/lib/teammates";
 
 /** The signed-in user, their saved keys (masked), the provider they generate with, storage used and how to sign out. */
 export async function GET() {
   try {
     const user = await requireUser();
-    const [keys, storage] = await Promise.all([listKeys(user.id), storageUsage(user.id)]);
+    const [keys, storage, people] = await Promise.all([listKeys(user.id), storageUsage(user.id), teammates(user.id)]);
     return Response.json({
       user,
       keys,
       storage,
       routePreferences: await listRoutePreferences(user.id),
       looks: await listLooks(user.id),
+      teammates: people.length,
       auth: { mode: authMode(), signOutUrl: signOutUrl() },
     });
   } catch (e) {

@@ -2,7 +2,7 @@
 
 // The Video tab: Seedance generations with the control panel on the left.
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { shouldPollFal, type FalJobView } from "@/lib/falTypes";
 import { restoreInputs } from "@/lib/inputs";
 import { assetBytesUrl, extractLastFrame, generationBytesUrl } from "@/lib/lastFrame";
@@ -17,17 +17,21 @@ import type { SavedLook } from "@/lib/registry/looks";
 import { getTemplate, restoredSlotInputs, type SlotInput } from "@/lib/templates/templates";
 import { api, apiJson, type Me } from "./api";
 import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPanel";
-import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
+import { GenerationCard, StatusOverlay, useElapsed, videoDownloadHref, videoSrc } from "./GenerationCard";
+import { OwnerBadge, ownerName, useTeamRefresh } from "./Owner";
 import { TemplateForm } from "./TemplateForm";
 import { TemplateGallery, type FilterId } from "./TemplateGallery";
-import type { Library, LibraryItem } from "./library";
+import { thumbSrc, type Library, type LibraryItem } from "./library";
+import { useLazyThumbs } from "./MediaBlocks";
 import { UploadsPanel } from "./UploadsPanel";
 import { Viewer } from "./Viewer";
 import { videoDetails } from "./viewer/details";
 
 const POLL_MS = 5000;
 
-const needsPoll = (g: Generation) => !TERMINAL_STATUSES.includes(g.status) || (g.status === "succeeded" && !g.stored);
+// A teammate's generation is polled by its owner's tab and the cron; this tab refreshes the list instead.
+const needsPoll = (g: Generation) =>
+  !g.owner && (!TERMINAL_STATUSES.includes(g.status) || (g.status === "succeeded" && !g.stored));
 
 /** For the Assets tab: "Use in Video", and refreshing after deletes. */
 export interface StudioTabHandle {
@@ -76,6 +80,7 @@ export function VideoStudio({
   const [templateKey, setTemplateKey] = useState(0);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
+  const feedEl = useRef<HTMLElement>(null);
   const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
@@ -143,6 +148,13 @@ export function VideoStudio({
     loadJobs();
   }, [loadJobs]);
 
+  useTeamRefresh(!!me?.teammates, () => {
+    apiJson<Generation[]>("/api/generations")
+      .then(setGenerations)
+      .catch(() => {});
+    loadJobs();
+  });
+
   useEffect(() => {
     const timer = setInterval(async () => {
       const pending = gensRef.current.filter(needsPoll);
@@ -158,7 +170,7 @@ export function VideoStudio({
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const pending = jobsRef.current.filter((job) => job.sequenceId && shouldPollFal(job.status));
+      const pending = jobsRef.current.filter((job) => !job.owner && job.sequenceId && shouldPollFal(job.status));
       void Promise.all(
         pending.map(async (job) => {
           const res = await api(`/api/fal/${job.id}`);
@@ -221,9 +233,11 @@ export function VideoStudio({
     setOpen(null);
     setTemplateId(null);
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
+    // A teammate's frames and references are in their storage, so only the settings come over.
+    const theirs = gen.owner;
     // Don't claim files were deleted while the library is still loading.
-    const restored = extra?.frameKey || !library.loaded ? undefined : restoreInputs(gen, available);
-    const waiting = !extra?.frameKey && !library.loaded;
+    const restored = extra?.frameKey || !library.loaded || theirs ? undefined : restoreInputs(gen, available);
+    const waiting = !extra?.frameKey && !library.loaded && !theirs;
     const pickedModel = catalog().find((model) => model.id === gen.model);
     const frameNote = extra?.frameKey
       ? pickedModel?.capabilities.frames.start
@@ -251,9 +265,11 @@ export function VideoStudio({
       continueFrom: extra?.continueFrom,
       notice:
         frameNote ??
-        (waiting
-          ? "Uploads are still loading, so frames and references weren't restored. Try Reuse again in a moment."
-          : restored?.notice),
+        (theirs
+          ? `Prompt and settings from ${ownerName(theirs)}'s video. Their frames and references stay with them.`
+          : waiting
+            ? "Uploads are still loading, so frames and references weren't restored. Try Reuse again in a moment."
+            : restored?.notice),
     }));
   }
 
@@ -346,12 +362,24 @@ export function VideoStudio({
     group.parts.flatMap((item) => (item.kind === "generation" ? [item.gen] : [])),
   );
   const openIndex = open ? clips.findIndex((item) => item.id === open.id) : -1;
+  // Stored videos' library entries: their thumbnails are the cards' posters, made as cards scroll into view.
+  const videoAssets = useMemo(
+    () => new Map(library.items.flatMap((i) => (i.key?.startsWith("videos/") ? [[i.key, i] as const] : []))),
+    [library.items],
+  );
+  const assetOf = (gen: Generation) => videoAssets.get(`videos/${gen.id}.mp4`);
+  const cardAssets = useMemo(
+    () => generations.flatMap((gen) => videoAssets.get(`videos/${gen.id}.mp4`) ?? []),
+    [generations, videoAssets],
+  );
+  useLazyThumbs(feedEl, cardAssets, library.ensureThumb);
   const models = sortByAvailability(catalog(), (model) => availabilityFor(routeProviders(model.routes), keyed).available);
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:flex-row">
-      <aside className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
+    // Side by side from md. Narrower screens scroll the panel and the feed as one page.
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+      <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel md:h-full md:min-h-0 md:w-[340px] md:overflow-hidden md:border-r md:border-b-0 lg:w-[400px]">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
           <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
             API keys
@@ -405,7 +433,7 @@ export function VideoStudio({
         )}
       </aside>
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      <main ref={feedEl} className="@container md:min-h-0 md:flex-1 md:overflow-y-auto">
         {libraryOpen ? (
           <UploadsPanel
             library={library}
@@ -476,7 +504,7 @@ export function VideoStudio({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 p-4 @xl:grid-cols-2 @xl:p-6 @[70rem]:grid-cols-3">
                 {feed.map((group) => {
                   const numbered = isNumberedSequence(group.parts);
                   const cards = group.parts.map((item) => {
@@ -484,8 +512,9 @@ export function VideoStudio({
                       item.kind === "extend"
                         ? generations.find((gen) => gen.id === item.job.sourceGenerationId)
                         : undefined;
+                    const asset = item.kind === "generation" ? assetOf(item.gen) : undefined;
                     return (
-                      <div key={item.id}>
+                      <div key={item.id} data-asset-id={asset?.id}>
                         {numbered && (
                           <p data-testid="sequence-part" className="mb-1.5 text-[11px] font-medium text-zinc-400">
                             Part {item.part}
@@ -494,13 +523,14 @@ export function VideoStudio({
                         {item.kind === "generation" ? (
                           <GenerationCard
                             gen={item.gen}
+                            poster={asset?.hasThumb ? thumbSrc(asset) : undefined}
                             onOpen={() => setOpen(item.gen)}
                             onReuse={() => reuse(item.gen)}
                             onUseTemplate={
                               getTemplate(item.gen.templateId) ? () => openTemplateAgain(item.gen) : undefined
                             }
-                            onUseAsReference={() => void referenceStoredVideo(item.gen)}
-                            onDelete={() => remove(item.gen)}
+                            onUseAsReference={item.gen.owner ? undefined : () => void referenceStoredVideo(item.gen)}
+                            onDelete={item.gen.owner ? undefined : () => remove(item.gen)}
                           />
                         ) : (
                           <ExtendPart
@@ -532,7 +562,7 @@ export function VideoStudio({
                       <h2 className="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
                         Sequence · {group.parts.length} parts
                       </h2>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">{cards}</div>
+                      <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @[70rem]:grid-cols-3">{cards}</div>
                     </section>
                   );
                 })}
@@ -565,18 +595,24 @@ export function VideoStudio({
           }
           onReuse={() => reuse(open)}
           onUseTemplate={getTemplate(open.templateId) ? () => openTemplateAgain(open) : undefined}
-          onUseAsReference={() => void referenceStoredVideo(open)}
-          onContinue={open.status === "succeeded" ? () => void continueFromVideo(generationBytesUrl(open.id), open) : undefined}
+          onUseAsReference={open.owner ? undefined : () => void referenceStoredVideo(open)}
+          onContinue={
+            open.status === "succeeded" && !open.owner
+              ? () => void continueFromVideo(generationBytesUrl(open.id), open)
+              : undefined
+          }
           continueBusy={continueBusy}
           extendOffer={
-            open.status === "succeeded" ? extendOffers.find((offer) => offer.modelIds.includes(open.model)) : undefined
+            open.status === "succeeded" && !open.owner
+              ? extendOffers.find((offer) => offer.modelIds.includes(open.model))
+              : undefined
           }
           onNativeExtend={
-            open.status === "succeeded"
+            open.status === "succeeded" && !open.owner
               ? (prompt) => nativeExtend(open.model, `videos/${open.id}.mp4`, prompt)
               : undefined
           }
-          onDelete={() => remove(open)}
+          onDelete={open.owner ? undefined : () => remove(open)}
           tools={tools}
           keyed={keyed}
           onOpenKeys={onOpenKeys}
@@ -593,7 +629,7 @@ export function VideoStudio({
 function videoRefs(gen: Generation) {
   const refs: { src: string; alt: string }[] = [];
   const add = (key?: string, alt?: string) => {
-    if (key) refs.push({ src: assetFileUrl(key), alt: alt || "Reference" });
+    if (key) refs.push({ src: assetFileUrl(key, { owner: gen.owner?.id }), alt: alt || "Reference" });
   };
   add(gen.inputs.firstFrameKey, gen.inputs.firstFrameName ?? "Start frame");
   for (const [index, frame] of (gen.inputs.middleFrames ?? []).entries()) {
@@ -630,12 +666,12 @@ function OpenVideo({
   onNext?: () => void;
   onReuse: () => void;
   onUseTemplate?: () => void;
-  onUseAsReference: () => void;
+  onUseAsReference?: () => void;
   onContinue?: () => void;
   continueBusy?: boolean;
   extendOffer?: ExtendOffer;
   onNativeExtend?: (prompt: string) => Promise<void>;
-  onDelete: () => void;
+  onDelete?: () => void;
   tools: readonly ToolView[];
   keyed: ReadonlySet<string>;
   onOpenKeys: () => void;
@@ -643,7 +679,9 @@ function OpenVideo({
 }) {
   const elapsed = useElapsed(gen);
   const ready = gen.status === "succeeded";
-  const details = videoDetails(gen);
+  const details = gen.owner
+    ? [{ label: "Made by", value: gen.owner.name ?? gen.owner.email }, ...videoDetails(gen)]
+    : videoDetails(gen);
   return (
     <Viewer
       label="Video"
@@ -667,10 +705,10 @@ function OpenVideo({
       extendOffer={extendOffer}
       onNativeExtend={onNativeExtend}
       onDelete={onDelete}
-      downloadHref={ready ? `${videoSrc(gen)}?download` : undefined}
-      tools={tools}
+      downloadHref={ready ? videoDownloadHref(gen) : undefined}
+      tools={gen.owner ? undefined : tools}
       toolKind="video"
-      assetKey={gen.stored ? `videos/${gen.id}.mp4` : undefined}
+      assetKey={gen.stored && !gen.owner ? `videos/${gen.id}.mp4` : undefined}
       toolAsset={{ duration: gen.duration }}
       keyed={keyed}
       onOpenKeys={onOpenKeys}
@@ -699,14 +737,21 @@ function ExtendPart({
   onDelete: () => void;
 }) {
   const output = job.outputs.find((item) => item.contentType.startsWith("video/"));
+  const mine = !job.owner;
   const [prompt, setPrompt] = useState(job.prompt);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
     <article className="overflow-hidden rounded-2xl border border-white/5 bg-panel">
       <div className="relative grid aspect-video place-items-center bg-black">
+        {job.owner && <OwnerBadge owner={job.owner} className="absolute top-2 left-2 z-10" />}
         {output ? (
-          <video src={assetFileUrl(output.key)} controls playsInline className="size-full object-contain" />
+          <video
+            src={assetFileUrl(output.key, { owner: job.owner?.id })}
+            controls
+            playsInline
+            className="size-full object-contain"
+          />
         ) : (
           <p className="text-xs text-zinc-400 capitalize">
             {job.status}
@@ -718,15 +763,15 @@ function ExtendPart({
         <p className="line-clamp-2 text-sm text-zinc-300">{job.prompt || "Extend"}</p>
         <p className="text-[10px] text-zinc-500">{job.tool?.name ?? "Extend"}</p>
         <div className="flex flex-wrap gap-1.5">
-          {output && source && (
+          {output && source && mine && (
             <PartButton disabled={continueBusy} onClick={() => onContinue(assetBytesUrl(output.key), source)}>
               {continueBusy ? "Saving…" : "Continue"}
             </PartButton>
           )}
           {source && <PartButton onClick={() => onReuse(source)}>Reuse</PartButton>}
-          <PartButton onClick={onDelete}>Delete</PartButton>
+          {mine && <PartButton onClick={onDelete}>Delete</PartButton>}
         </div>
-        {output && source && canExtend && (
+        {output && source && canExtend && mine && (
           <form
             className="grid gap-1.5"
             onSubmit={(e) => {

@@ -8,6 +8,7 @@ import { availabilityFor, availabilityHint } from "@/lib/registry/availability";
 import { assetFileUrl } from "@/lib/uploads";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { api, type Me } from "./api";
+import { OwnerBadge, useTeamRefresh } from "./Owner";
 import { UnlockHint } from "./UnlockHint";
 
 export interface FalTabHandle {
@@ -48,8 +49,8 @@ function FieldErrors({ fields }: { fields?: FalFieldError[] }) {
   );
 }
 
-function OutputPreview({ output }: { output: FalJobView["outputs"][number] }) {
-  const src = assetFileUrl(output.key);
+function OutputPreview({ output, owner }: { output: FalJobView["outputs"][number]; owner?: string }) {
+  const src = assetFileUrl(output.key, { owner });
   if (output.contentType.startsWith("video/"))
     return <video src={src} controls playsInline className="max-h-80 w-full rounded-lg bg-black" />;
   if (output.contentType.startsWith("audio/")) return <audio src={src} controls className="w-full" />;
@@ -59,7 +60,7 @@ function OutputPreview({ output }: { output: FalJobView["outputs"][number] }) {
       <img src={src} alt="" className="max-h-80 w-full rounded-lg object-contain bg-black" />
     );
   return (
-    <a href={assetFileUrl(output.key, { download: true })} className="text-xs text-zinc-300 underline">
+    <a href={assetFileUrl(output.key, { download: true, owner })} className="text-xs text-zinc-300 underline">
       Download
     </a>
   );
@@ -110,6 +111,7 @@ export function FalStudio({
   }, []);
 
   useImperativeHandle(ref, () => ({ reload }), [reload]);
+  useTeamRefresh(!!me?.teammates, reload);
 
   useEffect(() => {
     reload();
@@ -117,7 +119,8 @@ export function FalStudio({
 
   useEffect(() => {
     const timer = setInterval(() => {
-      const pending = jobsRef.current.filter(needsPoll);
+      // A teammate's jobs are polled by their owner's tab and the cron.
+      const pending = jobsRef.current.filter((job) => needsPoll(job) && !job.owner);
       void Promise.all(
         pending.map(async (job) => {
           try {
@@ -196,6 +199,7 @@ export function FalStudio({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      {job.owner && <OwnerBadge owner={job.owner} />}
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                           job.status === "failed"
@@ -226,12 +230,14 @@ export function FalStudio({
                       </div>
                     )}
                   </div>
-                  <button
-                    onClick={() => void remove(job)}
-                    className="shrink-0 rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-red-300"
-                  >
-                    {shouldCancelFal(job.status) ? "Cancel" : "Delete"}
-                  </button>
+                  {!job.owner && (
+                    <button
+                      onClick={() => void remove(job)}
+                      className="shrink-0 rounded-lg px-2 py-1 text-xs text-zinc-500 hover:text-red-300"
+                    >
+                      {shouldCancelFal(job.status) ? "Cancel" : "Delete"}
+                    </button>
+                  )}
                 </div>
                 {(job.status === "failed" || job.error) && (
                   <div className="mt-3 space-y-1">
@@ -242,7 +248,7 @@ export function FalStudio({
                 {job.outputs.length > 0 && (
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {job.outputs.map((output) => (
-                      <OutputPreview key={output.key} output={output} />
+                      <OutputPreview key={output.key} output={output} owner={job.owner?.id} />
                     ))}
                   </div>
                 )}
@@ -252,7 +258,7 @@ export function FalStudio({
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4">
         <form
           className="pointer-events-auto mx-auto max-w-3xl space-y-2 rounded-2xl border border-white/10 bg-panel/95 p-3 shadow-2xl shadow-black/40 backdrop-blur"
           onSubmit={(e) => {

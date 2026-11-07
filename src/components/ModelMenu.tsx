@@ -44,7 +44,7 @@ export function ModelMenu({
       data-testid="model-picker"
       role="listbox"
       aria-label="Model"
-      className="max-h-56 space-y-0.5 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-1"
+      className="@container max-h-56 space-y-0.5 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.03] p-1"
     >
       {groupByFamily(models).map((group) => (
         <div key={group.family} data-testid="model-family" data-family={group.family}>
@@ -85,7 +85,8 @@ export function ModelMenu({
             >
               <span className="min-w-0 flex-1 truncate">{model.name}</span>
               {badges.length > 0 && (
-                <span className="flex shrink-0 gap-1">
+                // A narrow panel drops the badges so model names stay readable.
+                <span className="hidden shrink-0 gap-1 @[21rem]:flex">
                   {badges.map((badge) => (
                     <span
                       key={badge.id}

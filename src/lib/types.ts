@@ -1,5 +1,6 @@
 import type { StudioProviderId } from "./registry";
 import type { LookChoice } from "./registry/looks";
+import type { TeamAuthor } from "./teamPolicy";
 
 export type GenerationMode = "frames" | "references";
 
@@ -138,6 +139,8 @@ export interface Generation {
   inputs: GenerationInputs;
   /** Temporary signed URL from the provider (expires ~24h). */
   remoteVideoUrl?: string;
+  /** Who made it, when it's a teammate's. Read-only to this viewer. Absent on the viewer's own. */
+  owner?: TeamAuthor;
   /** Set once the video has been copied into the user's storage (see storage.ts). */
   stored?: boolean;
   error?: string;

@@ -15,6 +15,8 @@ import type { FalInputMap, StudioProviderId, VideoModel } from "@/lib/registry/t
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset, providerUrl } from "@/lib/storage";
 import { continueSequence, insertGeneration, listGenerations } from "@/lib/store";
+import { teammateGeneration } from "@/lib/teamPolicy";
+import { newestFirst, teammateRows } from "@/lib/teammates";
 import { templateRecord, templateRouteError, templateSlotsError } from "@/lib/templates/templates";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
@@ -22,7 +24,8 @@ import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } f
 export async function GET() {
   try {
     const user = await requireUser();
-    return Response.json(await listGenerations(user.id));
+    const [own, shared] = await Promise.all([listGenerations(user.id), teammateRows<Generation>(user.id, "generations")]);
+    return Response.json(newestFirst(own, shared.map((row) => teammateGeneration(row.data, row.owner))));
   } catch (e) {
     return errorResponse(e);
   }

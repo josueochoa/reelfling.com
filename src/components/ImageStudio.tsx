@@ -14,7 +14,10 @@ import type { ToolView } from "@/lib/toolTypes";
 import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
+import { assetFileUrl } from "@/lib/uploads";
 import { api, apiJson, type Me } from "./api";
+import { formatSecs } from "./GenerationCard";
+import { OwnerBadge, ownerName, useTeamRefresh } from "./Owner";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { resolvePaletteSwatch, type SwatchMemory } from "./paletteSwatch";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
@@ -24,8 +27,11 @@ import { imageDetails } from "./viewer/details";
 
 const POLL_MS = 4000;
 const pending = (g: ImageGeneration) => g.status === "queued" || g.status === "running";
+// A teammate's image comes through the file route, which checks the team and streams it.
 const imageUrl = (g: ImageGeneration, i: number, download = false) =>
-  `/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`;
+  g.owner && g.images[i]
+    ? assetFileUrl(g.images[i].key, { owner: g.owner.id, download })
+    : `/api/images/${g.id}/file?i=${i}${download ? "&download" : ""}`;
 const aspectStyle = (ratio?: string) => ({ aspectRatio: (ratio ?? "1:1").replace(":", " / ") });
 
 /** Re-renders every second while something is generating, for the elapsed timers. */
@@ -134,13 +140,19 @@ export function ImageStudio({
       .catch(() => {})
       .finally(() => setLoaded(true));
     const timer = setInterval(() => {
-      for (const g of gensRef.current.filter(pending))
+      for (const g of gensRef.current.filter((item) => pending(item) && !item.owner))
         apiJson<ImageGeneration>(`/api/images/${g.id}`)
           .then(upsert)
           .catch(() => {});
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [upsert]);
+
+  useTeamRefresh(!!me?.teammates, () => {
+    apiJson<ImageGeneration[]>("/api/images")
+      .then(setGens)
+      .catch(() => {});
+  });
 
   useImperativeHandle(ref, () => ({
     addReference: (item) => addRefs([item]),
@@ -282,6 +294,8 @@ export function ImageStudio({
 
   /** Back into the composer: prompt, settings and the reference images still in Uploads. */
   function reuse(gen: ImageGeneration) {
+    if (gen.owner && gen.references.length)
+      toast(`Prompt and settings from ${ownerName(gen.owner)}'s image. Their reference images stay with them.`);
     // Reuse puts the stored route back on this generation. It does not save a preference.
     const model = models.find((item) => item.id === gen.model) ?? state.model;
     setState({
@@ -339,28 +353,69 @@ export function ImageStudio({
                 key={`${gen.id}-${i}`}
                 className="group relative mb-3 break-inside-avoid overflow-hidden rounded-xl bg-white/[0.04]"
               >
-                {gen.status === "succeeded" ? (
-                  <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imageUrl(gen, i)} alt={gen.prompt} loading="lazy" className="w-full" />
-                  </button>
-                ) : gen.status === "failed" ? (
-                  <div style={aspectStyle(gen.aspect)} className="grid place-items-center p-4 text-center">
-                    <div>
-                      <p className="text-sm text-red-300">Failed</p>
-                      <p className="mt-1 line-clamp-4 text-xs text-zinc-500">{gen.error}</p>
+                {/* The hover actions sit on the image, so the bar below never covers them. */}
+                <div className="relative">
+                  {gen.owner && <OwnerBadge owner={gen.owner} className="absolute top-2 left-2 z-[1]" />}
+                  {gen.status === "succeeded" ? (
+                    <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={imageUrl(gen, i)} alt={gen.prompt} loading="lazy" className="w-full" />
+                    </button>
+                  ) : gen.status === "failed" ? (
+                    <div style={aspectStyle(gen.aspect)} className="grid place-items-center p-4 text-center">
+                      <div>
+                        <p className="text-sm text-red-300">Failed</p>
+                        <p className="mt-1 line-clamp-4 text-xs text-zinc-500">{gen.error}</p>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div style={aspectStyle(gen.aspect)} className="relative">
-                    <Skeleton fill />
-                    <span className="absolute inset-0 grid place-items-center text-xs text-zinc-400 tabular-nums">
-                      {gen.status === "queued" ? "Queued" : "Generating"} ·{" "}
-                      {Math.max(0, Math.floor((now - (gen.startedAt ?? gen.createdAt)) / 1000))}s
-                    </span>
-                  </div>
-                )}
-                {gen.status === "succeeded" && i >= 0 && (
+                  ) : (
+                    <div style={aspectStyle(gen.aspect)} className="relative">
+                      <Skeleton fill />
+                      <span className="absolute inset-0 grid place-items-center text-xs text-zinc-400 tabular-nums">
+                        {gen.status === "queued" ? "Queued" : "Generating"} ·{" "}
+                        {formatSecs(Math.max(0, Math.floor((now - (gen.startedAt ?? gen.createdAt)) / 1000)))}
+                      </span>
+                    </div>
+                  )}
+                  {gen.status !== "running" && gen.status !== "queued" && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 pt-8 opacity-0 transition group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+                      <p className="line-clamp-2 min-w-0 flex-1 text-xs text-zinc-200">{gen.prompt}</p>
+                      <div className="pointer-events-auto flex gap-1">
+                        {i >= 0 && (
+                          <a
+                            href={imageUrl(gen, i, true)}
+                            aria-label="Download"
+                            title="Download"
+                            className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
+                          >
+                            <Download className="size-3.5" aria-hidden />
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => reuse(gen)}
+                          aria-label="Reuse prompt and settings"
+                          title="Reuse prompt and settings"
+                          className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
+                        >
+                          <RotateCcw className="size-3.5" aria-hidden />
+                        </button>
+                        {!gen.owner && (
+                          <button
+                            type="button"
+                            onClick={() => remove(gen)}
+                            aria-label="Delete"
+                            title="Delete"
+                            className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
+                          >
+                            <X className="size-3.5" aria-hidden />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {gen.status === "succeeded" && i >= 0 && !gen.owner && (
                   <div className="relative z-10 flex flex-wrap gap-1 border-t border-white/5 bg-ink/40 p-1.5">
                     <button
                       type="button"
@@ -378,48 +433,13 @@ export function ImageStudio({
                     </button>
                   </div>
                 )}
-                {gen.status !== "running" && gen.status !== "queued" && (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 pt-8 opacity-0 transition group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
-                    <p className="line-clamp-2 min-w-0 flex-1 text-xs text-zinc-200">{gen.prompt}</p>
-                    <div className="pointer-events-auto flex gap-1">
-                      {i >= 0 && (
-                        <a
-                          href={imageUrl(gen, i, true)}
-                          aria-label="Download"
-                          title="Download"
-                          className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
-                        >
-                          <Download className="size-3.5" aria-hidden />
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => reuse(gen)}
-                        aria-label="Reuse prompt and settings"
-                        title="Reuse prompt and settings"
-                        className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
-                      >
-                        <RotateCcw className="size-3.5" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(gen)}
-                        aria-label="Delete"
-                        title="Delete"
-                        className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
-                      >
-                        <X className="size-3.5" aria-hidden />
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4">
         <div className="pointer-events-auto mx-auto max-w-4xl">
           <ImageComposer
             state={state}
@@ -467,9 +487,15 @@ export function ImageStudio({
           references={openTile.references.flatMap((key) => {
             const item = library.items.find((entry) => entry.key === key);
             const refSrc = item ? (thumbSrc(item) ?? undefined) : undefined;
-            return refSrc ? [{ src: refSrc, alt: item?.name ?? "Reference" }] : [{ src: `/api/assets/file?key=${encodeURIComponent(key)}`, alt: "Reference" }];
+            return refSrc
+              ? [{ src: refSrc, alt: item?.name ?? "Reference" }]
+              : [{ src: assetFileUrl(key, { owner: openTile.owner?.id }), alt: "Reference" }];
           })}
-          details={imageDetails(openTile)}
+          details={
+            openTile.owner
+              ? [{ label: "Made by", value: openTile.owner.name ?? openTile.owner.email }, ...imageDetails(openTile)]
+              : imageDetails(openTile)
+          }
           error={openTile.error}
           onClose={() => setOpen(null)}
           onPrev={
@@ -489,12 +515,12 @@ export function ImageStudio({
               : undefined
           }
           onReuse={() => reuse(openTile)}
-          onUseAsReference={() => void applyGenerated(openTile, open.i, "reference")}
-          onDelete={() => remove(openTile)}
+          onUseAsReference={openTile.owner ? undefined : () => void applyGenerated(openTile, open.i, "reference")}
+          onDelete={openTile.owner ? undefined : () => remove(openTile)}
           downloadHref={imageUrl(openTile, open.i, true)}
-          tools={tools}
+          tools={openTile.owner ? undefined : tools}
           toolKind="image"
-          assetKey={openTile.images[open.i]?.key}
+          assetKey={openTile.owner ? undefined : openTile.images[open.i]?.key}
           keyed={keyed}
           onOpenKeys={onOpenKeys}
           onToolJob={() => {
@@ -502,13 +528,15 @@ export function ImageStudio({
             onToolJob();
           }}
           extra={
-            <button
-              type="button"
-              onClick={() => void applyGenerated(openTile, open.i, "start")}
-              className="mt-3 w-full rounded-md border border-line py-2 text-body text-fg"
-            >
-              Use as start frame
-            </button>
+            openTile.owner ? undefined : (
+              <button
+                type="button"
+                onClick={() => void applyGenerated(openTile, open.i, "start")}
+                className="mt-3 w-full rounded-md border border-line py-2 text-body text-fg"
+              >
+                Use as start frame
+              </button>
+            )
           }
         />
       )}

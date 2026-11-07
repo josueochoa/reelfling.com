@@ -2,6 +2,8 @@
 // (pre-checks) and the API (enforcement). Limits follow ArgoLink's documented ones, the
 // stricter of the providers: https://argolink.io/en/models/seedance-2.5
 
+import type { TeamAuthor } from "./teamPolicy";
+
 export type UploadKind = "image" | "video" | "audio";
 
 export interface UploadRule {
@@ -69,14 +71,19 @@ export interface AssetItem extends UploadItem {
   parentId?: string;
   /** Catalog tool id. */
   tool?: string;
+  /** Who made it, when it's a teammate's. Read-only to this viewer. Absent on the viewer's own. */
+  owner?: TeamAuthor;
 }
 
 /** Keys of assets the app lists and lets users reference (not thumbnails or old `refs/`). */
 export const isAssetKey = (key: string) => /^(uploads|videos|images|fal)\/[\w./-]+$/.test(key) && !key.includes("..");
 
-/** Stable same-origin URLs; the server redirects to a short-lived signed R2 URL. */
-export const assetFileUrl = (key: string, opts: { thumb?: boolean; download?: boolean } = {}) =>
-  `/api/assets/file?key=${encodeURIComponent(key)}${opts.thumb ? "&thumb=1" : ""}${opts.download ? "&download" : ""}`;
+/**
+ * Stable same-origin URLs; the server redirects to a short-lived signed R2 URL.
+ * With `owner`, a teammate's file: the server checks the team and streams the bytes itself.
+ */
+export const assetFileUrl = (key: string, opts: { thumb?: boolean; download?: boolean; owner?: string } = {}) =>
+  `/api/assets/file?key=${encodeURIComponent(key)}${opts.owner ? `&owner=${encodeURIComponent(opts.owner)}` : ""}${opts.thumb ? "&thumb=1" : ""}${opts.download ? "&download" : ""}`;
 
 /** References are sent as `upload:<key>` for files in the user's bucket. */
 export const UPLOAD_PREFIX = "upload:";
