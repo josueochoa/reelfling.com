@@ -1,5 +1,7 @@
 // Shared by the fal client and the browser. No secrets, no fetch.
 
+import type { TeamAuthor } from "./teamPolicy";
+
 export type FalJobStatus = "queued" | "running" | "succeeded" | "failed";
 
 /** fal only cancels work that hasn't finished. */
@@ -63,4 +65,6 @@ export interface FalJobView {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+  /** Who made it, when it's a teammate's. Read-only to this viewer. Absent on the viewer's own. */
+  owner?: TeamAuthor;
 }

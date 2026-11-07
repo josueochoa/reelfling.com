@@ -323,7 +323,7 @@ export async function createToolJob(
     if (limit) throw new ProviderError(limit, 400);
   }
   const form = formFor(prepared.tool.id) ?? extendForm(prepared.tool.id);
-  if (form && !lipsyncTool) {
+  if (form) {
     const limit = toolLimitError(
       form,
       { contentType: asset.contentType, duration: asset.meta?.duration },

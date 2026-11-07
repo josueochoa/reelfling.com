@@ -48,22 +48,7 @@ export function runnableTools(): RunnableTool[] {
       inputKey: form.inputKey,
     });
   }
-  for (const tool of lipsyncTools()) {
-    tools.push({
-      id: tool.id,
-      name: tool.name,
-      description: tool.description,
-      accepts: tool.accepts,
-      fields: tool.fields.map((field) => ({ ...field })),
-      menu: tool.menu,
-      quote: tool.quote,
-      needsAudio: true,
-      endpoint: tool.endpoint,
-      mapper: "fal.queue",
-      inputKey: tool.inputKey,
-      audioKey: tool.audioKey,
-    });
-  }
+  tools.push(...lipsyncTools());
   return tools;
 }
 

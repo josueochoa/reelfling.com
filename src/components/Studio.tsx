@@ -78,17 +78,17 @@ export function Studio() {
 
   return (
     <div className="flex h-dvh flex-col bg-ink text-zinc-100">
-      <header className="flex h-14 shrink-0 items-center gap-6 border-b border-white/5 bg-panel px-5">
-        <div className="flex items-center gap-2">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-white/5 bg-panel px-3 sm:gap-6 sm:px-5">
+        <div className="flex shrink-0 items-center gap-2">
           <div className="grid size-7 place-items-center rounded-lg bg-accent font-black text-ink">R</div>
-          <span className="font-semibold tracking-tight">ReelFling</span>
+          <span className="hidden font-semibold tracking-tight sm:inline">ReelFling</span>
         </div>
-        <nav className="flex gap-1 text-sm">
+        <nav className="flex min-w-0 gap-0.5 overflow-x-auto text-sm [scrollbar-width:none] sm:gap-1">
           {TABS.map((t) => (
             <a
               key={t}
               href={`#${t}`}
-              className={`rounded-full px-3.5 py-1.5 capitalize transition ${
+              className={`shrink-0 rounded-full px-2.5 py-1.5 capitalize transition sm:px-3.5 ${
                 tab === t ? "bg-white text-ink" : "text-zinc-400 hover:text-white"
               }`}
             >
@@ -96,7 +96,7 @@ export function Studio() {
             </a>
           ))}
         </nav>
-        <div className="ml-auto">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
+        <div className="ml-auto shrink-0">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
       </header>
 
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${tab === "video" ? "" : "hidden"}`}>
@@ -131,10 +131,20 @@ export function Studio() {
         />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "fal" ? "" : "hidden"}`}>
-        <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
+        <FalStudio ref={fal} me={me} onOpenKeys={openKeys} tools={tools} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
-        <TeamStudio me={me} active={tab === "team"} />
+        <TeamStudio
+          me={me}
+          active={tab === "team"}
+          onChanged={() => {
+            // Teammates' work in the other tabs follows membership.
+            void loadMe();
+            video.current?.reload();
+            image.current?.reload();
+            fal.current?.reload();
+          }}
+        />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio

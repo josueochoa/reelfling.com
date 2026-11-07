@@ -1,15 +1,23 @@
 import { errorResponse, requireUser } from "@/lib/auth";
-import { createFalJob, createToolJob, listFalJobs, publicFalJob } from "@/lib/falJobs";
+import { createFalJob, createToolJob, listFalJobs, publicFalJob, type FalJob } from "@/lib/falJobs";
 import { getCredentials } from "@/lib/keys";
 import { FalValidationError } from "@/lib/providers/fal";
 import { availabilityError } from "@/lib/registry/availability";
 import { assertStorageAvailable } from "@/lib/storage";
+import { teammateFalJob } from "@/lib/teamPolicy";
+import { newestFirst, teammateRows } from "@/lib/teammates";
 
-/** The user's fal jobs, newest first. Does not call fal — the open tab polls each one. */
+/** The user's fal jobs and their teammates', newest first. Does not call fal — the open tab polls its own. */
 export async function GET() {
   try {
     const user = await requireUser();
-    return Response.json((await listFalJobs(user.id)).map(publicFalJob));
+    const [own, shared] = await Promise.all([listFalJobs(user.id), teammateRows<FalJob>(user.id, "fal_jobs")]);
+    return Response.json(
+      newestFirst(
+        own.map(publicFalJob),
+        shared.map((row) => teammateFalJob(publicFalJob(row.data), row.owner)),
+      ),
+    );
   } catch (e) {
     return errorResponse(e);
   }

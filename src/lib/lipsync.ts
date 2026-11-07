@@ -17,6 +17,7 @@ import { ProviderError } from "./providers/types";
 import { isLipsyncTool, lipsyncQuote, omitInactiveLoop } from "./lipsyncQuote";
 import { catalogModel } from "./registry/generated";
 import { parseToolParams, type ToolForm } from "./registry/tool-forms";
+import type { RunnableTool } from "./toolCatalog";
 import type { ToolFieldView, ToolQuote } from "./toolTypes";
 import { isAssetKey } from "./uploads";
 
@@ -111,45 +112,29 @@ export function lipsyncForm(id: string): LipsyncForm | undefined {
   return lipsyncForms().find((form) => form.id === id);
 }
 
-export interface LipsyncTool {
-  id: string;
-  name: string;
-  description: string;
-  accepts: "video";
-  fields: ToolFieldView[];
-  menu: "Lip sync";
-  quote: ToolQuote;
-  needsAudio: true;
-  endpoint: string;
-  mapper: "fal.queue";
-  inputKey: "video_url";
-  audioKey: "audio_url";
-}
-
 /** Tools whose catalog entry still matches the schema we checked. */
-export function lipsyncTools(): LipsyncTool[] {
-  const tools: LipsyncTool[] = [];
-  for (const form of FORMS) {
-    const checked = checkedForm(form);
-    const model = checked && catalogModel(checked.id);
-    const route = model?.routes.find((item) => item.provider === "fal");
-    if (!checked || !model || !route) continue;
-    tools.push({
-      id: model.id,
-      name: model.name,
-      description: model.description,
-      accepts: "video",
-      fields: form.fields.map((field) => ({ ...field })),
-      menu: "Lip sync",
-      quote: form.quote,
-      needsAudio: true,
-      endpoint: route.endpoint,
-      mapper: "fal.queue",
-      inputKey: "video_url",
-      audioKey: "audio_url",
-    });
-  }
-  return tools;
+export function lipsyncTools(): RunnableTool[] {
+  return lipsyncForms().flatMap((form) => {
+    const model = catalogModel(form.id);
+    const route = model?.routes.find((item) => item.provider === "fal" && item.mapper === "fal.queue");
+    if (!model || !route) return [];
+    return [
+      {
+        id: model.id,
+        name: model.name,
+        description: model.description,
+        accepts: form.accepts,
+        fields: form.fields.map((field) => ({ ...field })),
+        menu: form.menu,
+        quote: form.quote,
+        needsAudio: true,
+        endpoint: route.endpoint,
+        mapper: "fal.queue",
+        inputKey: form.inputKey,
+        audioKey: form.audioKey,
+      },
+    ];
+  });
 }
 
 /**

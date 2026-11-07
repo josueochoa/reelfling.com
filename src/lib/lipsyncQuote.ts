@@ -151,7 +151,7 @@ function finite(value: number | undefined): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-/** Output length sync-3's mode produces. Undefined when a duration is missing. */
+/** Output length sync-3's mode produces: the shorter input for cut_off, the longer for silence, else the audio. */
 export function syncOutputSeconds(mode: string, video: number, audio: number): number {
   if (mode === "cut_off") return Math.min(video, audio);
   if (mode === "silence") return Math.max(video, audio);

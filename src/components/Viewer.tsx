@@ -66,6 +66,7 @@ export function Viewer({
   onPrev,
   onNext,
   onReuse,
+  onUseTemplate,
   onUseAsReference,
   referenceLabel = "Use as reference",
   onDownload,
@@ -105,6 +106,8 @@ export function Viewer({
   onPrev?: () => void;
   onNext?: () => void;
   onReuse?: () => void;
+  /** Opens the gallery template this generation was started from. */
+  onUseTemplate?: () => void;
   onUseAsReference?: () => void;
   referenceLabel?: string;
   onDownload?: () => void;
@@ -458,6 +461,16 @@ export function Viewer({
                 )}
                 {extendOffer && onNativeExtend && (
                   <NativeExtend offer={extendOffer} initialPrompt={prompt ?? ""} onExtend={onNativeExtend} />
+                )}
+                {onUseTemplate && (
+                  <button
+                    type="button"
+                    data-testid="viewer-use-template"
+                    onClick={onUseTemplate}
+                    className="w-full rounded-md border border-line px-3 py-2 text-body text-fg"
+                  >
+                    Use this template again
+                  </button>
                 )}
                 <div className="flex flex-wrap items-center gap-2">
                 {onReuse && (

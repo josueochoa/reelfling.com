@@ -3,11 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { cameraSummary } from "@/lib/registry";
 import { lookupModel } from "@/lib/registry/lookup";
+import { getTemplate } from "@/lib/templates/templates";
 import { Download, RotateCcw, X } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
+import { assetFileUrl } from "@/lib/uploads";
+import { OwnerBadge } from "./Owner";
 
-export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
+/** A teammate's video comes through the file route, which checks the team and streams it. */
+export const videoSrc = (g: Generation) =>
+  g.owner ? assetFileUrl(`videos/${g.id}.mp4`, { owner: g.owner.id }) : `/api/generations/${g.id}/video`;
+export const videoDownloadHref = (g: Generation) =>
+  g.owner ? assetFileUrl(`videos/${g.id}.mp4`, { owner: g.owner.id, download: true }) : `${videoSrc(g)}?download`;
 
 export function useElapsed(gen: Generation) {
   const running = !TERMINAL_STATUSES.includes(gen.status);
@@ -22,7 +29,10 @@ export function useElapsed(gen: Generation) {
 }
 
 export function formatSecs(s: number) {
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
+  return `${Math.floor(s / 86400)}d ${Math.floor(s / 3600) % 24}h`;
 }
 
 const ratioClass: Record<string, string> = {
@@ -38,25 +48,35 @@ export function GenerationCard({
   gen,
   onOpen,
   onReuse,
+  onUseTemplate,
   onUseAsReference,
   onDelete,
+  poster,
 }: {
   gen: Generation;
+  /** Thumbnail shown before the video loads. */
+  poster?: string;
   onOpen: () => void;
   onReuse: () => void;
-  onUseAsReference: () => void;
-  onDelete: () => void;
+  onUseTemplate?: () => void;
+  /** Absent on a teammate's generation, like delete. */
+  onUseAsReference?: () => void;
+  onDelete?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
   const model = lookupModel(gen.model);
+  const template = getTemplate(gen.templateId);
   const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
   const ready = gen.status === "succeeded";
   // The output is a video, so it can be a reference only once it's stored.
-  const canReference = ready && !!gen.stored;
+  const canReference = ready && !!gen.stored && !!onUseAsReference;
+  // A teammate's thumbnail isn't in this viewer's library; ask for it. A 404 leaves the first frame.
+  const cover =
+    poster ?? (gen.owner ? assetFileUrl(`videos/${gen.id}.mp4`, { owner: gen.owner.id, thumb: true }) : undefined);
 
   return (
-    <article className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
+    <article data-testid="generation-card" className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
       <div
         className={`relative w-full cursor-pointer bg-black ${ratioClass[gen.ratio] ?? "aspect-video"} max-h-[70vh]`}
         onClick={onOpen}
@@ -72,14 +92,17 @@ export function GenerationCard({
           }
         }}
       >
+        {gen.owner && <OwnerBadge owner={gen.owner} className="absolute top-2 left-2 z-10" />}
         {ready ? (
           <video
             ref={videoRef}
-            src={videoSrc(gen)}
+            // #t=0.1 makes browsers paint a frame instead of black. With a poster, nothing loads until hover.
+            src={`${videoSrc(gen)}#t=0.1`}
+            poster={cover}
             muted
             loop
             playsInline
-            preload="metadata"
+            preload={poster ? "none" : "metadata"}
             className="mx-auto size-full object-contain"
           />
         ) : (
@@ -91,14 +114,21 @@ export function GenerationCard({
         <p className="line-clamp-2 text-sm text-zinc-300" title={gen.prompt}>
           {gen.prompt || <span className="text-zinc-500 italic">No prompt</span>}
         </p>
-        {canReference && (
+        {(canReference || onUseTemplate) && (
           <div className="flex flex-wrap gap-1.5">
-            <TextAction onClick={onUseAsReference}>Use as reference</TextAction>
+            {canReference && onUseAsReference && <TextAction onClick={onUseAsReference}>Use as reference</TextAction>}
+            {onUseTemplate && (
+              <TextAction testId="use-template-again" onClick={onUseTemplate}>
+                Use this template again
+              </TextAction>
+            )}
           </div>
         )}
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap gap-1 text-[10px] text-zinc-500">
             <Meta>{model?.name ?? gen.model}</Meta>
+            {template && <Meta>{template.name}</Meta>}
+            {gen.estimatedCost !== undefined && <Meta testId="generation-cost">~${gen.estimatedCost.toFixed(2)}</Meta>}
             <Meta>{gen.resolution}</Meta>
             <Meta>{gen.duration}s</Meta>
             <Meta>{gen.ratio}</Meta>
@@ -111,7 +141,7 @@ export function GenerationCard({
             </IconButton>
             {ready && (
               <a
-                href={`${videoSrc(gen)}?download`}
+                href={videoDownloadHref(gen)}
                 aria-label="Download"
                 title="Download"
                 className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-white"
@@ -119,9 +149,11 @@ export function GenerationCard({
                 <Download className="size-3.5" aria-hidden />
               </a>
             )}
-            <IconButton label="Delete" onClick={onDelete}>
-              <X className="size-3.5" aria-hidden />
-            </IconButton>
+            {onDelete && (
+              <IconButton label="Delete" onClick={onDelete}>
+                <X className="size-3.5" aria-hidden />
+              </IconButton>
+            )}
           </div>
         </div>
       </div>
@@ -161,14 +193,19 @@ export function StatusOverlay({ gen, elapsed }: { gen: Generation; elapsed: numb
   );
 }
 
-function Meta({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-md bg-white/5 px-1.5 py-0.5">{children}</span>;
+function Meta({ children, testId }: { children: React.ReactNode; testId?: string }) {
+  return (
+    <span data-testid={testId} className="rounded-md bg-white/5 px-1.5 py-0.5">
+      {children}
+    </span>
+  );
 }
 
-function TextAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function TextAction({ onClick, children, testId }: { onClick: () => void; children: React.ReactNode; testId?: string }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onClick}
       className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
     >
