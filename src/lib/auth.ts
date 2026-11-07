@@ -9,6 +9,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { cookies, headers } from "next/headers";
 import { connection } from "next/server";
 import { isStudioProvider, type StudioProviderId } from "./registry";
+import { CONNECTOR_USER_HEADER, connectorUserId } from "./connectorToken";
 import { randomToken, sha256 } from "./crypto";
 import { env, first, run } from "./db";
 
@@ -159,7 +160,17 @@ export async function destroySession() {
 export async function currentUser(): Promise<User | undefined> {
   // Per-request (never prerendered): reads the Worker env and the request's identity.
   await connection();
+  const connector = (await headers()).get(CONNECTOR_USER_HEADER);
+  if (connector) return connectorUser(connector);
   return authMode() === "access" ? accessUser() : sessionUser();
+}
+
+/** An in-process call from the Claude connector (see connectorToken.ts). An unknown token is nobody. */
+async function connectorUser(token: string): Promise<User | undefined> {
+  const userId = connectorUserId(token);
+  if (!userId) return undefined;
+  const row = await first<UserRow>("SELECT * FROM users WHERE id = ?", userId);
+  return row && toUser(row);
 }
 
 export async function requireUser(): Promise<User> {

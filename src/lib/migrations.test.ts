@@ -45,7 +45,8 @@ describe("migration 0012", () => {
     assert.equal(files.filter((file) => file.startsWith("0014_")).length, 1);
     assert.equal(files.filter((file) => file.startsWith("0015_")).length, 1);
     assert.equal(files.filter((file) => file.startsWith("0016_")).length, 1);
-    assert.equal(files.at(-1), "0016_drop_buckets.sql");
+    assert.equal(files.filter((file) => file.startsWith("0017_")).length, 1);
+    assert.equal(files.at(-1), "0017_connector_calls.sql");
   });
 
   it("copies a personal workspace provider and leaves nulls alone", () => {

@@ -152,6 +152,7 @@ export async function POST(request: Request) {
   try {
     const user = await requireUser();
     const req = (await request.json()) as GenerateRequest;
+    const dryRun = new URL(request.url).searchParams.has("dryRun");
     // Before keys, storage, or a provider call. A non-list throws inside the slot copy.
     const slotsError = templateSlotsError((req as { templateSlots?: unknown }).templateSlots);
     if (slotsError) return Response.json({ error: slotsError }, { status: 400 });
@@ -249,6 +250,8 @@ export async function POST(request: Request) {
         : undefined;
     if (typeof req.continueFrom === "string" && req.continueFrom && !continued)
       return Response.json({ error: "That video is no longer in your feed." }, { status: 400 });
+    // ?dryRun: every check above passed. Report the price without starting anything.
+    if (dryRun) return Response.json({ model: model.id, route: run.provider, estimatedCost: estimate });
     let taskId: string;
     let falUrls: { falStatusUrl: string; falResponseUrl: string; falCancelUrl: string } | undefined;
     if (run.provider === "fal") {

@@ -107,6 +107,9 @@ export async function POST(request: Request) {
         megapixels: imagePriceMegapixels(model, priceInput),
       }) ?? 0;
 
+    // ?dryRun: every check above passed. Report the price without queueing anything.
+    if (new URL(request.url).searchParams.has("dryRun"))
+      return Response.json({ model: model.id, route: imageProvider, estimatedCost: estimate });
     const look = keptLook(req.look);
     const lookSwatch = typeof req.lookSwatch === "string" && refs.includes(req.lookSwatch) ? req.lookSwatch : undefined;
     const now = Date.now();

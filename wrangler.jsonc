@@ -28,7 +28,14 @@
   "triggers": { "crons": ["* * * * *"] },
   // Served only on the custom domain, which Cloudflare Access protects. The workers.dev
   // and preview URLs would bypass Access, so they're off.
-  "routes": [{ "pattern": "reelfling.com", "custom_domain": true }],
+  // mcp.reelfling.com is the Claude connector (src/mcp). It must stay outside Cloudflare Access:
+  // Claude calls it from Anthropic's servers with an OAuth token.
+  "routes": [
+    { "pattern": "reelfling.com", "custom_domain": true },
+    { "pattern": "mcp.reelfling.com", "custom_domain": true }
+  ],
+  // OAuth clients, grants and tokens for the connector (hashed; see @cloudflare/workers-oauth-provider).
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "ec192a1a883f47398d5a5fa715f0d139" }],
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true },

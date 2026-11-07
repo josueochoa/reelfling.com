@@ -9,6 +9,8 @@ import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-asyn
 import { HeadersAdapter } from "next/dist/server/web/spec-extension/adapters/headers.js";
 import { RequestCookiesAdapter } from "next/dist/server/web/spec-extension/adapters/request-cookies.js";
 import { RequestCookies } from "next/dist/server/web/spec-extension/cookies.js";
+import { currentUser } from "@/lib/auth";
+import { CONNECTOR_USER_HEADER, registerConnectorCall } from "@/lib/connectorToken";
 import { sha256 } from "@/lib/crypto";
 import { setTestEnv, type AppEnv } from "@/lib/db";
 import { saveKey } from "@/lib/keys";
@@ -65,14 +67,14 @@ setTestEnv({
 await saveKey(USER, "fal", KEY);
 
 const { POST } = await import("./route");
-const { PATCH: patchMe } = await import("../me/route");
+const { GET: getMe, PATCH: patchMe } = await import("../me/route");
 
 type Storage = { run: <T>(store: object, fn: () => Promise<T>) => Promise<T> };
 
 /** `requireUser` reads cookies through Next's request store. */
-function asRequest<T>(fn: () => Promise<T>) {
-  const headers = HeadersAdapter.seal(new Headers());
-  const cookies = RequestCookiesAdapter.seal(new RequestCookies(new Headers({ cookie: `sid=${TOKEN}` })));
+function asRequest<T>(fn: () => Promise<T>, init: { headers?: HeadersInit; cookie?: string } = { cookie: `sid=${TOKEN}` }) {
+  const headers = HeadersAdapter.seal(new Headers(init.headers));
+  const cookies = RequestCookiesAdapter.seal(new RequestCookies(new Headers(init.cookie ? { cookie: init.cookie } : {})));
   const work = workAsyncStorage as unknown as Storage;
   const unit = workUnitAsyncStorage as unknown as Storage;
   return work.run({ forceStatic: false }, () =>
@@ -157,10 +159,10 @@ function installFetch(refuse: boolean) {
   }) as typeof fetch;
 }
 
-async function post(body: unknown) {
+async function post(body: unknown, query = "") {
   return asRequest(() =>
     POST(
-      new Request("https://internal.invalid/api/generations", {
+      new Request(`https://internal.invalid/api/generations${query}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -309,6 +311,37 @@ describe("POST /api/generations", () => {
     assert.deepEqual(calls, []);
     const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
     assert.equal(rows.n, 0);
+  });
+});
+
+describe("dry runs and the Claude connector", () => {
+  it("prices a dry run without calling the provider or saving anything", async () => {
+    const endpoint = [...FAL_VIDEO_ENDPOINTS][0];
+    const model = modelFor(endpoint);
+    installFetch(true);
+    const res = await post(requestFor(model), "?dryRun");
+    const body = (await res.json()) as { model: string; route: string; estimatedCost: number };
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.model, model.id);
+    assert.equal(body.route, "fal");
+    assert.equal(typeof body.estimatedCost, "number");
+    assert.equal(calls.length, 0);
+    const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
+    assert.equal(rows.n, 0);
+  });
+
+  it("signs in an in-process connector call only while its token is registered", async () => {
+    const as = (token: string, cookie?: string) =>
+      asRequest(() => currentUser(), { headers: { [CONNECTOR_USER_HEADER]: token }, cookie });
+    const call = registerConnectorCall(USER);
+    assert.equal((await as(call.token))?.id, USER);
+    const me = await asRequest(() => getMe(), { headers: { [CONNECTOR_USER_HEADER]: call.token } });
+    assert.equal(((await me.json()) as { user: { id: string } }).user.id, USER);
+    call.release();
+    assert.equal(await as(call.token), undefined);
+    assert.equal(await as("made-up-token"), undefined);
+    // A connector header that doesn't match wins over a valid session: it is nobody, not the cookie's user.
+    assert.equal(await as("made-up-token", `sid=${TOKEN}`), undefined);
   });
 });
 
