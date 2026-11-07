@@ -81,6 +81,9 @@ export function VideoStudio({
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
   const feedEl = useRef<HTMLElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // Phones show the settings or the generations, not both. From md they sit side by side.
+  const [pane, setPane] = useState<"create" | "results">("create");
   const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
@@ -109,6 +112,11 @@ export function VideoStudio({
     setGalleryOpen(false);
   }
 
+  function showPane(next: "create" | "results") {
+    setPane(next);
+    if (root.current) root.current.scrollTop = 0;
+  }
+
   useImperativeHandle(ref, () => ({
     addReference(item) {
       if (!panel.current) {
@@ -116,6 +124,7 @@ export function VideoStudio({
         return;
       }
       revealComposer();
+      showPane("create");
       panel.current.add(item);
     },
     setStartFrame(item) {
@@ -124,6 +133,7 @@ export function VideoStudio({
         return;
       }
       revealComposer();
+      showPane("create");
       panel.current.setStartFrame(item);
     },
     reload() {
@@ -188,6 +198,7 @@ export function VideoStudio({
     try {
       upsert(await apiJson<Generation>("/api/generations", { method: "POST", body: JSON.stringify(req) }));
       if (req.templateId) setGalleryOpen(false);
+      showPane("results");
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -208,6 +219,7 @@ export function VideoStudio({
     setTemplateInitial(initial);
     setTemplateKey((key) => key + 1);
     setLibraryOpen(false);
+    showPane("create");
   }
 
   function openTemplateAgain(gen: Generation) {
@@ -232,6 +244,7 @@ export function VideoStudio({
   function reuse(gen: Generation, extra?: { frameKey?: string; continueFrom?: string }) {
     setOpen(null);
     setTemplateId(null);
+    showPane("create");
     const available = new Set(library.items.flatMap((i) => (i.key ? [i.key] : [])));
     // A teammate's frames and references are in their storage, so only the settings come over.
     const theirs = gen.owner;
@@ -321,6 +334,7 @@ export function VideoStudio({
       return;
     }
     revealComposer();
+    showPane("create");
     if (gen.status !== "succeeded" || !gen.stored) return;
     const item = await outputItem(gen);
     if (!item) {
@@ -377,9 +391,32 @@ export function VideoStudio({
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
-    // Side by side from md. Narrower screens scroll the panel and the feed as one page.
-    <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
-      <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel md:h-full md:min-h-0 md:w-[340px] md:overflow-hidden md:border-r md:border-b-0 lg:w-[400px]">
+    // Side by side from md. Narrower screens switch between the panel and the feed.
+    <div ref={root} className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+      <div className="sticky top-0 z-20 flex gap-1 border-b border-white/5 bg-ink/90 p-2 backdrop-blur md:hidden">
+        {(
+          [
+            ["create", "Create"],
+            ["results", "Generations"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            data-testid={`video-pane-${id}`}
+            aria-pressed={pane === id}
+            onClick={() => showPane(id)}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-body ${pane === id ? "bg-surface-3 text-fg" : "text-fg-muted"}`}
+          >
+            {label}
+            {id === "results" && active > 0 && <span className="size-1.5 animate-pulse rounded-full bg-accent" />}
+            {id === "results" && <span className="text-zinc-500">{generations.length}</span>}
+          </button>
+        ))}
+      </div>
+      <aside
+        className={`${pane === "create" ? "flex" : "hidden"} w-full shrink-0 flex-col bg-panel md:flex md:h-full md:min-h-0 md:w-[340px] md:overflow-hidden md:border-r md:border-white/5 lg:w-[400px]`}
+      >
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
           <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
             API keys
@@ -400,6 +437,7 @@ export function VideoStudio({
               onOpenLibrary={() => {
                 setGalleryOpen(false);
                 setLibraryOpen(true);
+                showPane("results");
               }}
               onReferencesChange={setRefLabels}
               models={models}
@@ -433,7 +471,10 @@ export function VideoStudio({
         )}
       </aside>
 
-      <main ref={feedEl} className="@container md:min-h-0 md:flex-1 md:overflow-y-auto">
+      <main
+        ref={feedEl}
+        className={`${pane === "results" ? "" : "hidden"} @container md:block md:min-h-0 md:flex-1 md:overflow-y-auto`}
+      >
         {libraryOpen ? (
           <UploadsPanel
             library={library}
@@ -455,7 +496,7 @@ export function VideoStudio({
           />
         ) : (
           <>
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-ink/80 px-6 py-4 backdrop-blur">
+            <div className="flex items-center justify-between border-b border-white/5 bg-ink/80 px-6 py-4 backdrop-blur md:sticky md:top-0 md:z-10">
               <h1 className="text-sm font-medium text-zinc-300">
                 Generations <span className="text-zinc-500">· {generations.length}</span>
               </h1>
