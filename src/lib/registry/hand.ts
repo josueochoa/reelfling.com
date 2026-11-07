@@ -53,7 +53,8 @@ function image(model: ImageModel & { price: NonNullable<ImageModel["price"]> }):
   return model;
 }
 
-const perImage = (price: Record<ImageResolution, number>) => ({ type: "per_image" as const, byResolution: price });
+/** One price per resolution the route offers. GPT Image 2.6 has no 4K, for example. */
+const perImage = (price: Partial<Record<ImageResolution, number>>) => ({ type: "per_image" as const, byResolution: price });
 
 /** Per-second price with ArgoLink's reference-video billing (floor seconds, 5/3 minimum). */
 function argolinkSeconds(
@@ -275,6 +276,38 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       promptExpansion: false,
     },
     price: perImage({ "1k": 0.02, "2k": 0.02, "4k": 0.025 }),
+  }),
+  image({
+    // https://argolink.io/en/models/gpt-image-2.6-sunburst — 1K and 2K only; there is no 4K tier.
+    id: "gpt-image-2.6-sunburst",
+    family: "GPT Image",
+    name: "GPT Image 2.6 Sunburst",
+    mark: "✺",
+    description: "OpenAI's newest image model, with more consistent edits.",
+    group: "image",
+    task: "image",
+    tasks: ["image", "image-edit"],
+    routes: [
+      { provider: "argolink", endpoint: "gpt-image-2.6-sunburst", mapper: "argolink.image.openai", price: perImage({ "1k": 0.015, "2k": 0.015 }) },
+      {
+        provider: "openrouter",
+        endpoint: "openai/gpt-image-2.6-sunburst",
+        mapper: "openrouter.image",
+        price: perImage({ "1k": 0.04, "2k": 0.08 }),
+      },
+    ],
+    promptRequired: true,
+    refSyntax: "plain",
+    capabilities: {
+      ratios: ["auto", "1:1", "3:4", "4:3", "2:3", "3:2", "9:16", "16:9", "21:9", "5:2"],
+      resolutions: ["1k", "2k"],
+      qualities: ["auto", "low", "medium", "high"],
+      references: { image: 16, video: 0, audio: 0, total: 16 },
+      maxImages: 4,
+      seed: false,
+      promptExpansion: false,
+    },
+    price: perImage({ "1k": 0.015, "2k": 0.015 }),
   }),
   image({
     id: "gpt-image-2.5-sunburst",

@@ -106,6 +106,25 @@ describe("model registry", () => {
     assert.ok(fiveSeconds !== undefined && Math.abs(fiveSeconds - 0.76) < 0.02);
   });
 
+  it("prices every resolution an image model offers, on every route", () => {
+    for (const model of imageModels())
+      for (const price of [model.price, ...model.routes.map((route) => route.price)]) {
+        if (price?.type !== "per_image") continue;
+        for (const resolution of model.capabilities.resolutions)
+          assert.equal(typeof price.byResolution?.[resolution], "number", `${model.id} ${resolution}`);
+      }
+    const sunburst = imageModels().find((model) => model.id === "gpt-image-2.6-sunburst");
+    assert.ok(sunburst);
+    assert.deepEqual(sunburst.capabilities.resolutions, ["1k", "2k"]);
+    assert.deepEqual(
+      sunburst.routes.map((route) => [route.provider, route.endpoint]),
+      [
+        ["argolink", "gpt-image-2.6-sunburst"],
+        ["openrouter", "openai/gpt-image-2.6-sunburst"],
+      ],
+    );
+  });
+
   it("bills ArgoLink Seedance 2.5 reference video at the with-video rate", () => {
     const model = getModel("seedance-2.5");
     assert.ok(model);
