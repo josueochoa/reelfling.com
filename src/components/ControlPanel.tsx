@@ -920,7 +920,8 @@ export function ControlPanel({
         )}
       </div>
 
-      <div data-testid="generate-bar" className="border-t border-white/5 p-5">
+      {/* Stays on screen while a phone scrolls the panel with the page. */}
+      <div data-testid="generate-bar" className="sticky bottom-0 z-10 border-t border-white/5 bg-panel p-5 md:static">
         {error && <p className="mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>}
         {!gate.available && (
           <div className="mb-3">

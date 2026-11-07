@@ -284,7 +284,7 @@ export function TemplateForm({
           );
         })}
       </div>
-      <div className="border-t border-line p-5">
+      <div className="sticky bottom-0 z-10 border-t border-line bg-panel p-5 md:static">
         {(formError || error) && (
           <p data-testid="template-error" role="alert" className="mb-3 rounded-md bg-surface-3 px-3 py-2 text-body text-fg">
             {formError || error}

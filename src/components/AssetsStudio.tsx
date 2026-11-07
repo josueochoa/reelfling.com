@@ -153,16 +153,17 @@ export function AssetsStudio({
   const usage = me?.storage;
 
   return (
-    <div className="flex h-full flex-col lg:flex-row">
-      <aside className="flex shrink-0 flex-col gap-1 border-b border-white/5 bg-panel p-3 lg:w-64 lg:border-r lg:border-b-0">
+    <div className="flex h-full flex-col md:flex-row">
+      {/* A sidebar from md; a scrolling row of filters above the grid on phones. */}
+      <aside className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/5 bg-panel p-2 [scrollbar-width:none] md:w-56 md:flex-col md:border-r md:border-b-0 md:p-3 lg:w-64">
         {KINDS.map((k, i) => {
           const s = stats(k.value);
           return (
-            <div key={k.value}>
-              {i === 1 && <p className="px-3 pt-4 pb-1 text-xs text-zinc-500">By type</p>}
+            <div key={k.value} className="shrink-0">
+              {i === 1 && <p className="hidden px-3 pt-4 pb-1 text-xs text-zinc-500 md:block">By type</p>}
               <button
                 onClick={() => setKind(k.value)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left text-sm transition md:gap-3 md:px-3 md:py-2.5 ${
                   kind === k.value ? "bg-white/10 text-white ring-1 ring-accent/50" : "text-zinc-300 hover:bg-white/5"
                 }`}
               >
@@ -170,15 +171,14 @@ export function AssetsStudio({
                 <span className="flex-1">{k.label}</span>
                 <span className="text-right text-[11px] leading-tight text-zinc-500 tabular-nums">
                   {s.count}
-                  <br />
-                  {formatBytes(s.bytes)}
+                  <span className="hidden md:block">{formatBytes(s.bytes)}</span>
                 </span>
               </button>
             </div>
           );
         })}
         {usage && (
-          <div className="mt-auto hidden px-3 pt-6 text-xs lg:block">
+          <div className="mt-auto hidden px-3 pt-6 text-xs md:block">
             <div className="flex justify-between text-zinc-400">
               <span>Storage</span>
               <span className="tabular-nums">

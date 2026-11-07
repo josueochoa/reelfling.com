@@ -2,7 +2,7 @@
 
 // The Video tab: Seedance generations with the control panel on the left.
 
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { shouldPollFal, type FalJobView } from "@/lib/falTypes";
 import { restoreInputs } from "@/lib/inputs";
 import { assetBytesUrl, extractLastFrame, generationBytesUrl } from "@/lib/lastFrame";
@@ -20,7 +20,8 @@ import { ControlPanel, type ControlPanelHandle, type Preset } from "./ControlPan
 import { GenerationCard, StatusOverlay, useElapsed, videoSrc } from "./GenerationCard";
 import { TemplateForm } from "./TemplateForm";
 import { TemplateGallery, type FilterId } from "./TemplateGallery";
-import type { Library, LibraryItem } from "./library";
+import { thumbSrc, type Library, type LibraryItem } from "./library";
+import { useLazyThumbs } from "./MediaBlocks";
 import { UploadsPanel } from "./UploadsPanel";
 import { Viewer } from "./Viewer";
 import { videoDetails } from "./viewer/details";
@@ -76,6 +77,7 @@ export function VideoStudio({
   const [templateKey, setTemplateKey] = useState(0);
   const [refLabels, setRefLabels] = useState<Map<string, string>>(new Map());
   const panel = useRef<ControlPanelHandle>(null);
+  const feedEl = useRef<HTMLElement>(null);
   const defaultProvider = me?.user.activeProvider ?? null;
   const [routePreferences, setRoutePreferences] = useState<Record<string, string>>(me?.routePreferences ?? {});
   const gensRef = useRef(generations);
@@ -346,12 +348,24 @@ export function VideoStudio({
     group.parts.flatMap((item) => (item.kind === "generation" ? [item.gen] : [])),
   );
   const openIndex = open ? clips.findIndex((item) => item.id === open.id) : -1;
+  // Stored videos' library entries: their thumbnails are the cards' posters, made as cards scroll into view.
+  const videoAssets = useMemo(
+    () => new Map(library.items.flatMap((i) => (i.key?.startsWith("videos/") ? [[i.key, i] as const] : []))),
+    [library.items],
+  );
+  const assetOf = (gen: Generation) => videoAssets.get(`videos/${gen.id}.mp4`);
+  const cardAssets = useMemo(
+    () => generations.flatMap((gen) => videoAssets.get(`videos/${gen.id}.mp4`) ?? []),
+    [generations, videoAssets],
+  );
+  useLazyThumbs(feedEl, cardAssets, library.ensureThumb);
   const models = sortByAvailability(catalog(), (model) => availabilityFor(routeProviders(model.routes), keyed).available);
   const active = generations.filter((g) => !TERMINAL_STATUSES.includes(g.status)).length;
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:flex-row">
-      <aside className="flex min-h-0 w-full shrink-0 flex-col overflow-hidden border-b border-white/5 bg-panel lg:h-full lg:w-[400px] lg:border-r lg:border-b-0">
+    // Side by side from md. Narrower screens scroll the panel and the feed as one page.
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
+      <aside className="flex w-full shrink-0 flex-col border-b border-white/5 bg-panel md:h-full md:min-h-0 md:w-[340px] md:overflow-hidden md:border-r md:border-b-0 lg:w-[400px]">
         <header className="flex items-center justify-between px-5 pt-4 pb-2 text-xs">
           <button onClick={onOpenKeys} className="text-zinc-500 hover:text-zinc-300">
             API keys
@@ -405,7 +419,7 @@ export function VideoStudio({
         )}
       </aside>
 
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      <main ref={feedEl} className="@container md:min-h-0 md:flex-1 md:overflow-y-auto">
         {libraryOpen ? (
           <UploadsPanel
             library={library}
@@ -476,7 +490,7 @@ export function VideoStudio({
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 2xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 p-4 @xl:grid-cols-2 @xl:p-6 @[70rem]:grid-cols-3">
                 {feed.map((group) => {
                   const numbered = isNumberedSequence(group.parts);
                   const cards = group.parts.map((item) => {
@@ -484,8 +498,9 @@ export function VideoStudio({
                       item.kind === "extend"
                         ? generations.find((gen) => gen.id === item.job.sourceGenerationId)
                         : undefined;
+                    const asset = item.kind === "generation" ? assetOf(item.gen) : undefined;
                     return (
-                      <div key={item.id}>
+                      <div key={item.id} data-asset-id={asset?.id}>
                         {numbered && (
                           <p data-testid="sequence-part" className="mb-1.5 text-[11px] font-medium text-zinc-400">
                             Part {item.part}
@@ -494,6 +509,7 @@ export function VideoStudio({
                         {item.kind === "generation" ? (
                           <GenerationCard
                             gen={item.gen}
+                            poster={asset?.hasThumb ? thumbSrc(asset) : undefined}
                             onOpen={() => setOpen(item.gen)}
                             onReuse={() => reuse(item.gen)}
                             onUseTemplate={
@@ -532,7 +548,7 @@ export function VideoStudio({
                       <h2 className="mb-3 text-xs font-medium tracking-wide text-zinc-400 uppercase">
                         Sequence · {group.parts.length} parts
                       </h2>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">{cards}</div>
+                      <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @[70rem]:grid-cols-3">{cards}</div>
                     </section>
                   );
                 })}

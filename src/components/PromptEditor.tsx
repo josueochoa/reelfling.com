@@ -51,6 +51,8 @@ interface Props {
   /** Shown when the user types #. Choosing one calls onAddCamera and removes the # query. */
   cameras?: CameraPick[];
   onAddCamera?: (id: string) => void;
+  /** Starts shorter and grows with the text, for a composer floating over the grid. */
+  compact?: boolean;
 }
 
 const ALIASES: Record<RefKind, string[]> = {
@@ -78,6 +80,7 @@ export function PromptEditor({
   counts,
   cameras,
   onAddCamera,
+  compact = false,
 }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -321,7 +324,7 @@ export function PromptEditor({
           onMouseLeave={() => setHover(null)}
           rows={5}
           placeholder={placeholder}
-          className={`relative block max-h-80 min-h-32 w-full resize-none bg-transparent outline-none [field-sizing:content] placeholder:text-zinc-600 ${BOX}`}
+          className={`relative block w-full resize-none ${compact ? "max-h-[40dvh] min-h-20" : "max-h-80 min-h-32"} bg-transparent outline-none [field-sizing:content] placeholder:text-zinc-600 ${BOX}`}
         />
       </div>
       {hover && !showPopup && (

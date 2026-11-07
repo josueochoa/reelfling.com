@@ -15,6 +15,7 @@ import type { ImageGeneration } from "@/lib/images";
 import type { StudioTabHandle } from "./VideoStudio";
 import { remapMentions } from "@/lib/mentions";
 import { api, apiJson, type Me } from "./api";
+import { formatSecs } from "./GenerationCard";
 import { ImageComposer, type ComposerState } from "./ImageComposer";
 import { resolvePaletteSwatch, type SwatchMemory } from "./paletteSwatch";
 import { thumbSrc, type Library, type LibraryItem } from "./library";
@@ -339,27 +340,65 @@ export function ImageStudio({
                 key={`${gen.id}-${i}`}
                 className="group relative mb-3 break-inside-avoid overflow-hidden rounded-xl bg-white/[0.04]"
               >
-                {gen.status === "succeeded" ? (
-                  <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imageUrl(gen, i)} alt={gen.prompt} loading="lazy" className="w-full" />
-                  </button>
-                ) : gen.status === "failed" ? (
-                  <div style={aspectStyle(gen.aspect)} className="grid place-items-center p-4 text-center">
-                    <div>
-                      <p className="text-sm text-red-300">Failed</p>
-                      <p className="mt-1 line-clamp-4 text-xs text-zinc-500">{gen.error}</p>
+                {/* The hover actions sit on the image, so the bar below never covers them. */}
+                <div className="relative">
+                  {gen.status === "succeeded" ? (
+                    <button onClick={() => setOpen({ id: gen.id, i })} className="block w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={imageUrl(gen, i)} alt={gen.prompt} loading="lazy" className="w-full" />
+                    </button>
+                  ) : gen.status === "failed" ? (
+                    <div style={aspectStyle(gen.aspect)} className="grid place-items-center p-4 text-center">
+                      <div>
+                        <p className="text-sm text-red-300">Failed</p>
+                        <p className="mt-1 line-clamp-4 text-xs text-zinc-500">{gen.error}</p>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div style={aspectStyle(gen.aspect)} className="relative">
-                    <Skeleton fill />
-                    <span className="absolute inset-0 grid place-items-center text-xs text-zinc-400 tabular-nums">
-                      {gen.status === "queued" ? "Queued" : "Generating"} ·{" "}
-                      {Math.max(0, Math.floor((now - (gen.startedAt ?? gen.createdAt)) / 1000))}s
-                    </span>
-                  </div>
-                )}
+                  ) : (
+                    <div style={aspectStyle(gen.aspect)} className="relative">
+                      <Skeleton fill />
+                      <span className="absolute inset-0 grid place-items-center text-xs text-zinc-400 tabular-nums">
+                        {gen.status === "queued" ? "Queued" : "Generating"} ·{" "}
+                        {formatSecs(Math.max(0, Math.floor((now - (gen.startedAt ?? gen.createdAt)) / 1000)))}
+                      </span>
+                    </div>
+                  )}
+                  {gen.status !== "running" && gen.status !== "queued" && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 pt-8 opacity-0 transition group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
+                      <p className="line-clamp-2 min-w-0 flex-1 text-xs text-zinc-200">{gen.prompt}</p>
+                      <div className="pointer-events-auto flex gap-1">
+                        {i >= 0 && (
+                          <a
+                            href={imageUrl(gen, i, true)}
+                            aria-label="Download"
+                            title="Download"
+                            className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
+                          >
+                            <Download className="size-3.5" aria-hidden />
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => reuse(gen)}
+                          aria-label="Reuse prompt and settings"
+                          title="Reuse prompt and settings"
+                          className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
+                        >
+                          <RotateCcw className="size-3.5" aria-hidden />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => remove(gen)}
+                          aria-label="Delete"
+                          title="Delete"
+                          className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
+                        >
+                          <X className="size-3.5" aria-hidden />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {gen.status === "succeeded" && i >= 0 && (
                   <div className="relative z-10 flex flex-wrap gap-1 border-t border-white/5 bg-ink/40 p-1.5">
                     <button
@@ -376,41 +415,6 @@ export function ImageStudio({
                     >
                       Use as reference
                     </button>
-                  </div>
-                )}
-                {gen.status !== "running" && gen.status !== "queued" && (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-1 bg-gradient-to-t from-black/80 to-transparent p-2 pt-8 opacity-0 transition group-hover:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
-                    <p className="line-clamp-2 min-w-0 flex-1 text-xs text-zinc-200">{gen.prompt}</p>
-                    <div className="pointer-events-auto flex gap-1">
-                      {i >= 0 && (
-                        <a
-                          href={imageUrl(gen, i, true)}
-                          aria-label="Download"
-                          title="Download"
-                          className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
-                        >
-                          <Download className="size-3.5" aria-hidden />
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => reuse(gen)}
-                        aria-label="Reuse prompt and settings"
-                        title="Reuse prompt and settings"
-                        className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
-                      >
-                        <RotateCcw className="size-3.5" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remove(gen)}
-                        aria-label="Delete"
-                        title="Delete"
-                        className="grid size-7 place-items-center rounded-full bg-black/70 text-xs hover:bg-black"
-                      >
-                        <X className="size-3.5" aria-hidden />
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>

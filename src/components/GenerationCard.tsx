@@ -23,7 +23,10 @@ export function useElapsed(gen: Generation) {
 }
 
 export function formatSecs(s: number) {
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, "0")}m`;
+  return `${Math.floor(s / 86400)}d ${Math.floor(s / 3600) % 24}h`;
 }
 
 const ratioClass: Record<string, string> = {
@@ -42,8 +45,11 @@ export function GenerationCard({
   onUseTemplate,
   onUseAsReference,
   onDelete,
+  poster,
 }: {
   gen: Generation;
+  /** Thumbnail shown before the video loads. */
+  poster?: string;
   onOpen: () => void;
   onReuse: () => void;
   onUseTemplate?: () => void;
@@ -79,11 +85,13 @@ export function GenerationCard({
         {ready ? (
           <video
             ref={videoRef}
-            src={videoSrc(gen)}
+            // #t=0.1 makes browsers paint a frame instead of black. With a poster, nothing loads until hover.
+            src={`${videoSrc(gen)}#t=0.1`}
+            poster={poster}
             muted
             loop
             playsInline
-            preload="metadata"
+            preload={poster ? "none" : "metadata"}
             className="mx-auto size-full object-contain"
           />
         ) : (

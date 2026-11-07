@@ -3,6 +3,7 @@
 // assets the first time they're shown.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { assetBytesUrl } from "@/lib/lastFrame";
 import { assetFileUrl, UPLOAD_RULES, uploadKindOf, type AssetItem, type UploadKind } from "@/lib/uploads";
 import { apiJson } from "./api";
 
@@ -220,27 +221,44 @@ function put(url: string, body: Blob, onProgress: (f: number) => void, signal: A
 
 const fromServer = (u: AssetItem): LibraryItem => ({ ...u, id: u.key, status: "ready", progress: 1 });
 
-/** Draws a small JPEG of a generated image or a video's first frame (needs CORS on the bucket). */
-function thumbFromUrl(url: string, kind: "image" | "video"): Promise<Blob | undefined> {
+const THUMB_TIMEOUT_MS = 30_000;
+
+/**
+ * Draws a small JPEG of a generated image (needs CORS on the bucket) or a video's first
+ * frame. Videos come as same-origin bytes: the tile's own <video> has already loaded the
+ * redirect's signed URL without CORS, and Chrome reuses that response, which taints the canvas.
+ */
+function thumbFromUrl(key: string, kind: "image" | "video"): Promise<Blob | undefined> {
   return new Promise((resolve) => {
+    const video = kind === "video" ? document.createElement("video") : undefined;
+    const finish = (blob: Blob | undefined) => {
+      clearTimeout(timer);
+      if (video) {
+        // Stop the download; only one frame was needed.
+        video.onloadeddata = video.onseeked = video.onerror = null;
+        video.removeAttribute("src");
+        video.load();
+      }
+      resolve(blob);
+    };
+    // A load that never settles would hold one of the two queue slots for the whole visit.
+    const timer = setTimeout(() => finish(undefined), THUMB_TIMEOUT_MS);
     const done = (source: CanvasImageSource, w: number, h: number) =>
-      canvasToJpeg(drawScaled(source, w, h, THUMB_SIDE), 0.8).then(resolve, () => resolve(undefined));
-    if (kind === "image") {
+      canvasToJpeg(drawScaled(source, w, h, THUMB_SIDE), 0.8).then(finish, () => finish(undefined));
+    if (!video) {
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => done(img, img.naturalWidth, img.naturalHeight);
-      img.onerror = () => resolve(undefined);
-      img.src = url;
+      img.onerror = () => finish(undefined);
+      img.src = assetFileUrl(key);
       return;
     }
-    const video = document.createElement("video");
-    video.crossOrigin = "anonymous";
     video.muted = true;
     video.preload = "auto";
     video.onloadeddata = () => (video.currentTime = Math.min(0.1, video.duration / 2 || 0));
     video.onseeked = () => done(video, video.videoWidth, video.videoHeight);
-    video.onerror = () => resolve(undefined);
-    video.src = url;
+    video.onerror = () => finish(undefined);
+    video.src = assetBytesUrl(key);
   });
 }
 
@@ -429,7 +447,7 @@ export function useLibrary(): Library {
         body: JSON.stringify({ key }),
       });
       if (r.done) return patch(item.id, { hasThumb: true });
-      const blob = r.uploadUrl && (await thumbFromUrl(assetFileUrl(key), item.kind as "image" | "video"));
+      const blob = r.uploadUrl && (await thumbFromUrl(key, item.kind as "image" | "video"));
       if (!blob) return;
       const put = await fetch(r.uploadUrl!, { method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
       if (!put.ok) return;
