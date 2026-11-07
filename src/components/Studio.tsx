@@ -134,7 +134,17 @@ export function Studio() {
         <FalStudio ref={fal} me={me} onOpenKeys={openKeys} />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "team" ? "" : "hidden"}`}>
-        <TeamStudio me={me} active={tab === "team"} />
+        <TeamStudio
+          me={me}
+          active={tab === "team"}
+          onChanged={() => {
+            // Teammates' work in the other tabs follows membership.
+            void loadMe();
+            video.current?.reload();
+            image.current?.reload();
+            fal.current?.reload();
+          }}
+        />
       </div>
       <div className={`min-h-0 flex-1 ${tab === "assets" ? "" : "hidden"}`}>
         <AssetsStudio

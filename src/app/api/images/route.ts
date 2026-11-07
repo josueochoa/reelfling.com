@@ -18,12 +18,18 @@ import { preferredRoute } from "@/lib/registry/routing";
 import { getRoutePreference } from "@/lib/routes";
 import { assertStorageAvailable, getAsset } from "@/lib/storage";
 import { keptLook, lookIsEmpty, type LookChoice } from "@/lib/registry/looks";
+import { teammateImage } from "@/lib/teamPolicy";
+import { newestFirst, teammateRows } from "@/lib/teammates";
 import { isAssetKey, uploadKindOf } from "@/lib/uploads";
 
 export async function GET() {
   try {
     const user = await requireUser();
-    return Response.json(await listImageGenerations(user.id));
+    const [own, shared] = await Promise.all([
+      listImageGenerations(user.id),
+      teammateRows<ImageGeneration>(user.id, "image_generations"),
+    ]);
+    return Response.json(newestFirst(own, shared.map((row) => teammateImage(row.data, row.owner))));
   } catch (e) {
     return errorResponse(e);
   }

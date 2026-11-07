@@ -1,16 +1,18 @@
 "use client";
 
-// The Assets tab: everything in the user's bucket, generated and uploaded, in one place.
+// The Assets tab: everything in the user's bucket, generated and uploaded, in one place,
+// plus their teammates' files (read-only: open and download).
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { lookupModelName } from "@/lib/registry/lookup";
 import { Play } from "@/components/ui/Icon";
 import { Select } from "@/components/ui/Select";
 import { confirmToast, toast } from "@/components/ui/Toast";
 import type { ToolView } from "@/lib/toolTypes";
-import { assetFileUrl, type AssetSource, type UploadKind } from "@/lib/uploads";
-import type { Me } from "./api";
-import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
+import { assetFileUrl, type AssetItem, type AssetSource, type UploadKind } from "@/lib/uploads";
+import { apiJson, type Me } from "./api";
+import { fileSrc, fromServer, thumbSrc, type Library, type LibraryItem } from "./library";
+import { OwnerBadge, ownerName, useTeamRefresh } from "./Owner";
 import { BulkUpscale } from "./ToolsMenu";
 import { MediaVisual, UploadOverlay, formatDuration, useLazyThumbs, usePlayer } from "./MediaBlocks";
 import { Viewer } from "./Viewer";
@@ -51,7 +53,7 @@ function dayLabel(ts: number, now: number) {
 function download(item: LibraryItem) {
   if (!item.key) return;
   const a = document.createElement("a");
-  a.href = assetFileUrl(item.key, { download: true });
+  a.href = assetFileUrl(item.key, { download: true, owner: item.owner?.id });
   a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
@@ -87,24 +89,43 @@ export function AssetsStudio({
   const [source, setSource] = useState<AssetSource | "all">("all");
   const [model, setModel] = useState("");
   const [query, setQuery] = useState("");
+  /** "" is everyone, "me" the viewer, else a teammate's user id. */
+  const [person, setPerson] = useState("");
+  const [teamList, setTeamList] = useState<LibraryItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [now] = useState(() => Date.now());
   const grid = useRef<HTMLDivElement>(null);
   const player = usePlayer();
   const { reload } = library;
+  const hasTeammates = !!me?.teammates;
+  // Left over from before the user left their last team: not shown.
+  const teamItems = hasTeammates ? teamList : [];
+  const loadTeam = useCallback(() => {
+    if (!hasTeammates) return;
+    apiJson<AssetItem[]>("/api/assets?team=1")
+      .then((list) => setTeamList(list.map(fromServer)))
+      .catch(() => {});
+  }, [hasTeammates]);
 
   useEffect(() => {
-    if (active) void reload();
-  }, [active, reload]);
+    if (!active) return;
+    void reload();
+    loadTeam();
+  }, [active, reload, loadTeam]);
+  useTeamRefresh(active && hasTeammates, loadTeam);
 
-  const items = library.items.filter((i) => i.status === "ready" || i.source === "upload");
+  const items = [...library.items.filter((i) => i.status === "ready" || i.source === "upload"), ...teamItems].sort(
+    (a, b) => b.createdAt - a.createdAt,
+  );
+  const people = [...new Map(teamItems.flatMap((i) => (i.owner ? [[i.owner.id, i.owner] as const] : []))).values()];
   const q = query.trim().toLowerCase();
   const shown = items.filter(
     (i) =>
       (kind === "all" || i.kind === kind) &&
       (source === "all" || i.source === source) &&
       (!model || i.generation?.model === model) &&
+      (!person || (person === "me" ? !i.owner : i.owner?.id === person)) &&
       (!q || i.name.toLowerCase().includes(q) || i.generation?.prompt.toLowerCase().includes(q)),
   );
   useLazyThumbs(grid, shown, library.ensureThumb);
@@ -251,6 +272,18 @@ export function AssetsStudio({
                   </button>
                 ))}
               </div>
+              {people.length > 0 && (
+                <Select
+                  label="Made by"
+                  value={person}
+                  onChange={setPerson}
+                  options={[
+                    { value: "", label: "Everyone" },
+                    { value: "me", label: "Me" },
+                    ...people.map((owner) => ({ value: owner.id, label: owner.name ?? ownerName(owner) })),
+                  ]}
+                />
+              )}
               {models.length > 0 && (
                 <Select
                   label="Model"
@@ -288,16 +321,18 @@ export function AssetsStudio({
 
         <div className="space-y-6 p-6">
           {groups.map((g) => {
-            const ids = g.items.map((i) => i.id);
-            const all = ids.every((id) => selected.has(id));
+            // Only the viewer's own files can be selected: the bulk actions delete and run tools.
+            const ids = g.items.flatMap((i) => (i.owner ? [] : [i.id]));
+            const all = ids.length > 0 && ids.every((id) => selected.has(id));
             return (
               <section key={g.label}>
                 <label className="mb-3 flex w-fit cursor-pointer items-center gap-3 text-sm font-medium">
                   <input
                     type="checkbox"
                     checked={all}
+                    disabled={!ids.length}
                     onChange={() => toggle(ids, !all)}
-                    className="size-4 accent-[var(--color-accent)]"
+                    className="size-4 accent-[var(--color-accent)] disabled:opacity-30"
                   />
                   {g.label}
                   <span className="text-xs font-normal text-zinc-500">{g.items.length}</span>
@@ -305,13 +340,14 @@ export function AssetsStudio({
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
                   {g.items.map((item) => {
                     const isSelected = selected.has(item.id);
+                    const pick = () => (selecting && !item.owner ? toggle([item.id], !isSelected) : setPreviewId(item.id));
                     return (
                       <div
                         key={item.id}
                         data-asset-id={item.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => (selecting ? toggle([item.id], !isSelected) : setPreviewId(item.id))}
+                        onClick={pick}
                         onKeyDown={(e) => e.key === "Enter" && setPreviewId(item.id)}
                         title={item.generation?.prompt ?? item.name}
                         className={`group relative aspect-square cursor-pointer overflow-hidden rounded-xl border transition ${
@@ -321,19 +357,23 @@ export function AssetsStudio({
                         <MediaVisual
                           item={item}
                           player={player}
-                          onPreview={() => (selecting ? toggle([item.id], !isSelected) : setPreviewId(item.id))}
+                          onPreview={pick}
                         />
                         <UploadOverlay item={item} />
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          aria-label="Select"
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={() => toggle([item.id], !isSelected)}
-                          className={`absolute top-2 left-2 size-4 accent-[var(--color-accent)] transition ${
-                            selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                          }`}
-                        />
+                        {item.owner ? (
+                          <OwnerBadge owner={item.owner} className="absolute top-2 left-2" />
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            aria-label="Select"
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggle([item.id], !isSelected)}
+                            className={`absolute top-2 left-2 size-4 accent-[var(--color-accent)] transition ${
+                              selecting ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                            }`}
+                          />
+                        )}
                         <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-200">
                           {item.source === "processed"
                             ? `✦ ${tools.find((tool) => tool.id === item.tool)?.name ?? item.name}${item.resolution ? ` · ${item.resolution}` : ""}`
@@ -360,19 +400,27 @@ export function AssetsStudio({
           poster={previewing.kind === "video" ? thumbSrc(previewing) : undefined}
           alt={previewing.name}
           prompt={previewing.generation?.prompt || previewing.name}
-          details={libraryDetails(previewing)}
+          details={
+            previewing.owner
+              ? [{ label: "Made by", value: previewing.owner.name ?? previewing.owner.email }, ...libraryDetails(previewing)]
+              : libraryDetails(previewing)
+          }
           peaks={previewing.peaks}
           onClose={() => setPreviewId(null)}
           onPrev={previewIndex > 0 ? () => setPreviewId(shown[previewIndex - 1].id) : undefined}
           onNext={previewIndex < shown.length - 1 ? () => setPreviewId(shown[previewIndex + 1].id) : undefined}
-          onUseAsReference={() => {
-            setPreviewId(null);
-            onUseInVideo(previewing);
-          }}
+          onUseAsReference={
+            previewing.owner
+              ? undefined
+              : () => {
+                  setPreviewId(null);
+                  onUseInVideo(previewing);
+                }
+          }
           referenceLabel="Use in Video"
           onDownload={() => download(previewing)}
-          onDelete={() => void remove([previewing.id])}
-          tools={tools}
+          onDelete={previewing.owner ? undefined : () => void remove([previewing.id])}
+          tools={previewing.owner ? undefined : tools}
           toolKind={previewing.kind === "image" || previewing.kind === "video" ? previewing.kind : undefined}
           assetKey={previewing.key}
           toolAsset={{ width: previewing.width, height: previewing.height, duration: previewing.duration }}
@@ -382,9 +430,14 @@ export function AssetsStudio({
             setPreviewId(null);
             onToolJob();
           }}
-          lineage={lineageFor(previewing, library.items, tools, setPreviewId)}
+          lineage={lineageFor(
+            previewing,
+            items.filter((other) => other.owner?.id === previewing.owner?.id),
+            tools,
+            setPreviewId,
+          )}
           extra={
-            previewing.kind === "image" ? (
+            previewing.kind === "image" && !previewing.owner ? (
               <button
                 type="button"
                 onClick={() => {

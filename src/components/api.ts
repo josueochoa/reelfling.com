@@ -11,6 +11,8 @@ export interface Me {
   routePreferences?: Record<string, string>;
   /** Named looks. Absent until /api/me has been read. */
   looks?: SavedLook[];
+  /** People sharing a team with this user. Their work shows in every tab. */
+  teammates?: number;
   auth: { mode: AuthMode; signOutUrl: string };
 }
 

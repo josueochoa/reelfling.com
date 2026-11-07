@@ -26,12 +26,14 @@ export interface LibraryItem extends Omit<AssetItem, "key"> {
 export function thumbSrc(item: LibraryItem) {
   if (item.localThumb) return item.localThumb;
   if (!item.key) return item.kind === "image" ? item.localFile : undefined;
-  if (item.hasThumb) return assetFileUrl(item.key, { thumb: true });
-  return item.kind === "image" ? assetFileUrl(item.key) : undefined;
+  const owner = item.owner?.id;
+  if (item.hasThumb) return assetFileUrl(item.key, { thumb: true, owner });
+  return item.kind === "image" ? assetFileUrl(item.key, { owner }) : undefined;
 }
 
 /** The playable file, for audio and video. */
-export const fileSrc = (item: LibraryItem) => item.localFile ?? (item.key ? assetFileUrl(item.key) : undefined);
+export const fileSrc = (item: LibraryItem) =>
+  item.localFile ?? (item.key ? assetFileUrl(item.key, { owner: item.owner?.id }) : undefined);
 
 // ---------------------------------------------------------------- preparing files
 
@@ -219,7 +221,13 @@ function put(url: string, body: Blob, onProgress: (f: number) => void, signal: A
   });
 }
 
-const fromServer = (u: AssetItem): LibraryItem => ({ ...u, id: u.key, status: "ready", progress: 1 });
+// A teammate's file can share a key with one of the viewer's, so its id names the owner too.
+export const fromServer = (u: AssetItem): LibraryItem => ({
+  ...u,
+  id: u.owner ? `${u.owner.id}:${u.key}` : u.key,
+  status: "ready",
+  progress: 1,
+});
 
 const THUMB_TIMEOUT_MS = 30_000;
 
@@ -423,7 +431,8 @@ export function useLibrary(): Library {
   const thumbQueue = useRef<LibraryItem[]>([]);
   const thumbsRunning = useRef(0);
   function ensureThumb(item: LibraryItem) {
-    if ((item.source !== "generated" && item.source !== "processed") || item.hasThumb || !item.key || thumbTried.current.has(item.key)) return;
+    // A teammate's file is theirs to thumbnail.
+    if ((item.source !== "generated" && item.source !== "processed") || item.hasThumb || !item.key || item.owner || thumbTried.current.has(item.key)) return;
     if (item.kind !== "image" && item.kind !== "video") return;
     thumbTried.current.add(item.key);
     thumbQueue.current.push(item);

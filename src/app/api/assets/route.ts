@@ -1,11 +1,13 @@
 import { deleteUserAsset } from "@/lib/assets";
 import { errorResponse, requireUser } from "@/lib/auth";
 import { listAssets } from "@/lib/storage";
+import { teammateAssets } from "@/lib/teammates";
 
-/** All of the user's assets (uploads and generated), newest first. */
-export async function GET() {
+/** All of the user's assets (uploads and generated), newest first. `?team=1`: their teammates' instead. */
+export async function GET(request: Request) {
   try {
     const user = await requireUser();
+    if (new URL(request.url).searchParams.has("team")) return Response.json(await teammateAssets(user.id));
     return Response.json(await listAssets(user.id));
   } catch (e) {
     return errorResponse(e);

@@ -7,8 +7,14 @@ import { getTemplate } from "@/lib/templates/templates";
 import { Download, RotateCcw, X } from "@/components/ui/Icon";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TERMINAL_STATUSES, type Generation } from "@/lib/types";
+import { assetFileUrl } from "@/lib/uploads";
+import { OwnerBadge } from "./Owner";
 
-export const videoSrc = (g: Generation) => `/api/generations/${g.id}/video`;
+/** A teammate's video comes through the file route, which checks the team and streams it. */
+export const videoSrc = (g: Generation) =>
+  g.owner ? assetFileUrl(`videos/${g.id}.mp4`, { owner: g.owner.id }) : `/api/generations/${g.id}/video`;
+export const videoDownloadHref = (g: Generation) =>
+  g.owner ? assetFileUrl(`videos/${g.id}.mp4`, { owner: g.owner.id, download: true }) : `${videoSrc(g)}?download`;
 
 export function useElapsed(gen: Generation) {
   const running = !TERMINAL_STATUSES.includes(gen.status);
@@ -53,8 +59,9 @@ export function GenerationCard({
   onOpen: () => void;
   onReuse: () => void;
   onUseTemplate?: () => void;
-  onUseAsReference: () => void;
-  onDelete: () => void;
+  /** Absent on a teammate's generation, like delete. */
+  onUseAsReference?: () => void;
+  onDelete?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const elapsed = useElapsed(gen);
@@ -63,7 +70,10 @@ export function GenerationCard({
   const camera = cameraSummary(gen.cameraMoves, gen.cameraMove);
   const ready = gen.status === "succeeded";
   // The output is a video, so it can be a reference only once it's stored.
-  const canReference = ready && !!gen.stored;
+  const canReference = ready && !!gen.stored && !!onUseAsReference;
+  // A teammate's thumbnail isn't in this viewer's library; ask for it. A 404 leaves the first frame.
+  const cover =
+    poster ?? (gen.owner ? assetFileUrl(`videos/${gen.id}.mp4`, { owner: gen.owner.id, thumb: true }) : undefined);
 
   return (
     <article data-testid="generation-card" className="group overflow-hidden rounded-2xl border border-white/5 bg-panel">
@@ -82,12 +92,13 @@ export function GenerationCard({
           }
         }}
       >
+        {gen.owner && <OwnerBadge owner={gen.owner} className="absolute top-2 left-2 z-10" />}
         {ready ? (
           <video
             ref={videoRef}
             // #t=0.1 makes browsers paint a frame instead of black. With a poster, nothing loads until hover.
             src={`${videoSrc(gen)}#t=0.1`}
-            poster={poster}
+            poster={cover}
             muted
             loop
             playsInline
@@ -105,7 +116,7 @@ export function GenerationCard({
         </p>
         {(canReference || onUseTemplate) && (
           <div className="flex flex-wrap gap-1.5">
-            {canReference && <TextAction onClick={onUseAsReference}>Use as reference</TextAction>}
+            {canReference && onUseAsReference && <TextAction onClick={onUseAsReference}>Use as reference</TextAction>}
             {onUseTemplate && (
               <TextAction testId="use-template-again" onClick={onUseTemplate}>
                 Use this template again
@@ -130,7 +141,7 @@ export function GenerationCard({
             </IconButton>
             {ready && (
               <a
-                href={`${videoSrc(gen)}?download`}
+                href={videoDownloadHref(gen)}
                 aria-label="Download"
                 title="Download"
                 className="grid size-7 place-items-center rounded-lg text-zinc-400 hover:bg-white/10 hover:text-white"
@@ -138,9 +149,11 @@ export function GenerationCard({
                 <Download className="size-3.5" aria-hidden />
               </a>
             )}
-            <IconButton label="Delete" onClick={onDelete}>
-              <X className="size-3.5" aria-hidden />
-            </IconButton>
+            {onDelete && (
+              <IconButton label="Delete" onClick={onDelete}>
+                <X className="size-3.5" aria-hidden />
+              </IconButton>
+            )}
           </div>
         </div>
       </div>
