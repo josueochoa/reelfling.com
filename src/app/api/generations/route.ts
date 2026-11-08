@@ -20,6 +20,7 @@ import { newestFirst, teammateRows } from "@/lib/teammates";
 import { templateRecord, templateRouteError, templateSlotsError } from "@/lib/templates/templates";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
+import { editEstimateInput, editVideoError, nearestRatio } from "@/lib/videoEdit";
 
 export async function GET() {
   try {
@@ -37,7 +38,11 @@ const na = (r: GenerateRequest) => r.referenceAudios?.length ?? 0;
 
 function mentionError(req: GenerateRequest): string | null {
   const frames = req.mode === "frames";
-  const counts = frames ? { Image: 0, Video: 0, Audio: 0 } : { Image: ni(req), Video: nv(req), Audio: na(req) };
+  const counts = frames
+    ? { Image: 0, Video: 0, Audio: 0 }
+    : req.mode === "edit"
+      ? { Image: ni(req), Video: 1, Audio: 0 }
+      : { Image: ni(req), Video: nv(req), Audio: na(req) };
   const bad = invalidMentions(req.prompt ?? "", counts);
   if (bad.length) return `Prompt references ${bad.join(", ")}, which ${bad.length === 1 ? "isn't" : "aren't"} attached`;
   return null;
@@ -118,6 +123,16 @@ function orderedBlocks(order: string[] | undefined, groups: [UploadKind, Resolve
   return ordered;
 }
 
+/** The video to edit: a library file of the right type, size and length. */
+async function editSource(userId: string, value: string) {
+  const key = isUploadRef(value) ? uploadKeyOf(value) : "";
+  const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
+  if (!asset) return { error: "The video to edit is no longer in your uploads. Add it again." } as const;
+  const error = editVideoError({ contentType: asset.contentType, bytes: asset.bytes, duration: asset.meta?.duration });
+  if (error) return { error } as const;
+  return { asset, seconds: asset.meta!.duration! } as const;
+}
+
 /** Omit when there is no reference video. `0` still selects the with-video rate. */
 async function referenceVideoSecondsOf(userId: string, req: GenerateRequest): Promise<number | undefined> {
   if (req.mode === "frames" || !req.referenceVideos?.length) return undefined;
@@ -174,18 +189,31 @@ export async function POST(request: Request) {
     if (!run) return Response.json({ error: "This model isn't available on the video tab." }, { status: 400 });
     const templateError = templateRouteError(req, run.provider);
     if (templateError) return Response.json({ error: templateError }, { status: 400 });
+    const edit = req.mode === "edit";
+    if (edit && run.provider !== "argolink")
+      return Response.json({ error: `${model.name} edits videos on ArgoLink only.` }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
+    const source = edit ? await editSource(user.id, req.editVideo!) : undefined;
+    if (source && "error" in source) return Response.json({ error: source.error }, { status: 400 });
+    if (source) {
+      // Length and shape come from the video. Settings that change the prompt or the clip don't apply.
+      req.duration = source.seconds;
+      req.ratio = nearestRatio(model.capabilities.ratios, source.asset.meta?.width, source.asset.meta?.height);
+      for (const field of ["generateAudio", "cameraMoves", "cameraMove", "cameraFixed", "look", "lookSwatch", "promptExpansion", "firstFrame", "lastFrame", "middleFrames", "continueFrom"] as const)
+        delete req[field];
+    }
     // The result will be copied into the user's bucket, so don't start one they can't keep.
     await assertStorageAvailable(user.id);
     const referenceVideoSeconds = await referenceVideoSecondsOf(user.id, req);
     const estimate =
-      estimateRouteCost(model, run.provider, {
-        resolution: req.resolution,
-        duration: req.duration,
-        audio: !!req.generateAudio,
-        referenceVideoSeconds,
-      }) ?? 0;
+      estimateRouteCost(
+        model,
+        run.provider,
+        source
+          ? editEstimateInput(req.resolution, source.seconds)
+          : { resolution: req.resolution, duration: req.duration, audio: !!req.generateAudio, referenceVideoSeconds },
+      ) ?? 0;
 
     const caps = model.capabilities;
     if (!caps.audio) delete req.generateAudio;
@@ -200,9 +228,14 @@ export async function POST(request: Request) {
       frames && req.firstFrame && req.lastFrame ? resolveOne(user.id, req.lastFrame, "image") : undefined,
       middleValues?.length ? Promise.all(middleValues.map((value) => resolveOne(user.id, value, "image"))) : undefined,
       resolveList(user.id, frames ? undefined : req.referenceImages, "image"),
-      resolveList(user.id, frames ? undefined : req.referenceVideos, "video"),
-      resolveList(user.id, frames ? undefined : req.referenceAudios, "audio"),
+      resolveList(user.id, frames || edit ? undefined : req.referenceVideos, "video"),
+      resolveList(user.id, frames || edit ? undefined : req.referenceAudios, "audio"),
     ]);
+    const editVideo = source && {
+      url: await providerUrl(source.asset),
+      key: source.asset.key,
+      name: source.asset.name?.trim().slice(0, 120) || source.asset.key.split("/").pop(),
+    };
     const blocks = frames
       ? undefined
       : orderedBlocks(req.referenceOrder, [
@@ -237,6 +270,7 @@ export async function POST(request: Request) {
         referenceImages: referenceImages?.map((media) => media.url),
         referenceVideos: referenceVideos?.map((media) => media.url),
         referenceAudios: referenceAudios?.map((media) => media.url),
+        editVideo: editVideo?.url,
       }),
     );
     // A missing fal key would 400 after the part was claimed. Check it first.
@@ -276,8 +310,8 @@ export async function POST(request: Request) {
       firstFrame: frames && !!first,
       lastFrame: frames && !!first && !!last,
       images: frames ? 0 : ni(req),
-      videos: frames ? 0 : nv(req),
-      audios: frames ? 0 : na(req),
+      videos: frames ? 0 : edit ? 1 : nv(req),
+      audios: frames || edit ? 0 : na(req),
       ...frameFields(first, "firstFrameKey"),
       ...frameFields(last, "lastFrameKey"),
       ...(middle?.some((item) => item.key)
@@ -288,6 +322,7 @@ export async function POST(request: Request) {
           }
         : {}),
       ...(blocks && blocks.length > 0 && { blocks }),
+      ...(editVideo && { editVideoKey: editVideo.key, ...(editVideo.name && { editVideoName: editVideo.name }) }),
     };
     const gen: Generation = {
       id: crypto.randomUUID(),

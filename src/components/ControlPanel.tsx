@@ -28,6 +28,7 @@ import { resolvePaletteSwatch, type SwatchMemory } from "./paletteSwatch";
 import { ModelMenu } from "./ModelMenu";
 import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
+import { EDIT_VIDEO_TYPES, editEstimateInput, editVideoError } from "@/lib/videoEdit";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
 import { PromptEnhance } from "./PromptEnhance";
@@ -53,6 +54,8 @@ export interface Preset {
   middleFrameKeys?: string[];
   /** Library keys of reference blocks, in order. */
   referenceKeys?: string[];
+  /** Library key of the video to edit, in edit mode. */
+  editVideoKey?: string;
   /** Inline note, for a Reuse that couldn't find every file. */
   notice?: string;
   /** Camera chips to restore, in order. */
@@ -184,8 +187,17 @@ export function ControlPanel({
   );
   const [generateAudio, setGenerateAudio] = useState(preset.generateAudio ?? true);
   const [mode, setMode] = useState<GenerationMode>(
-    preset.mode === "references" && initialModel.capabilities.references.total > 0 ? "references" : "frames",
+    preset.mode === "references" && initialModel.capabilities.references.total > 0
+      ? "references"
+      : preset.mode === "edit" && initialModel.capabilities.edit
+        ? "edit"
+        : "frames",
   );
+  // Edit mode: library item id of the video to change.
+  const [editVideoId, setEditVideoId] = useState<string | undefined>(
+    () => initialRefIds(library.items, preset.editVideoKey ? [preset.editVideoKey] : [])[0],
+  );
+  const editInput = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState(preset.notice ?? "");
   const [firstFrame, setFirstFrameRaw] = useState<FrameRef | undefined>(() =>
     initialFrame(library.items, preset.firstFrameKey, preset.firstFrame),
@@ -227,7 +239,14 @@ export function ControlPanel({
   const durations = caps.durations;
   const hasRefs = caps.references.total > 0;
   const routesOpen = availabilityFor(routeProviders(model.routes), keyed).available;
-  const effectiveMode: GenerationMode = hasRefs && mode === "references" && routesOpen ? "references" : "frames";
+  const canEdit = !!caps.edit;
+  const effectiveMode: GenerationMode =
+    canEdit && mode === "edit" && routesOpen
+      ? "edit"
+      : hasRefs && mode === "references" && routesOpen
+        ? "references"
+        : "frames";
+  const editing = effectiveMode === "edit";
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
   const keyLimit = keyframeLimitOf(model);
@@ -268,14 +287,20 @@ export function ControlPanel({
       const item = byId.get(id);
       return item ? [{ id, kind: KIND[item.kind], item }] : [];
     });
-  const refList = tag(refIds);
-  const perKind = { Image: 0, Video: 0, Audio: 0 };
+  // Editing takes reference images only; the video to edit is @Video 1.
+  const refList = tag(refIds).filter((r) => !editing || r.item.kind === "image");
+  const editItem = editing && editVideoId ? byId.get(editVideoId) : undefined;
+  const editProblem =
+    editItem && editItem.status !== "error"
+      ? editVideoError({ contentType: editItem.contentType, bytes: editItem.bytes, duration: editItem.duration })
+      : null;
+  const perKind = { Image: 0, Video: editItem ? 1 : 0, Audio: 0 };
   const numbered = refList.map((r) => ({ ...r, n: ++perKind[r.kind] }));
   const blocks = numbered.map((r) => ({ item: r.item, label: mentionToken(r.kind, r.n) }));
 
-  // @-mentions only resolve in references mode; anywhere else they're flagged.
-  const refs = effectiveMode === "references";
-  const referenceVideos = refs ? refList.filter((r) => r.item.kind === "video") : [];
+  // @-mentions resolve in references and edit mode; anywhere else they're flagged.
+  const refs = effectiveMode !== "frames";
+  const referenceVideos = effectiveMode === "references" ? refList.filter((r) => r.item.kind === "video") : [];
   // A reference video with no readable length still selects the with-video rate.
   // Reference images are billed only when that model's formula says so.
   const referenceVideoSeconds = referenceVideos.length
@@ -285,26 +310,38 @@ export function ControlPanel({
   const chosenRoute = preferredRoute(model, keyed, [routeChoice, routePreferences?.[model.id], defaultProvider]);
   const routeProvider = chosenRoute?.provider;
   const native = nativeExpansionOf(model, chosenRoute);
-  const estimateInput = { resolution, duration, audio: audioOn, referenceVideoSeconds, referenceImages };
-  const cost = estimateRouteCost(model, routeProvider, estimateInput);
+  const editSeconds = editItem && !editProblem ? editItem.duration : undefined;
+  const estimateInput = editing
+    ? editEstimateInput(resolution, editSeconds ?? 0)
+    : { resolution, duration, audio: audioOn, referenceVideoSeconds, referenceImages };
+  const cost = editing && editSeconds === undefined ? undefined : estimateRouteCost(model, routeProvider, estimateInput);
+  // Per-second rate of an edit, for the price breakdown.
+  const editRate = editing && editSeconds && cost !== undefined ? cost / (2 * editSeconds) : undefined;
   const counts: RefCounts = refs ? perKind : { Image: 0, Video: 0, Audio: 0 };
   const badMentions = invalidMentions(prompt, counts);
   const mentionItems: MentionItem[] = !refs
     ? []
-    : numbered.map(({ kind, n, item }) => ({
-        token: mentionToken(kind, n),
-        kind,
-        n,
-        thumb: item.kind === "image" ? thumbSrc(item) : undefined,
-        preview: item.kind === "video" ? fileSrc(item) : undefined,
-        detail: item.name,
-      }));
+    : [
+        ...(editItem
+          ? [{ token: mentionToken("Video", 1), kind: "Video" as const, n: 1, preview: fileSrc(editItem), detail: editItem.name }]
+          : []),
+        ...numbered.map(({ kind, n, item }) => ({
+          token: mentionToken(kind, n),
+          kind,
+          n,
+          thumb: item.kind === "image" ? thumbSrc(item) : undefined,
+          preview: item.kind === "video" ? fileSrc(item) : undefined,
+          detail: item.name,
+        })),
+      ];
 
   useEffect(() => {
-    onReferencesChange(new Map(blocks.map((b) => [b.item.id, b.label])));
+    const labels = new Map(blocks.map((b) => [b.item.id, b.label]));
+    if (editItem) labels.set(editItem.id, `${mentionToken("Video", 1)} · editing`);
+    onReferencesChange(labels);
     // Only when the references or their numbering change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refIds.join(), library.items.length]);
+  }, [refIds.join(), library.items.length, editItem?.id, editing]);
 
   /** Every change to the list goes through here, so prompt mentions follow their file. */
   function updateRefs(next: string[]) {
@@ -316,6 +353,7 @@ export function ControlPanel({
 
   /** Adds library items as references, within the model's limits. Returns the ids added. */
   function addRefs(items: LibraryItem[]) {
+    if (editing) return addEditItems(items);
     const current = tag(refsNow.current);
     const used = { image: 0, video: 0, audio: 0 };
     for (const r of current) used[r.item.kind]++;
@@ -352,6 +390,31 @@ export function ControlPanel({
     return added;
   }
 
+  /** Edit mode: a video becomes the video to edit, images become references. Returns the ids used. */
+  function addEditItems(items: LibraryItem[]) {
+    const video = items.find((item) => item.kind === "video");
+    const images = items.filter((item) => item.kind === "image" && !refsNow.current.includes(item.id));
+    const imagesNow = tag(refsNow.current).filter((r) => r.item.kind === "image").length;
+    const room = Math.max(0, (caps.edit?.images ?? 0) - imagesNow);
+    const added = images.slice(0, room).map((item) => item.id);
+    if (added.length) updateRefs([...refsNow.current, ...added]);
+    if (video) setEditVideoId(video.id);
+    const notes: string[] = [];
+    if (images.length > room) notes.push(`${model.name} takes up to ${caps.edit?.images ?? 0} reference images when editing.`);
+    if (items.some((item) => item.kind === "audio")) notes.push("Editing doesn't take audio.");
+    if (items.filter((item) => item.kind === "video").length > 1) notes.push("Only one video can be edited at a time.");
+    if (notes.length) toast(`${notes.join(" ")} The files are still in your Uploads.`);
+    return [...(video ? [video.id] : []), ...added];
+  }
+
+  async function pickEditVideo(file: File) {
+    const { items, errors } = await library.add([file]);
+    if (errors.length) setNotice(errors.join(" "));
+    const item = items[0];
+    if (item?.kind === "video") setEditVideoId(item.id);
+    else if (item) setNotice("Pick an MP4 or MOV video to edit.");
+  }
+
   async function addFiles(files: File[]) {
     const { items, errors } = await library.add(files);
     if (errors.length) toast(errors.join("\n"), { tone: "error" });
@@ -362,7 +425,9 @@ export function ControlPanel({
   /** Pasted into the prompt: attach as references and mention them where the cursor is. */
   async function pasteFiles(files: File[]) {
     const counts = { Image: 0, Video: 0, Audio: 0 };
-    for (const r of tag(refsNow.current)) counts[r.kind]++;
+    for (const r of tag(refsNow.current)) if (!editing || r.kind === "Image") counts[r.kind]++;
+    // Pasting a video in edit mode makes it the video to edit, which is always @Video 1.
+    if (editing) counts.Video = 0;
     const added = await addFiles(files);
     if (added.length)
       editor.current?.insert(added.map((i) => mentionToken(KIND[i.kind], ++counts[KIND[i.kind]])).join(" "));
@@ -417,6 +482,7 @@ export function ControlPanel({
     },
     forget(id) {
       if (refsNow.current.includes(id)) updateRefs(refsNow.current.filter((x) => x !== id));
+      if (editVideoId === id) setEditVideoId(undefined);
     },
     setStartFrame(item) {
       if (item.kind !== "image") {
@@ -432,6 +498,10 @@ export function ControlPanel({
       setNotice("");
     },
     useAsReference(item) {
+      if (editing) {
+        addRefs([item]);
+        return;
+      }
       if (!hasRefs) {
         setNotice(`${model.name} doesn't take references. Pick a model that does.`);
         return;
@@ -447,6 +517,7 @@ export function ControlPanel({
     if (!routesOpen) return;
     setMode(m);
     if (m === "references") setRatio((current) => ratioForStartFrame(current, false));
+    if (m === "edit" && caps.resolutions.includes("720p")) setResolution("720p");
   }
 
   function changeModel(id: string) {
@@ -480,6 +551,7 @@ export function ControlPanel({
 
   const uploading =
     (refs && refList.some((r) => r.item.status !== "ready")) ||
+    (editing && !!editItem && editItem.status !== "ready") ||
     (effectiveMode === "frames" &&
       (framePending(firstFrame) || framePending(lastFrame) || middleFrames.some((frame) => framePending(frame))));
   const gate = availabilityFor(routeProviders(model.routes), keyed);
@@ -488,6 +560,7 @@ export function ControlPanel({
     !submitting &&
     !uploading &&
     badMentions.length === 0 &&
+    (!editing || (!!editItem?.key && !editProblem && prompt.trim().length > 0)) &&
     (prompt.trim().length > 0 ||
       (!model.promptRequired && (effectiveMode === "frames" ? !!framePayload(firstFrame) : perKind.Image > 0)));
 
@@ -507,7 +580,10 @@ export function ControlPanel({
     setCameraMoves([...cameraMoves, id]);
   }
 
-  const compiled = compileCamera(model, compileLook(model, prompt, look, effectiveMode).prompt, cameraMoves);
+  // Editing sends the prompt as written: no look or camera lines.
+  const compiled = editing
+    ? { prompt, cameraFixed: undefined }
+    : compileCamera(model, compileLook(model, prompt, look, effectiveMode === "frames" ? "frames" : "references").prompt, cameraMoves);
   const showSent = compiled.prompt.trim() !== prompt.trim() || !!compiled.cameraFixed;
 
   async function addKeyframeFile(file: File) {
@@ -530,6 +606,21 @@ export function ControlPanel({
     if (!canSubmit) return;
     setSubmitting(true);
     try {
+      if (editing && editItem?.key) {
+        await onGenerate({
+          model: model.id,
+          prompt,
+          mode: "edit",
+          ratio,
+          resolution,
+          duration: editItem.duration ?? 0,
+          route: routeProvider,
+          editVideo: `upload:${editItem.key}`,
+          referenceImages: refValues("image"),
+          referenceOrder: refList.flatMap((r) => (r.item.key ? [r.item.key] : [])),
+        });
+        return;
+      }
       const choice = keptLook(look);
       let imageRefs = effectiveMode === "references" ? refValues("image") : [];
       let order = effectiveMode === "references" ? refList.flatMap((r) => (r.item.key ? [r.item.key] : [])) : [];
@@ -629,8 +720,8 @@ export function ControlPanel({
 
         {hasRefs && (
           <div onMouseLeave={() => setModeHover(null)}>
-            <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/[0.04] p-1 text-sm">
-              {(["frames", "references"] as const).map((m) => {
+            <div className={`grid ${canEdit ? "grid-cols-3" : "grid-cols-2"} gap-1 rounded-xl bg-white/[0.04] p-1 text-sm`}>
+              {(canEdit ? (["frames", "references", "edit"] as const) : (["frames", "references"] as const)).map((m) => {
                 const active = effectiveMode === m;
                 return (
                   <button
@@ -656,7 +747,7 @@ export function ControlPanel({
                           : "text-zinc-400 hover:text-zinc-200"
                     }`}
                   >
-                    {m}
+                    {m === "edit" ? "Edit video" : m}
                   </button>
                 );
               })}
@@ -669,7 +760,41 @@ export function ControlPanel({
           </div>
         )}
 
-        {effectiveMode === "frames" ? (
+        {editing ? (
+          <div className="space-y-3">
+            <Section label="Video to edit" aside="MP4 or MOV · 4–30 s · 100 MiB">
+              <EditVideoSlot
+                item={editItem}
+                problem={editProblem}
+                onPick={() => editInput.current?.click()}
+                onOpenLibrary={onOpenLibrary}
+                onClear={() => setEditVideoId(undefined)}
+              />
+              <input
+                ref={editInput}
+                type="file"
+                accept={Object.keys(EDIT_VIDEO_TYPES).join(",")}
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) void pickEditVideo(file);
+                }}
+              />
+            </Section>
+            <ReferenceBox
+              label="Reference images (optional)"
+              hint="Drop images or pick from Uploads. Click a label to mention it, like @Image 1."
+              blocks={blocks}
+              max={caps.edit?.images ?? 0}
+              onAddFiles={(files) => void addFiles(files)}
+              onOpenLibrary={onOpenLibrary}
+              onRemove={removeRef}
+              onMove={moveRef}
+              onMention={mentionRef}
+            />
+          </div>
+        ) : effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (
             <div className="space-y-3">
               <div className={`grid gap-3 ${caps.frames.start && caps.frames.end ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -746,7 +871,7 @@ export function ControlPanel({
           />
         )}
 
-        <Section label="Prompt" aside={model.promptRequired ? undefined : "optional with an image"}>
+        <Section label="Prompt" aside={model.promptRequired || editing ? undefined : "optional with an image"}>
           <PromptEditor
             ref={editor}
             value={prompt}
@@ -756,12 +881,14 @@ export function ControlPanel({
             mentions={mentionItems}
             counts={counts}
             placeholder={
-              refs
+              editing
+                ? "Edit the video: replace the sky in @Video 1 with a sunset, keep everything else…"
+                : refs
                 ? "The cat from @Image 1 dances on the rooftop from @Image 2… (type @ to reference, # for a camera move)"
                 : "A paper boat in the rain… (type # for a camera move)"
             }
             cameras={
-              moves.length
+              moves.length && !editing
                 ? cameraPresets
                     .filter((preset) => moves.includes(preset.id))
                     .map((preset) => ({
@@ -772,7 +899,7 @@ export function ControlPanel({
                     }))
                 : undefined
             }
-            onAddCamera={(id) => changeCamera(id, false)}
+            onAddCamera={(id) => !editing && changeCamera(id, false)}
           />
           <PromptEnhance
             prompt={prompt}
@@ -786,7 +913,7 @@ export function ControlPanel({
             nativeOn={nativeOn}
             onNativeOn={setNativeOn}
           />
-          {cameraMoves.length > 0 && (
+          {cameraMoves.length > 0 && !editing && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {cameraMoves.map((id, index) => (
                 <span
@@ -817,22 +944,24 @@ export function ControlPanel({
             <p className="mt-1.5 text-xs text-red-300">
               {refs
                 ? `${badMentions.join(", ")} ${badMentions.length === 1 ? "doesn't" : "don't"} match an attached reference`
-                : "@-references only work in References mode"}
+                : "@-references only work in References and Edit video mode"}
             </p>
           )}
         </Section>
 
-        {moves.length > 0 && (
+        {moves.length > 0 && !editing && (
           <Section label="Camera" aside={cameraMoves.length ? `${cameraMoves.length}/${CAMERA_MOVE_MAX}` : "Type #"}>
             <CameraMoves value={cameraMoves} onToggle={(id) => changeCamera(id, true)} />
           </Section>
         )}
 
-        <Section label="Look">
-          <LookChips value={look} onChange={setLook} looks={savedLooks} onLooks={onLooks ?? (() => {})} />
-        </Section>
+        {!editing && (
+          <Section label="Look">
+            <LookChips value={look} onChange={setLook} looks={savedLooks} onLooks={onLooks ?? (() => {})} />
+          </Section>
+        )}
 
-        {caps.ratios.length > 0 && <Section label="Aspect ratio">
+        {caps.ratios.length > 0 && !editing && <Section label="Aspect ratio">
           <div className="flex flex-wrap gap-1.5">
             {caps.ratios.map((r) => (
               <Chip
@@ -858,7 +987,7 @@ export function ControlPanel({
           </div>
         </Section>}
 
-        {durations && (
+        {durations && !editing && (
           <Section label="Duration" aside={`${duration}s`}>
             {durations.options ? (
               <div className="flex flex-wrap gap-1.5">
@@ -881,12 +1010,20 @@ export function ControlPanel({
           </Section>
         )}
 
-        {caps.audio === "optional" && (
+        {caps.audio === "optional" && !editing && (
           <Toggle label="Generate audio" checked={generateAudio} onChange={setGenerateAudio} />
         )}
-        {caps.audio === "required" && <p className="text-xs text-zinc-500">Audio is included with this model.</p>}
+        {editing && (
+          <p data-testid="edit-cost" className="text-xs leading-relaxed text-zinc-500">
+            {editSeconds !== undefined && editRate !== undefined && cost !== undefined
+              ? `Billed as 2 × ${Number(editSeconds.toFixed(1))} s × $${editRate.toFixed(4).replace(/0+$/, "")}/s = ~$${cost.toFixed(2)}. The video you send is billed too, so an edit costs twice its length.`
+              : "An edit is billed at twice the video's length: the video you send is billed too."}
+            {" The result keeps the video's length and aspect ratio."}
+          </p>
+        )}
+        {caps.audio === "required" && !editing && <p className="text-xs text-zinc-500">Audio is included with this model.</p>}
 
-        {(caps.seed || showFixed || caps.watermark) && (
+        {(caps.seed || showFixed || caps.watermark) && !editing && (
           <div>
             <button onClick={() => setShowAdvanced((s) => !s)} className="text-xs text-zinc-500 hover:text-zinc-300">
               {showAdvanced ? "− Hide" : "+ Show"} advanced
@@ -942,15 +1079,79 @@ export function ControlPanel({
           {submitting ? (
             <span className="size-4 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />
           ) : (
-            "Generate"
+            editing ? "Edit video" : "Generate"
           )}
           <span className="text-xs font-normal opacity-60">
             {resolution}
-            {durations ? ` · ${duration}s` : ""}
+            {editing ? (editSeconds !== undefined ? ` · ${Number(editSeconds.toFixed(1))}s` : "") : durations ? ` · ${duration}s` : ""}
             {cost !== undefined && ` · ~$${cost.toFixed(2)}`}
           </span>
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The video edit mode changes: a preview with its details, or a picker. */
+function EditVideoSlot({
+  item,
+  problem,
+  onPick,
+  onOpenLibrary,
+  onClear,
+}: {
+  item?: LibraryItem;
+  problem: string | null;
+  onPick: () => void;
+  onOpenLibrary: () => void;
+  onClear: () => void;
+}) {
+  if (!item)
+    return (
+      <div data-testid="edit-video" className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onPick}
+          className="rounded-xl border border-dashed border-white/15 py-6 text-xs text-zinc-400 transition hover:border-white/30 hover:text-zinc-200"
+        >
+          Upload a video
+        </button>
+        <button
+          type="button"
+          onClick={onOpenLibrary}
+          className="rounded-xl border border-dashed border-white/15 py-6 text-xs text-zinc-400 transition hover:border-white/30 hover:text-zinc-200"
+        >
+          From Uploads
+        </button>
+      </div>
+    );
+  const src = fileSrc(item);
+  const details = [
+    item.duration !== undefined ? `${Number(item.duration.toFixed(1))} s` : undefined,
+    `${(item.bytes / 1024 / 1024).toFixed(1)} MiB`,
+    item.status === "uploading" ? `uploading ${Math.round(item.progress * 100)}%` : undefined,
+  ].filter(Boolean);
+  return (
+    <div data-testid="edit-video" className="space-y-2">
+      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black">
+        {src && <video src={src} poster={thumbSrc(item)} muted playsInline controls className="max-h-48 w-full object-contain" />}
+        <button
+          type="button"
+          aria-label="Remove the video to edit"
+          onClick={onClear}
+          className="absolute top-2 right-2 grid size-6 place-items-center rounded-full bg-black/70 text-sm text-white hover:bg-black"
+        >
+          ×
+        </button>
+      </div>
+      <p className="truncate text-xs text-zinc-400">
+        <span className="text-zinc-200">@Video 1</span> · {item.name} · {details.join(" · ")}
+      </p>
+      {(problem || item.error) && (
+        <p data-testid="edit-video-error" className="text-xs text-red-300">
+          {problem ?? item.error}
+        </p>
+      )}
     </div>
   );
 }

@@ -19,6 +19,7 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
   const caps = model.capabilities;
   const frames = req.mode === "frames";
   const label = nameOf(model);
+  if (req.mode === "edit") return editRequestError(model, req);
   if (model.promptRequired && !req.prompt?.trim()) return `${label} needs a prompt`;
   if (!req.prompt?.trim() && !(frames && req.firstFrame) && !req.referenceImages?.length)
     return "Add a prompt or an image";
@@ -63,6 +64,22 @@ export function videoRequestError(model: VideoModel, req: GenerateRequest): stri
     if (!isCameraMove(move) || !offered.includes(move)) return `${label} doesn't take camera moves`;
   }
   if (req.watermark && !caps.watermark) return `${label} doesn't take a watermark`;
+  return null;
+}
+
+/** Edit mode takes the video, a prompt, a resolution and reference images. The file itself is checked by the route. */
+function editRequestError(model: VideoModel, req: GenerateRequest): string | null {
+  const caps = model.capabilities;
+  const label = nameOf(model);
+  if (!caps.edit) return `${label} can't edit a video`;
+  if (typeof req.editVideo !== "string" || !req.editVideo) return "Add the video to edit";
+  if (!req.prompt?.trim()) return "Describe the edit in the prompt";
+  if (caps.resolutions.length && !caps.resolutions.includes(req.resolution))
+    return `Resolution ${req.resolution} isn't available on ${label} (${caps.resolutions.join(", ")})`;
+  if ((req.referenceImages?.length ?? 0) > caps.edit.images)
+    return `${label} takes up to ${caps.edit.images} reference images with the video to edit`;
+  if (req.referenceVideos?.length || req.referenceAudios?.length)
+    return "Editing takes one video and reference images only";
   return null;
 }
 

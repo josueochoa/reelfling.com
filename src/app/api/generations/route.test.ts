@@ -62,9 +62,15 @@ setTestEnv({
   DB: fakeD1(database) as unknown as AppEnv["DB"],
   AUTH_SECRET: "test-auth-secret-at-least-32-characters",
   AUTH_MODE: "google",
-});
+  // Signing an R2 link is local; nothing is fetched.
+  R2_ACCOUNT_ID: "test-account",
+  R2_BUCKET: "reelfling-media",
+  R2_ACCESS_KEY_ID: "test-access",
+  R2_SECRET_ACCESS_KEY: "test-secret",
+} as AppEnv);
 
 await saveKey(USER, "fal", KEY);
+await saveKey(USER, "argolink", KEY);
 
 const { POST } = await import("./route");
 const { GET: getMe, PATCH: patchMe } = await import("../me/route");
@@ -342,6 +348,59 @@ describe("dry runs and the Claude connector", () => {
     assert.equal(await as("made-up-token"), undefined);
     // A connector header that doesn't match wins over a valid session: it is nobody, not the cookie's user.
     assert.equal(await as("made-up-token", `sid=${TOKEN}`), undefined);
+  });
+});
+
+describe("editing a video", () => {
+  const addVideo = (key: string, contentType: string, bytes: number, duration?: number) =>
+    database
+      .prepare(
+        "INSERT OR REPLACE INTO assets (user_id, key, bucket, bytes, content_type, created_at, name, meta) VALUES (?, ?, 'reelfling-media', ?, ?, 1, ?, ?)",
+      )
+      .run(USER, key, bytes, contentType, key.split("/").pop()!, JSON.stringify(duration === undefined ? {} : { duration, width: 1280, height: 720 }));
+  const edit = (key: string, resolution = "720p") => ({
+    model: "seedance-2.5",
+    prompt: "Edit the video: make @video1 snowy",
+    mode: "edit",
+    ratio: "16:9",
+    resolution,
+    duration: 0,
+    route: "argolink",
+    editVideo: `upload:${key}`,
+  });
+
+  it("prices an edit at twice the video's length", async () => {
+    addVideo("uploads/clip.mp4", "video/mp4", 5_000_000, 5);
+    installFetch(true);
+    const res = await post(edit("uploads/clip.mp4"), "?dryRun");
+    const body = (await res.json()) as { estimatedCost: number; route: string };
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.route, "argolink");
+    assert.equal(body.estimatedCost, 1.17);
+    const cheaper = (await (await post(edit("uploads/clip.mp4", "480p"), "?dryRun")).json()) as { estimatedCost: number };
+    assert.equal(cheaper.estimatedCost, 0.523);
+    assert.equal(calls.length, 0);
+  });
+
+  it("refuses a video that's too short, too big, the wrong type or missing, before any provider call", async () => {
+    addVideo("uploads/short.mp4", "video/mp4", 1_000_000, 3);
+    addVideo("uploads/big.mov", "video/quicktime", 101 * 1024 * 1024, 10);
+    addVideo("uploads/clip.webm", "video/webm", 1_000_000, 10);
+    addVideo("uploads/unknown.mp4", "video/mp4", 1_000_000);
+    installFetch(true);
+    const errorOf = async (key: string) => {
+      const res = await post(edit(key));
+      assert.equal(res.status, 400, key);
+      return ((await res.json()) as { error: string }).error;
+    };
+    assert.match(await errorOf("uploads/short.mp4"), /3 s long\. It must be 4–30 s/);
+    assert.match(await errorOf("uploads/big.mov"), /101\.0 MiB\. The limit is 100\.0 MiB/);
+    assert.match(await errorOf("uploads/clip.webm"), /MP4 or MOV/);
+    assert.match(await errorOf("uploads/unknown.mp4"), /Couldn't read how long/);
+    assert.match(await errorOf("uploads/gone.mp4"), /no longer in your uploads/);
+    assert.equal(calls.length, 0);
+    const rows = database.prepare("SELECT COUNT(*) AS n FROM generations").get() as { n: number };
+    assert.equal(rows.n, 0);
   });
 });
 

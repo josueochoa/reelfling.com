@@ -275,6 +275,7 @@ export function VideoStudio({
       lastFrameKey: extra?.frameKey ? undefined : restored?.lastFrameKey,
       middleFrameKeys: extra?.frameKey ? undefined : restored?.middleFrameKeys,
       referenceKeys: extra?.frameKey ? undefined : restored?.referenceKeys,
+      editVideoKey: extra?.frameKey ? undefined : restored?.editVideoKey,
       continueFrom: extra?.continueFrom,
       notice:
         frameNote ??

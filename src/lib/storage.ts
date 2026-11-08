@@ -9,6 +9,7 @@
 import { AwsClient } from "aws4fetch";
 import { all, env, first, run } from "./db";
 import { candidateUserIds, referencedKeySet, withoutReferenced } from "./inputs";
+import { uploadBody } from "./uploadBody";
 import { thumbKeyFor, uploadKindOf, type AssetItem } from "./uploads";
 
 export interface Asset {
@@ -178,24 +179,6 @@ export const videoKey = (generationId: string) => `videos/${generationId.replace
 export async function getAsset(userId: string, key: string): Promise<Asset | undefined> {
   const row = await first<AssetRow>("SELECT * FROM assets WHERE user_id = ? AND key = ?", userId, key);
   return row && toAsset(row);
-}
-
-/**
- * The response body with a known length, ready to upload. Workers have 128 MB of memory,
- * so on Workers a body with a Content-Length is streamed through rather than buffered.
- */
-async function uploadBody(res: Response): Promise<{ body: BodyInit; bytes: number }> {
-  const length = Number(res.headers.get("content-length"));
-  const FixedLength = (globalThis as { FixedLengthStream?: new (n: number) => TransformStream }).FixedLengthStream;
-  if (FixedLength && res.body && length > 0) {
-    const { readable, writable } = new FixedLength(length);
-    // A failed read also fails the upload that consumes `readable`, which reports it.
-    res.body.pipeTo(writable).catch(() => {});
-    return { body: readable, bytes: length };
-  }
-  // Unknown length (or Node in `next dev`): buffer it.
-  const buf = new Uint8Array(await res.arrayBuffer());
-  return { body: buf, bytes: buf.byteLength };
 }
 
 /** Copies a fetched file (e.g. a provider's video) into the user's bucket and indexes it. */

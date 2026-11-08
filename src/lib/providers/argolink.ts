@@ -3,6 +3,8 @@
 
 import type { ProviderCredentials } from "../keys";
 import type { GenerateRequest } from "../types";
+import { uploadBody } from "../uploadBody";
+import { TASK_TYPE_MISMATCH_HINT } from "../videoEdit";
 import { ProviderError, type ProviderFactory, type TaskSnapshot } from "./types";
 
 const DEFAULT_BASE_URL = "https://argolink.io";
@@ -15,6 +17,14 @@ interface ArgoTask {
   video?: { url?: string; duration?: number };
   error?: string | { message?: string; code?: string };
   usage?: { output_seconds?: number; billed_seconds?: number };
+}
+
+/** ArgoLink's message and code as sent, plus a hint for an edit read as something else. */
+export function argoErrorText(error: { message?: string; code?: string } | undefined, fallback: string) {
+  const message = error?.message?.trim() || fallback;
+  const code = error?.code?.trim();
+  const text = code && !message.includes(code) ? `${message} (${code})` : message;
+  return /TaskTypeMismatch/i.test(`${code ?? ""} ${message}`) ? `${text} ${TASK_TYPE_MISMATCH_HINT}` : text;
 }
 
 export async function argo<T>(creds: ProviderCredentials, path: string, init?: RequestInit): Promise<T> {
@@ -33,9 +43,30 @@ export async function argo<T>(creds: ProviderCredentials, path: string, init?: R
   if (!res.ok) {
     // Gateway errors are { code, message }; model errors are { error: { message, code } }.
     const err = typeof body?.error === "object" ? body.error : body;
-    throw new ProviderError(err?.message || `ArgoLink request failed (${res.status})`, res.status, err?.code);
+    throw new ProviderError(argoErrorText(err, `ArgoLink request failed (${res.status})`), res.status, err?.code);
   }
   return body as T;
+}
+
+/** An upload ticket from ArgoLink, filled with these bytes. Returns the media URL to send. */
+async function uploadMedia(
+  creds: ProviderCredentials,
+  model: string,
+  contentType: string,
+  file: { body: BodyInit; bytes: number },
+): Promise<string> {
+  const ticket = await argo<{ upload_url: string; media_url: string }>(creds, "/v1/media/uploads", {
+    method: "POST",
+    body: JSON.stringify({
+      model,
+      type: contentType.split("/")[0],
+      content_type: contentType,
+      size_bytes: file.bytes,
+    }),
+  });
+  const put = await fetch(ticket.upload_url, { method: "PUT", headers: { "Content-Type": contentType }, body: file.body });
+  if (!put.ok) throw new ProviderError(`Media upload failed (${put.status})`, 502);
+  return ticket.media_url;
 }
 
 /** ArgoLink only takes HTTPS media, so push data: URIs through its upload tickets. */
@@ -44,18 +75,38 @@ async function toMediaUrl(creds: ProviderCredentials, model: string, url: string
   if (!match) return url;
   const [, contentType, b64] = match;
   const bytes = Buffer.from(b64, "base64");
-  const ticket = await argo<{ upload_url: string; media_url: string }>(creds, "/v1/media/uploads", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      type: contentType.split("/")[0],
-      content_type: contentType,
-      size_bytes: bytes.length,
-    }),
-  });
-  const put = await fetch(ticket.upload_url, { method: "PUT", headers: { "Content-Type": contentType }, body: bytes });
-  if (!put.ok) throw new ProviderError(`Media upload failed (${put.status})`, 502);
-  return ticket.media_url;
+  return uploadMedia(creds, model, contentType, { body: bytes, bytes: bytes.length });
+}
+
+/** The video to edit, copied into ArgoLink's media storage from our signed link. */
+async function hostedVideo(creds: ProviderCredentials, model: string, url: string): Promise<string> {
+  if (url.startsWith("data:")) return toMediaUrl(creds, model, url);
+  const source = await fetch(url);
+  if (!source.ok) throw new ProviderError(`Couldn't read the video to edit (${source.status})`, 502);
+  const header = source.headers.get("content-type")?.split(";")[0].trim();
+  const contentType = header?.startsWith("video/")
+    ? header
+    : new URL(url).pathname.toLowerCase().endsWith(".mov")
+      ? "video/quicktime"
+      : "video/mp4";
+  return uploadMedia(creds, model, contentType, await uploadBody(source));
+}
+
+/**
+ * Edit: the video first in reference_videos. Length and shape come from it, so
+ * duration, aspect_ratio, frames and audio are left out.
+ */
+export async function buildArgoEditBody(creds: ProviderCredentials, req: GenerateRequest) {
+  if (!req.editVideo) throw new ProviderError("Add the video to edit", 400);
+  const media = (url: string) => toMediaUrl(creds, req.model, url).then((u) => ({ url: u }));
+  return {
+    model: req.model,
+    omni_reference_task_type: "edit",
+    prompt: req.prompt.trim(),
+    resolution: req.resolution,
+    reference_videos: [{ url: await hostedVideo(creds, req.model, req.editVideo) }],
+    ...(req.referenceImages?.length && { reference_images: await Promise.all(req.referenceImages.map(media)) }),
+  };
 }
 
 export async function buildArgoVideoBody(creds: ProviderCredentials, req: GenerateRequest) {
@@ -90,7 +141,9 @@ export const argoLink: ProviderFactory = (creds) => ({
   async createTask(req) {
     const { request_id } = await argo<{ request_id: string }>(creds, "/v1/videos/generations", {
       method: "POST",
-      body: JSON.stringify(await buildArgoVideoBody(creds, req)),
+      body: JSON.stringify(
+        req.mode === "edit" ? await buildArgoEditBody(creds, req) : await buildArgoVideoBody(creds, req),
+      ),
     });
     return { taskId: request_id };
   },
@@ -104,7 +157,9 @@ export const argoLink: ProviderFactory = (creds) => ({
       videoUrl: t.video?.url,
       billedSeconds: t.usage?.billed_seconds,
     };
-    if (t.error) snap.error = typeof t.error === "string" ? t.error : (t.error.message ?? t.error.code);
+    if (t.error)
+      snap.error =
+        typeof t.error === "string" ? argoErrorText({ message: t.error }, t.error) : argoErrorText(t.error, "ArgoLink failed");
     return snap;
   },
 

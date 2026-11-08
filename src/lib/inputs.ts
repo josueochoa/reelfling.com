@@ -16,6 +16,8 @@ export interface RestoreResult {
   middleFrameKeys?: string[];
   /** Library keys of the reference blocks that are still available, in their original order. */
   referenceKeys: string[];
+  /** Edit mode: the video that was changed, when it's still available. */
+  editVideoKey?: string;
   /** Set when a stored file is gone. Undefined for old count-only records. */
   notice?: string;
 }
@@ -54,7 +56,7 @@ export function restoreInputs(
   const storedFrames = !!(inputs.firstFrameKey || inputs.lastFrameKey || inputs.middleFrames?.length);
   const storedBlocks = !!inputs.blocks;
 
-  if (!storedFrames && !storedBlocks) {
+  if (!storedFrames && !storedBlocks && !inputs.editVideoKey) {
     return { mode, prompt: gen.prompt, referenceKeys: [] };
   }
 
@@ -89,6 +91,11 @@ export function restoreInputs(
   const blocks = inputs.blocks ?? [];
   const labels = blockLabels(blocks);
   const missing: string[] = [];
+  const editVideoKey = mode === "edit" && inputs.editVideoKey && available.has(inputs.editVideoKey) ? inputs.editVideoKey : undefined;
+  if (mode === "edit" && inputs.editVideoKey && !editVideoKey) {
+    const clean = inputs.editVideoName?.trim();
+    missing.push(clean ? `The video to edit "${clean}"` : "The video to edit");
+  }
   const kept: { id: string; kind: RefKind }[] = [];
   blocks.forEach((b, i) => {
     if (available.has(b.key)) kept.push({ id: b.key, kind: REF_KIND[b.kind] });
@@ -99,6 +106,7 @@ export function restoreInputs(
     mode,
     prompt: remapMentions(gen.prompt, prev, kept),
     referenceKeys: kept.map((b) => b.id),
+    ...(editVideoKey && { editVideoKey }),
     notice: missingNotice(missing),
   };
 }

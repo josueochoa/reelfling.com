@@ -159,6 +159,8 @@ export interface VideoCapabilities {
   camera: false | CameraCapabilities;
   watermark: boolean;
   lastFrameOutput: boolean;
+  /** Edits an existing video (see lib/videoEdit). `images`: reference images allowed alongside it. */
+  edit?: { images: number };
 }
 
 export type ImageQuality = "auto" | "low" | "medium" | "high";

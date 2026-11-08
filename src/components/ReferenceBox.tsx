@@ -26,9 +26,13 @@ export function ReferenceBox({
   onRemove,
   onMove,
   onMention,
+  label = "References",
+  hint = "Drop images, video or audio, or pick from Uploads. Click a label to mention it.",
 }: {
   blocks: ReferenceBlock[];
   max: number;
+  label?: string;
+  hint?: string;
   onAddFiles: (files: File[]) => void;
   onOpenLibrary: () => void;
   onRemove: (index: number) => void;
@@ -54,7 +58,7 @@ export function ReferenceBox({
     <div>
       <div className="mb-2 flex items-center justify-between text-xs font-medium tracking-wide text-zinc-400 uppercase">
         <span>
-          References{" "}
+          {label}{" "}
           <span className="text-zinc-600 normal-case">
             {blocks.length}/{max}
           </span>
@@ -152,9 +156,7 @@ export function ReferenceBox({
           </div>
         ))}
       </div>
-      <p className="mt-1.5 text-[11px] text-zinc-600">
-        Drop images, video or audio, or pick from Uploads. Click a label to mention it.
-      </p>
+      <p className="mt-1.5 text-[11px] text-zinc-600">{hint}</p>
       {previewing && preview !== null && (
         <Viewer
           label="Preview"

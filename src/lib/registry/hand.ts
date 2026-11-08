@@ -150,6 +150,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 4, max: 30, default: 5 },
       references: { image: 30, video: 10, audio: 10, total: 50 },
+      edit: { images: 30 },
     },
     // https://argolink.io/en/models/seedance-2.5 — with-video rates are the lower tier.
     price: argolinkSeconds(

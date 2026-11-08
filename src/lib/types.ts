@@ -2,7 +2,8 @@ import type { StudioProviderId } from "./registry";
 import type { LookChoice } from "./registry/looks";
 import type { TeamAuthor } from "./teamPolicy";
 
-export type GenerationMode = "frames" | "references";
+/** "edit" changes an existing video (Seedance 2.5 on ArgoLink). */
+export type GenerationMode = "frames" | "references" | "edit";
 
 /** Body of POST /api/generations. Media fields are https URLs, data: URIs, or `upload:<key>`. */
 export interface GenerateRequest {
@@ -31,6 +32,8 @@ export interface GenerateRequest {
   referenceImages?: string[];
   referenceVideos?: string[];
   referenceAudios?: string[];
+  /** Edit mode: the video to change, as `upload:<key>`. The server checks it and sends it first. */
+  editVideo?: string;
   /** Library keys of the reference blocks, in the order they were shown. */
   referenceOrder?: string[];
   /** Provider route chosen in the picker or restored by Reuse. */
@@ -84,6 +87,9 @@ export interface GenerationInputs {
   middleFrames?: MediaBlock[];
   /** Reference blocks in display order. Absent on older, count-only records. */
   blocks?: MediaBlock[];
+  /** Edit mode: the video that was changed. */
+  editVideoKey?: string;
+  editVideoName?: string;
 }
 
 /** Upstream ModelArk task status. */

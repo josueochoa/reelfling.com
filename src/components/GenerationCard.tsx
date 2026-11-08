@@ -167,7 +167,11 @@ export function StatusOverlay({ gen, elapsed }: { gen: Generation; elapsed: numb
       <div className="absolute inset-0 grid place-items-center p-6 text-center">
         <div>
           <p className="text-sm font-medium text-red-300 capitalize">{gen.status}</p>
-          {gen.error && <p className="mt-1 line-clamp-4 text-xs text-zinc-500">{gen.error}</p>}
+          {gen.error && (
+            <p data-testid="generation-error" className="mt-1 max-h-32 overflow-y-auto text-xs break-words text-zinc-500">
+              {gen.error}
+            </p>
+          )}
         </div>
       </div>
     );
