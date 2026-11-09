@@ -3,6 +3,7 @@ import { deleteKey, savedKeyBody, saveKey } from "@/lib/keys";
 import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { createProvider } from "@/lib/providers";
 import { verifyFalKey } from "@/lib/providers/fal";
+import { wrongBoxError } from "@/lib/keyFormat";
 
 /** { provider, apiKey, baseUrl? } — verifies the key against the provider, then stores it encrypted. */
 export async function PUT(request: Request) {
@@ -12,6 +13,8 @@ export async function PUT(request: Request) {
     const apiKey = body.apiKey?.trim();
     if (!(body.provider in PROVIDER_INFO)) return Response.json({ error: "Unknown provider" }, { status: 400 });
     if (!apiKey) return Response.json({ error: "Paste an API key" }, { status: 400 });
+    const misplaced = wrongBoxError(body.provider, apiKey);
+    if (misplaced) return Response.json({ error: misplaced }, { status: 400 });
     // Only known endpoints — a free-form URL would let the server be pointed anywhere.
     const baseUrl =
       body.provider === "modelark" && body.baseUrl && body.baseUrl in MODELARK_REGIONS ? body.baseUrl : undefined;

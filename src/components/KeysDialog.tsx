@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MODELARK_REGIONS, PROVIDER_INFO, type ProviderId } from "@/lib/registry";
 import { Modal } from "@/components/ui/Modal";
 import { confirmToast } from "@/components/ui/Toast";
+import { wrongBoxError } from "@/lib/keyFormat";
 import { apiJson, type Me } from "./api";
 
 const ORDER: ProviderId[] = ["argolink", "openrouter", "modelark", "fal"];
@@ -129,6 +130,7 @@ function ProviderRow({
   const [region, setRegion] = useState(saved?.baseUrl ?? Object.keys(MODELARK_REGIONS)[0]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const misplaced = apiKey.trim() ? wrongBoxError(provider, apiKey) : null;
 
   async function run(fn: () => Promise<string | void>) {
     setBusy(true);
@@ -224,7 +226,7 @@ function ProviderRow({
             />
             <button
               type="submit"
-              disabled={busy || !apiKey.trim()}
+              disabled={busy || !apiKey.trim() || !!misplaced}
               className="rounded-lg bg-accent px-3.5 text-sm font-semibold text-ink disabled:opacity-40"
             >
               {busy ? "Checking…" : "Save"}
@@ -241,7 +243,14 @@ function ProviderRow({
         </form>
       )}
 
-      {message && <p className={`mt-2 text-xs ${message.ok ? "text-fg" : "text-red-300"}`}>{message.text}</p>}
+      {misplaced && (
+        <p data-testid="key-wrong-box" className="mt-2 text-xs text-red-300">
+          {misplaced}
+        </p>
+      )}
+      {message && !misplaced && (
+        <p className={`mt-2 text-xs ${message.ok ? "text-fg" : "text-red-300"}`}>{message.text}</p>
+      )}
     </section>
   );
 }
