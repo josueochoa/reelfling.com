@@ -45,6 +45,18 @@ const argolinkCaps = {
   frames: { start: true, middle: false, end: true },
 } as const;
 
+// Wan 3.0 and 3.0 Prime: reference videos and audio clips are 1–15 s each and 15 s per
+// kind together, and the output plus the reference videos may not pass 30 s.
+// https://argolink.io/en/models/wan-3, https://argolink.io/en/models/wan-3-prime
+const WAN_REFERENCES = {
+  image: 10,
+  video: 5,
+  audio: 5,
+  total: 20,
+  clipSeconds: { video: { min: 1, max: 15, total: 15 }, audio: { min: 1, max: 15, total: 15 } },
+  outputPlusVideoSeconds: 30,
+} as const;
+
 function video(model: VideoModel & { price: NonNullable<VideoModel["price"]> }): VideoModel {
   return model;
 }
@@ -245,8 +257,8 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       frames: { start: true, middle: false, end: true, adaptiveOnly: true },
       resolutions: ["720p", "1080p"],
       durations: { min: 3, max: 30, default: 5 },
-      // No reference audio: ArgoLink answers 400.
-      references: { image: 10, video: 5, audio: 0, total: 15 },
+      // No reference audio: ArgoLink answers 400. Reference videos: 3–30 s each, 30 s together.
+      references: { image: 10, video: 5, audio: 0, total: 15, clipSeconds: { video: { min: 3, max: 30, total: 30 } } },
       edit: { images: 10, seconds: { min: 3, max: 30 } },
     },
     // https://argolink.io/en/models/kling-4.0 — with-video rates are the lower tier.
@@ -275,7 +287,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       seed: true,
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 2, max: 30, default: 5 },
-      references: { image: 10, video: 5, audio: 5, total: 20 },
+      references: WAN_REFERENCES,
       edit: { images: 10, seconds: { min: 1, max: 15 } },
     },
     // https://argolink.io/en/models/wan-3 — one rate with or without a reference video.
@@ -305,7 +317,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       frames: { start: false, middle: false, end: false },
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 4, max: 30, default: 5 },
-      references: { image: 10, video: 5, audio: 5, total: 20 },
+      references: WAN_REFERENCES,
     },
     // https://argolink.io/en/models/wan-3-prime — billed like Wan 3.0.
     price: {

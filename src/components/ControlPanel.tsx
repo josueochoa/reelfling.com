@@ -20,6 +20,7 @@ import { nativeExpansionOf } from "@/lib/enhance";
 import { compileLook, keptLook, lookIsEmpty, paletteUsesSwatch, type LookChoice, type SavedLook } from "@/lib/registry/looks";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
+import { referenceClipError } from "@/lib/registry/refClips";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { toast } from "@/components/ui/Toast";
 import { CameraMoves } from "./CameraMoves";
@@ -300,6 +301,15 @@ export function ControlPanel({
           caps.edit.seconds,
         )
       : null;
+  // Reference clips the provider would reject for their length.
+  const refProblem =
+    effectiveMode === "references"
+      ? referenceClipError(model, {
+          videos: refList.filter((r) => r.item.kind === "video").map((r) => r.item.duration),
+          audios: refList.filter((r) => r.item.kind === "audio").map((r) => r.item.duration),
+          duration,
+        })
+      : null;
   const perKind = { Image: 0, Video: editItem ? 1 : 0, Audio: 0 };
   const numbered = refList.map((r) => ({ ...r, n: ++perKind[r.kind] }));
   const blocks = numbered.map((r) => ({ item: r.item, label: mentionToken(r.kind, r.n) }));
@@ -566,6 +576,7 @@ export function ControlPanel({
     !submitting &&
     !uploading &&
     badMentions.length === 0 &&
+    !refProblem &&
     (!editing || (!!editItem?.key && !editProblem && prompt.trim().length > 0)) &&
     (prompt.trim().length > 0 ||
       (!model.promptRequired && (effectiveMode === "frames" ? !!framePayload(firstFrame) : perKind.Image > 0)));
@@ -866,15 +877,22 @@ export function ControlPanel({
             </div>
           )
         ) : (
-          <ReferenceBox
-            blocks={blocks}
-            max={caps.references.total}
-            onAddFiles={(files) => void addFiles(files)}
-            onOpenLibrary={onOpenLibrary}
-            onRemove={removeRef}
-            onMove={moveRef}
-            onMention={mentionRef}
-          />
+          <div className="space-y-2">
+            <ReferenceBox
+              blocks={blocks}
+              max={caps.references.total}
+              onAddFiles={(files) => void addFiles(files)}
+              onOpenLibrary={onOpenLibrary}
+              onRemove={removeRef}
+              onMove={moveRef}
+              onMention={mentionRef}
+            />
+            {refProblem && (
+              <p data-testid="reference-clip-error" className="text-xs text-red-300">
+                {refProblem}
+              </p>
+            )}
+          </div>
         )}
 
         <Section label="Prompt" aside={model.promptRequired || editing ? undefined : "optional with an image"}>
