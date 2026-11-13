@@ -10,6 +10,7 @@ import { applyLook, keptLook, lookIsEmpty } from "@/lib/registry/looks";
 import { catalogModel, FAL_VIDEO_ENDPOINTS } from "@/lib/registry/generated";
 import { estimateRouteCost, isStudioProvider, isVideo, mentionSyntax, videoRequestError } from "@/lib/registry";
 import { keyframesError } from "@/lib/registry/frames";
+import { referenceClipError } from "@/lib/registry/refClips";
 import { preferredRoute } from "@/lib/registry/routing";
 import type { FalInputMap, StudioProviderId, VideoModel } from "@/lib/registry/types";
 import { getRoutePreference } from "@/lib/routes";
@@ -136,6 +137,15 @@ async function editSource(userId: string, value: string, seconds: EditSeconds) {
   return { asset, seconds: asset.meta!.duration! } as const;
 }
 
+/** Seconds of each reference clip that is a library file. Unknown lengths are undefined. */
+async function clipSeconds(userId: string, values: string[] | undefined): Promise<(number | undefined)[]> {
+  return Promise.all(
+    (values ?? []).map(async (value) =>
+      isUploadRef(value) ? (await getAsset(userId, uploadKeyOf(value)))?.meta?.duration : undefined,
+    ),
+  );
+}
+
 /** Omit when there is no reference video. `0` still selects the with-video rate. */
 async function referenceVideoSecondsOf(userId: string, req: GenerateRequest): Promise<number | undefined> {
   if (req.mode === "frames" || !req.referenceVideos?.length) return undefined;
@@ -199,6 +209,15 @@ export async function POST(request: Request) {
       return Response.json({ error: `${model.name} edits videos on ArgoLink only.` }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
+    // A clip the provider would reject is refused here, before a key, storage or provider call.
+    if (req.mode === "references") {
+      const clipError = referenceClipError(model, {
+        videos: await clipSeconds(user.id, req.referenceVideos),
+        audios: await clipSeconds(user.id, req.referenceAudios),
+        duration: req.duration,
+      });
+      if (clipError) return Response.json({ error: clipError }, { status: 400 });
+    }
     const source = edit ? await editSource(user.id, req.editVideo!, model.capabilities.edit!.seconds) : undefined;
     if (source && "error" in source) return Response.json({ error: source.error }, { status: 400 });
     if (source) {

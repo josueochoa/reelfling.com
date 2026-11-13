@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import type { GenerateRequest } from "../types";
 import { estimateRouteCost, isVideo, modelsFor, videoRequestError } from "./index";
 import { catalogModel } from "./generated";
+import { referenceClipError } from "./refClips";
 
 function video(id: string) {
   const model = catalogModel(id);
@@ -99,6 +100,24 @@ describe("Kling 4.0 and Wan 3.0 on ArgoLink", () => {
       videoRequestError(prime, request(prime.id, { mode: "edit", duration: 0, editVideo: "upload:uploads/clip.mp4" })),
       "Wan 3.0 Prime can't edit a video",
     );
+  });
+
+  it("refuses reference clips the provider would reject for their length", () => {
+    // Wan: 1–15 s per clip, 15 s per kind, and 30 s of output plus reference videos.
+    assert.equal(referenceClipError(prime, { videos: [10], audios: [15], duration: 15 }), null);
+    assert.match(referenceClipError(prime, { videos: [29.167], duration: 15 })!, /reference video is 29\.2 s long\. Wan 3\.0 Prime takes reference videos of 1–15 s/);
+    assert.match(referenceClipError(wan, { audios: [29.167], duration: 5 })!, /reference audio clip is 29\.2 s long/);
+    assert.match(referenceClipError(wan, { videos: [9, 9], duration: 5 })!, /add up to 18 s\. Wan 3\.0 takes 15 s/);
+    assert.match(referenceClipError(wan, { videos: [12], duration: 20 })!, /is 32 s\. Wan 3\.0 takes 30 s in total/);
+    assert.equal(referenceClipError(wan, { videos: [12], duration: 18 }), null);
+    // Unread lengths are left to the provider.
+    assert.equal(referenceClipError(wan, { videos: [undefined], audios: [undefined], duration: 30 }), null);
+    // Kling: 3–30 s per video, 30 s together.
+    assert.equal(referenceClipError(kling, { videos: [29.167], duration: 30 }), null);
+    assert.match(referenceClipError(kling, { videos: [2] })!, /3–30 s/);
+    assert.match(referenceClipError(kling, { videos: [20, 15] })!, /add up to 35 s/);
+    // A model with no published clip limits is not checked.
+    assert.equal(referenceClipError(video("seedance-2.5"), { videos: [29.167], duration: 30 }), null);
   });
 
   it("estimates the published per-second prices", () => {
