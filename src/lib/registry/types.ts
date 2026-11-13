@@ -33,7 +33,7 @@ export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; 
   argolink: {
     label: "ArgoLink",
     keyUrl: "https://argolink.io",
-    blurb: "Prepaid gateway with Seedance 2.5, 2.0, Fast and Mini.",
+    blurb: "Prepaid gateway with Seedance, Kling 4.0 and Wan 3.0.",
   },
   modelark: {
     label: "BytePlus ModelArk",
