@@ -139,6 +139,30 @@ describe("ArgoLink video edit", () => {
     });
   });
 
+  it("sends a Kling 4.0 edit the same way, under its own model id", async () => {
+    const bodies: unknown[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === SOURCE) return new Response(new Uint8Array(10), { headers: { "content-type": "video/mp4" } });
+      if (url.endsWith("/v1/media/uploads"))
+        return json(200, { upload_url: "https://upload.argolink.example/put", media_url: "https://media.argolink.example/clip.mp4" });
+      if (url === "https://upload.argolink.example/put") return new Response(null, { status: 200 });
+      bodies.push(JSON.parse(String(init?.body)));
+      return json(200, { request_id: "req-kling-edit" });
+    }) as typeof fetch;
+
+    await argoLink({ apiKey: KEY }).createTask({ ...editRequest, model: "kling-4.0", referenceImages: undefined });
+    assert.deepEqual(bodies, [
+      {
+        model: "kling-4.0",
+        omni_reference_task_type: "edit",
+        prompt: "Edita el video: @Video 1 bajo la nieve, como @Image 1",
+        resolution: "720p",
+        reference_videos: [{ url: "https://media.argolink.example/clip.mp4" }],
+      },
+    ]);
+  });
+
   it("shows the whole error, with a hint when the edit was read as another task", async () => {
     install(() => json(400, { error: { message: "Task type does not match the inputs", code: "TaskTypeMismatch" } }));
     const plain = { ...editRequest, editVideo: "data:video/mp4;base64,AAAA" };
@@ -157,5 +181,56 @@ describe("ArgoLink video edit", () => {
 
     install(() => json(200, { request_id: "r", status: "failed", error: { message: "Content policy", code: "OutputModeration" } }));
     assert.equal((await argoLink({ apiKey: KEY }).getTask("r")).error, "Content policy (OutputModeration)");
+  });
+});
+
+describe("ArgoLink video request", () => {
+  function capture() {
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return json(200, { request_id: "req" });
+    }) as typeof fetch;
+    return bodies;
+  }
+
+  it("sends a seed only when the request still has one", async () => {
+    const bodies = capture();
+    const base: GenerateRequest = { model: "wan-3", prompt: "A fox", mode: "frames", ratio: "16:9", resolution: "720p", duration: 5 };
+    await argoLink({ apiKey: KEY }).createTask({ ...base, seed: 42, generateAudio: false });
+    await argoLink({ apiKey: KEY }).createTask(base);
+    assert.deepEqual(bodies[0], {
+      model: "wan-3",
+      prompt: "A fox",
+      duration: 5,
+      resolution: "720p",
+      aspect_ratio: "16:9",
+      generate_audio: false,
+      seed: 42,
+    });
+    assert.equal("seed" in bodies[1], false);
+  });
+
+  it("sends Kling 4.0 frames with the adaptive ratio the route set", async () => {
+    const bodies = capture();
+    await argoLink({ apiKey: KEY }).createTask({
+      model: "kling-4.0",
+      prompt: "The door opens",
+      mode: "frames",
+      ratio: "adaptive",
+      resolution: "1080p",
+      duration: 8,
+      firstFrame: "https://r2.example/uploads/a.png",
+      lastFrame: "https://r2.example/uploads/b.png",
+    });
+    assert.deepEqual(bodies[0], {
+      model: "kling-4.0",
+      prompt: "The door opens",
+      duration: 8,
+      resolution: "1080p",
+      aspect_ratio: "adaptive",
+      start_image: { url: "https://r2.example/uploads/a.png" },
+      end_image: { url: "https://r2.example/uploads/b.png" },
+    });
   });
 });

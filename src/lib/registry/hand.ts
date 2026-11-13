@@ -150,7 +150,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 4, max: 30, default: 5 },
       references: { image: 30, video: 10, audio: 10, total: 50 },
-      edit: { images: 30 },
+      edit: { images: 30, seconds: { min: 4, max: 30 } },
     },
     // https://argolink.io/en/models/seedance-2.5 — with-video rates are the lower tier.
     price: argolinkSeconds(
@@ -226,6 +226,93 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       { "480p": 0.0299, "720p": 0.0643 },
       { "480p": 0.0179, "720p": 0.0386 },
     ),
+  }),
+  video({
+    id: "kling-4.0",
+    family: "Kling",
+    name: "Kling 4.0",
+    description: "Up to 30s with audio, 10 reference images and 5 videos, video editing",
+    group: "video",
+    task: "t2v",
+    tasks: ["t2v", "i2v", "ref2v"],
+    routes: [{ provider: "argolink", endpoint: "kling-4.0", mapper: "argolink.video" }],
+    promptRequired: true,
+    refSyntax: "at",
+    capabilities: {
+      ...argolinkCaps,
+      // "adaptive" is the only ratio ArgoLink takes with a start frame.
+      ratios: ["16:9", "9:16", "1:1", "21:9", "adaptive"],
+      frames: { start: true, middle: false, end: true, adaptiveOnly: true },
+      resolutions: ["720p", "1080p"],
+      durations: { min: 3, max: 30, default: 5 },
+      // No reference audio: ArgoLink answers 400.
+      references: { image: 10, video: 5, audio: 0, total: 15 },
+      edit: { images: 10, seconds: { min: 3, max: 30 } },
+    },
+    // https://argolink.io/en/models/kling-4.0 — with-video rates are the lower tier.
+    // That page gives two rules for a reference video: at least twice the output, and
+    // at least 5/3 of it. This estimate uses the larger one.
+    price: {
+      type: "per_second",
+      byResolution: { "720p": 0.1413, "1080p": 0.2115 },
+      byResolutionWithVideo: { "720p": 0.0848, "1080p": 0.127 },
+      referenceBilling: "double-min",
+    },
+  }),
+  video({
+    id: "wan-3",
+    family: "Wan",
+    name: "Wan 3.0",
+    description: "Up to 30s with audio, frames, image, video and audio references, video editing",
+    group: "video",
+    task: "t2v",
+    tasks: ["t2v", "i2v", "ref2v"],
+    routes: [{ provider: "argolink", endpoint: "wan-3", mapper: "argolink.video" }],
+    promptRequired: true,
+    refSyntax: "at",
+    capabilities: {
+      ...argolinkCaps,
+      seed: true,
+      resolutions: ["480p", "720p", "1080p"],
+      durations: { min: 2, max: 30, default: 5 },
+      references: { image: 10, video: 5, audio: 5, total: 20 },
+      edit: { images: 10, seconds: { min: 1, max: 15 } },
+    },
+    // https://argolink.io/en/models/wan-3 — one rate with or without a reference video.
+    // Billed seconds are the output plus the reference videos, fractions dropped.
+    price: {
+      type: "per_second",
+      byResolution: { "480p": 0.0325, "720p": 0.065, "1080p": 0.13 },
+      referenceBilling: "add-floor",
+    },
+  }),
+  video({
+    id: "wan-3-prime",
+    family: "Wan",
+    name: "Wan 3.0 Prime",
+    description: "The fast lane of Wan 3.0: text and references, always with audio",
+    group: "video",
+    task: "t2v",
+    tasks: ["t2v", "ref2v"],
+    routes: [{ provider: "argolink", endpoint: "wan-3-prime", mapper: "argolink.video" }],
+    promptRequired: true,
+    refSyntax: "at",
+    capabilities: {
+      ...argolinkCaps,
+      // ArgoLink answers 400 to start_image, end_image and generate_audio: false.
+      ratios: ["16:9", "1:1", "9:16"],
+      audio: "required",
+      frames: { start: false, middle: false, end: false },
+      resolutions: ["480p", "720p", "1080p"],
+      durations: { min: 4, max: 30, default: 5 },
+      references: { image: 10, video: 5, audio: 5, total: 20 },
+    },
+    // https://argolink.io/en/models/wan-3-prime — billed like Wan 3.0.
+    price: {
+      type: "per_second",
+      byResolution: { "480p": 0.051, "720p": 0.11, "1080p": 0.21 },
+      referenceBilling: "add-floor",
+    },
   }),
   image({
     id: "nano-banana-2.1",

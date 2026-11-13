@@ -1,5 +1,6 @@
-// ArgoLink gateway video API (resells Seedance).
-// Docs: https://argolink.io/en/docs, https://argolink.io/en/models/seedance-2.5
+// ArgoLink gateway video API (Seedance, Kling 4.0, Wan 3.0).
+// Docs: https://argolink.io/en/docs, https://argolink.io/en/models/seedance-2.5,
+// https://argolink.io/en/models/kling-4.0, https://argolink.io/en/models/wan-3
 
 import type { ProviderCredentials } from "../keys";
 import type { GenerateRequest } from "../types";
@@ -120,6 +121,8 @@ export async function buildArgoVideoBody(creds: ProviderCredentials, req: Genera
     resolution: req.resolution,
     aspect_ratio: req.ratio,
     ...(req.generateAudio !== undefined && { generate_audio: req.generateAudio }),
+    // Only models that take a seed keep one this far (the route drops it otherwise).
+    ...(req.seed !== undefined && { seed: req.seed }),
     ...(frames && req.firstFrame && { start_image: await media(req.firstFrame) }),
     ...(frames && req.firstFrame && req.lastFrame && { end_image: await media(req.lastFrame) }),
     ...(!frames &&

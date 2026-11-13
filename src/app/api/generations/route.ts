@@ -20,7 +20,7 @@ import { newestFirst, teammateRows } from "@/lib/teammates";
 import { templateRecord, templateRouteError, templateSlotsError } from "@/lib/templates/templates";
 import type { GenerateRequest, Generation, GenerationInputs, MediaBlock } from "@/lib/types";
 import { isAssetKey, isUploadRef, uploadKeyOf, uploadKindOf, type UploadKind } from "@/lib/uploads";
-import { editEstimateInput, editVideoError, nearestRatio } from "@/lib/videoEdit";
+import { editEstimateInput, editVideoError, nearestRatio, type EditSeconds } from "@/lib/videoEdit";
 
 export async function GET() {
   try {
@@ -124,11 +124,14 @@ function orderedBlocks(order: string[] | undefined, groups: [UploadKind, Resolve
 }
 
 /** The video to edit: a library file of the right type, size and length. */
-async function editSource(userId: string, value: string) {
+async function editSource(userId: string, value: string, seconds: EditSeconds) {
   const key = isUploadRef(value) ? uploadKeyOf(value) : "";
   const asset = isAssetKey(key) ? await getAsset(userId, key) : undefined;
   if (!asset) return { error: "The video to edit is no longer in your uploads. Add it again." } as const;
-  const error = editVideoError({ contentType: asset.contentType, bytes: asset.bytes, duration: asset.meta?.duration });
+  const error = editVideoError(
+    { contentType: asset.contentType, bytes: asset.bytes, duration: asset.meta?.duration },
+    seconds,
+  );
   if (error) return { error } as const;
   return { asset, seconds: asset.meta!.duration! } as const;
 }
@@ -190,11 +193,13 @@ export async function POST(request: Request) {
     const templateError = templateRouteError(req, run.provider);
     if (templateError) return Response.json({ error: templateError }, { status: 400 });
     const edit = req.mode === "edit";
+    // With a start frame these models only take the ratio that follows it.
+    if (req.mode === "frames" && req.firstFrame && model.capabilities.frames.adaptiveOnly) req.ratio = "adaptive";
     if (edit && run.provider !== "argolink")
       return Response.json({ error: `${model.name} edits videos on ArgoLink only.` }, { status: 400 });
     const invalid = videoRequestError(model, req) ?? mentionError(req);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
-    const source = edit ? await editSource(user.id, req.editVideo!) : undefined;
+    const source = edit ? await editSource(user.id, req.editVideo!, model.capabilities.edit!.seconds) : undefined;
     if (source && "error" in source) return Response.json({ error: source.error }, { status: 400 });
     if (source) {
       // Length and shape come from the video. Settings that change the prompt or the clip don't apply.

@@ -125,7 +125,9 @@ function applyPrice(price: PriceFormula, input: EstimateInput): number | undefin
         ? argolinkBilledSeconds(input.duration, ref)
         : billing === "add"
           ? input.duration + ref
-          : billing === "double-min"
+          : billing === "add-floor"
+            ? input.duration + Math.floor(ref)
+            : billing === "double-min"
             ? Math.max(input.duration + ref, input.duration * 2)
             : input.duration;
     return perSecond * seconds + imageFee(price.referenceImages, input, 1);

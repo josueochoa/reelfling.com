@@ -151,6 +151,8 @@ export interface VideoCapabilities {
     keyframeLimit?: number;
     /** Start and end count toward `keyframeLimit` (one keyframes array). */
     sharedKeyframes?: boolean;
+    /** With a start frame the provider only takes the "adaptive" ratio (Kling 4.0 on ArgoLink). */
+    adaptiveOnly?: boolean;
   };
   references: RefLimits;
   seed: boolean;
@@ -159,8 +161,11 @@ export interface VideoCapabilities {
   camera: false | CameraCapabilities;
   watermark: boolean;
   lastFrameOutput: boolean;
-  /** Edits an existing video (see lib/videoEdit). `images`: reference images allowed alongside it. */
-  edit?: { images: number };
+  /**
+   * Edits an existing video (see lib/videoEdit). `images`: reference images allowed
+   * alongside it. `seconds`: how long the video to edit may be.
+   */
+  edit?: { images: number; seconds: { min: number; max: number } };
 }
 
 export type ImageQuality = "auto" | "low" | "medium" | "high";
@@ -205,10 +210,11 @@ export type PerSecondPrice = {
    * How reference-video seconds change the bill.
    * `argolink`: output + floor(reference seconds), at least ceil(output × 5/3).
    * `add`: output + reference seconds, at this rate (the with-video rate when set).
+   * `add-floor`: output + floor(reference seconds), at this rate.
    * `double-min`: output + reference seconds, and at least twice the output, at the with-video rate.
    * Reference images use `referenceImages` when the catalog prices them. Audio does not.
    */
-  referenceBilling?: "argolink" | "add" | "double-min";
+  referenceBilling?: "argolink" | "add" | "add-floor" | "double-min";
   /** Extra USD for reference images past `free`. `perOutput` folds that into each output image. */
   referenceImages?: ReferenceImageFee;
   /** Floor for one generation, when the provider publishes one. */

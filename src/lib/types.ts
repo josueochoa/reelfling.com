@@ -2,7 +2,7 @@ import type { StudioProviderId } from "./registry";
 import type { LookChoice } from "./registry/looks";
 import type { TeamAuthor } from "./teamPolicy";
 
-/** "edit" changes an existing video (Seedance 2.5 on ArgoLink). */
+/** "edit" changes an existing video (Seedance 2.5, Kling 4.0 and Wan 3.0 on ArgoLink). */
 export type GenerationMode = "frames" | "references" | "edit";
 
 /** Body of POST /api/generations. Media fields are https URLs, data: URIs, or `upload:<key>`. */

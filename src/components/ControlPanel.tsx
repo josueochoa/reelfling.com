@@ -28,7 +28,7 @@ import { resolvePaletteSwatch, type SwatchMemory } from "./paletteSwatch";
 import { ModelMenu } from "./ModelMenu";
 import { UnlockHint } from "./UnlockHint";
 import type { UploadKind } from "@/lib/uploads";
-import { EDIT_VIDEO_TYPES, editEstimateInput, editVideoError } from "@/lib/videoEdit";
+import { EDIT_VIDEO_TYPES, editEstimateInput, editVideoError, editVideoLimits } from "@/lib/videoEdit";
 import { fileSrc, thumbSrc, type Library, type LibraryItem } from "./library";
 import { ImageSlot } from "./MediaInputs";
 import { PromptEnhance } from "./PromptEnhance";
@@ -249,6 +249,9 @@ export function ControlPanel({
   const editing = effectiveMode === "edit";
   // "adaptive" follows the start frame, so it only makes sense with one.
   const canAdapt = effectiveMode === "frames" && !!firstFrame && caps.frames.start;
+  // Some models only take "adaptive" once there is a start frame.
+  const ratioLocked = canAdapt && !!caps.frames.adaptiveOnly && caps.ratios.includes("adaptive");
+  const shownRatio = ratioLocked ? "adaptive" : ratio;
   const keyLimit = keyframeLimitOf(model);
   const sharedKeys = !!caps.frames.sharedKeyframes;
   const keyUsed = keyframesUsed(
@@ -291,8 +294,11 @@ export function ControlPanel({
   const refList = tag(refIds).filter((r) => !editing || r.item.kind === "image");
   const editItem = editing && editVideoId ? byId.get(editVideoId) : undefined;
   const editProblem =
-    editItem && editItem.status !== "error"
-      ? editVideoError({ contentType: editItem.contentType, bytes: editItem.bytes, duration: editItem.duration })
+    editItem && editItem.status !== "error" && caps.edit
+      ? editVideoError(
+          { contentType: editItem.contentType, bytes: editItem.bytes, duration: editItem.duration },
+          caps.edit.seconds,
+        )
       : null;
   const perKind = { Image: 0, Video: editItem ? 1 : 0, Audio: 0 };
   const numbered = refList.map((r) => ({ ...r, n: ++perKind[r.kind] }));
@@ -650,7 +656,7 @@ export function ControlPanel({
         model: model.id,
         prompt,
         mode: effectiveMode,
-        ratio,
+        ratio: shownRatio,
         resolution,
         duration,
         route: routeProvider,
@@ -762,7 +768,7 @@ export function ControlPanel({
 
         {editing ? (
           <div className="space-y-3">
-            <Section label="Video to edit" aside="MP4 or MOV · 4–30 s · 100 MiB">
+            <Section label="Video to edit" aside={caps.edit ? editVideoLimits(caps.edit.seconds) : undefined}>
               <EditVideoSlot
                 item={editItem}
                 problem={editProblem}
@@ -966,10 +972,16 @@ export function ControlPanel({
             {caps.ratios.map((r) => (
               <Chip
                 key={r}
-                active={ratio === r}
+                active={shownRatio === r}
                 onClick={() => setRatio(r)}
-                disabled={r === "adaptive" && !canAdapt}
-                title={r === "adaptive" ? "Match the start frame's shape" : undefined}
+                disabled={(r === "adaptive" && !canAdapt) || (ratioLocked && r !== "adaptive")}
+                title={
+                  r === "adaptive"
+                    ? "Match the start frame's shape"
+                    : ratioLocked
+                      ? `${model.name} follows the start frame's shape`
+                      : undefined
+                }
               >
                 {r === "adaptive" ? "Auto" : r}
               </Chip>
