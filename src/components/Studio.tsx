@@ -11,6 +11,7 @@ import { rememberModels } from "@/lib/registry/lookup";
 import type { ExtendOffer, ToolView } from "@/lib/toolTypes";
 import { apiJson, type Me } from "./api";
 import { AssetsStudio } from "./AssetsStudio";
+import { BalanceBar, useBalances } from "./Balances";
 import { FalStudio, type FalTabHandle } from "./FalStudio";
 import { ImageStudio } from "./ImageStudio";
 import { KeysDialog } from "./KeysDialog";
@@ -38,6 +39,7 @@ export function Studio() {
   const [extendOffers, setExtendOffers] = useState<ExtendOffer[]>([]);
   const [keysOpen, setKeysOpen] = useState(false);
   const library = useLibrary();
+  const balances = useBalances(!!me?.keys.length);
   const video = useRef<StudioTabHandle>(null);
   const image = useRef<StudioTabHandle>(null);
   const fal = useRef<FalTabHandle>(null);
@@ -96,7 +98,10 @@ export function Studio() {
             </a>
           ))}
         </nav>
-        <div className="ml-auto shrink-0">{me && <UserMenu me={me} onOpen={loadMe} onOpenKeys={openKeys} />}</div>
+        <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+          <BalanceBar state={balances} />
+          {me && <UserMenu me={me} balances={balances} onOpen={loadMe} onOpenKeys={openKeys} />}
+        </div>
       </header>
 
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${tab === "video" ? "" : "hidden"}`}>

@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import type { GenerateRequest } from "../types";
 import { estimateRouteCost, isVideo, modelsFor, videoRequestError } from "./index";
 import { catalogModel } from "./generated";
+import { referenceClipError } from "./refClips";
 
 function video(id: string) {
   const model = catalogModel(id);
@@ -99,6 +100,55 @@ describe("Kling 4.0 and Wan 3.0 on ArgoLink", () => {
       videoRequestError(prime, request(prime.id, { mode: "edit", duration: 0, editVideo: "upload:uploads/clip.mp4" })),
       "Wan 3.0 Prime can't edit a video",
     );
+  });
+
+  it("Gemini Omni 1.2 Flash takes frames, image and video references, and edits the video alone", () => {
+    const omni = video("gemini-omni-1.2-flash");
+    assert.deepEqual(omni.routes.map((route) => `${route.provider}:${route.endpoint}`), ["argolink:gemini-omni-1.2-flash"]);
+    assert.equal(videoRequestError(omni, request(omni.id, { duration: 15, resolution: "4k", ratio: "9:16" })), null);
+    assert.match(videoRequestError(omni, request(omni.id, { duration: 16 }))!, /above Gemini Omni 1\.2 Flash's 15s limit/);
+    assert.match(videoRequestError(omni, request(omni.id, { resolution: "480p" }))!, /Resolution 480p/);
+    assert.match(videoRequestError(omni, request(omni.id, { ratio: "1:1" }))!, /Ratio 1:1/);
+    assert.match(videoRequestError(omni, request(omni.id, { seed: 7 }))!, /doesn't take a seed/);
+    assert.equal(
+      videoRequestError(omni, request(omni.id, { ratio: "adaptive", firstFrame: "https://x/a.png", lastFrame: "https://x/b.png" })),
+      null,
+    );
+    const refs = (extra: Partial<GenerateRequest>) => request(omni.id, { mode: "references", ...extra });
+    assert.equal(videoRequestError(omni, refs({ referenceImages: urls(10, "png"), referenceVideos: urls(3, "mp4") })), null);
+    assert.match(videoRequestError(omni, refs({ referenceVideos: urls(4, "mp4") }))!, /up to 3 reference videos/);
+    assert.match(
+      videoRequestError(omni, refs({ referenceImages: urls(1, "png"), referenceAudios: urls(1, "mp3") }))!,
+      /up to 0 reference audio/,
+    );
+    const edit = (extra: Partial<GenerateRequest> = {}) =>
+      request(omni.id, { mode: "edit", duration: 0, editVideo: "upload:uploads/clip.mp4", ...extra });
+    assert.equal(videoRequestError(omni, edit()), null);
+    assert.match(videoRequestError(omni, edit({ referenceImages: urls(1, "png") }))!, /up to 0 reference images/);
+    assert.deepEqual(omni.capabilities.edit, { images: 0, seconds: { min: 3, max: 15 } });
+
+    const cost = (input: Parameters<typeof estimateRouteCost>[2]) => estimateRouteCost(omni, "argolink", input);
+    assert.equal(cost({ resolution: "720p", duration: 5 }), 0.2275);
+    assert.equal(cost({ resolution: "4k", duration: 10 }), 1.3585);
+    assert.equal(cost({ resolution: "720p", duration: 5, referenceVideoSeconds: 2.4 }), 0.3185);
+  });
+
+  it("refuses reference clips the provider would reject for their length", () => {
+    // Wan: 1–15 s per clip, 15 s per kind, and 30 s of output plus reference videos.
+    assert.equal(referenceClipError(prime, { videos: [10], audios: [15], duration: 15 }), null);
+    assert.match(referenceClipError(prime, { videos: [29.167], duration: 15 })!, /reference video is 29\.2 s long\. Wan 3\.0 Prime takes reference videos of 1–15 s/);
+    assert.match(referenceClipError(wan, { audios: [29.167], duration: 5 })!, /reference audio clip is 29\.2 s long/);
+    assert.match(referenceClipError(wan, { videos: [9, 9], duration: 5 })!, /add up to 18 s\. Wan 3\.0 takes 15 s/);
+    assert.match(referenceClipError(wan, { videos: [12], duration: 20 })!, /is 32 s\. Wan 3\.0 takes 30 s in total/);
+    assert.equal(referenceClipError(wan, { videos: [12], duration: 18 }), null);
+    // Unread lengths are left to the provider.
+    assert.equal(referenceClipError(wan, { videos: [undefined], audios: [undefined], duration: 30 }), null);
+    // Kling: 3–30 s per video, 30 s together.
+    assert.equal(referenceClipError(kling, { videos: [29.167], duration: 30 }), null);
+    assert.match(referenceClipError(kling, { videos: [2] })!, /3–30 s/);
+    assert.match(referenceClipError(kling, { videos: [20, 15] })!, /add up to 35 s/);
+    // A model with no published clip limits is not checked.
+    assert.equal(referenceClipError(video("seedance-2.5"), { videos: [29.167], duration: 30 }), null);
   });
 
   it("estimates the published per-second prices", () => {

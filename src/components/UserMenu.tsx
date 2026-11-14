@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Me } from "./api";
+import { BalanceList, type BalancesState } from "./Balances";
 
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
@@ -14,7 +15,17 @@ export function formatBytes(n: number) {
   return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
-export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => void; onOpenKeys: () => void }) {
+export function UserMenu({
+  me,
+  balances,
+  onOpen,
+  onOpenKeys,
+}: {
+  me: Me;
+  balances: BalancesState;
+  onOpen: () => void;
+  onOpenKeys: () => void;
+}) {
   const { user, storage, auth } = me;
   const full = storage.bytes >= storage.quotaBytes;
   const [open, setOpen] = useState(false);
@@ -45,8 +56,11 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
     <div ref={ref} className="relative">
       <button
         onClick={() => {
-          // Refresh storage usage, which changes as videos finish.
-          if (!open) onOpen();
+          // Refresh storage usage and balances, which change as videos finish.
+          if (!open) {
+            onOpen();
+            balances.refresh();
+          }
           setOpen((o) => !o);
         }}
         data-dialog-return
@@ -86,6 +100,12 @@ export function UserMenu({ me, onOpen, onOpenKeys }: { me: Me; onOpen: () => voi
                 : `${storage.objects} ${storage.objects === 1 ? "video" : "videos"}`}
             </p>
           </div>
+          {balances.balances.length > 0 && (
+            <>
+              <div className="my-1 h-px bg-white/5" />
+              <BalanceList state={balances} />
+            </>
+          )}
           <div className="my-1 h-px bg-white/5" />
           <MenuItem
             onClick={() => {

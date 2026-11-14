@@ -20,6 +20,7 @@ import { nativeExpansionOf } from "@/lib/enhance";
 import { compileLook, keptLook, lookIsEmpty, paletteUsesSwatch, type LookChoice, type SavedLook } from "@/lib/registry/looks";
 import { availabilityFor, availabilityHint, routeProviders } from "@/lib/registry/availability";
 import { preferredRoute } from "@/lib/registry/routing";
+import { referenceClipError } from "@/lib/registry/refClips";
 import type { GenerateRequest, GenerationMode } from "@/lib/types";
 import { toast } from "@/components/ui/Toast";
 import { CameraMoves } from "./CameraMoves";
@@ -290,8 +291,9 @@ export function ControlPanel({
       const item = byId.get(id);
       return item ? [{ id, kind: KIND[item.kind], item }] : [];
     });
-  // Editing takes reference images only; the video to edit is @Video 1.
-  const refList = tag(refIds).filter((r) => !editing || r.item.kind === "image");
+  // Editing takes reference images only, when the model takes any; the video to edit is @Video 1.
+  const editImages = caps.edit?.images ?? 0;
+  const refList = tag(refIds).filter((r) => !editing || (r.item.kind === "image" && editImages > 0));
   const editItem = editing && editVideoId ? byId.get(editVideoId) : undefined;
   const editProblem =
     editItem && editItem.status !== "error" && caps.edit
@@ -299,6 +301,15 @@ export function ControlPanel({
           { contentType: editItem.contentType, bytes: editItem.bytes, duration: editItem.duration },
           caps.edit.seconds,
         )
+      : null;
+  // Reference clips the provider would reject for their length.
+  const refProblem =
+    effectiveMode === "references"
+      ? referenceClipError(model, {
+          videos: refList.filter((r) => r.item.kind === "video").map((r) => r.item.duration),
+          audios: refList.filter((r) => r.item.kind === "audio").map((r) => r.item.duration),
+          duration,
+        })
       : null;
   const perKind = { Image: 0, Video: editItem ? 1 : 0, Audio: 0 };
   const numbered = refList.map((r) => ({ ...r, n: ++perKind[r.kind] }));
@@ -406,7 +417,12 @@ export function ControlPanel({
     if (added.length) updateRefs([...refsNow.current, ...added]);
     if (video) setEditVideoId(video.id);
     const notes: string[] = [];
-    if (images.length > room) notes.push(`${model.name} takes up to ${caps.edit?.images ?? 0} reference images when editing.`);
+    if (images.length > room)
+      notes.push(
+        editImages > 0
+          ? `${model.name} takes up to ${editImages} reference images when editing.`
+          : `${model.name} edits the video alone, without reference images.`,
+      );
     if (items.some((item) => item.kind === "audio")) notes.push("Editing doesn't take audio.");
     if (items.filter((item) => item.kind === "video").length > 1) notes.push("Only one video can be edited at a time.");
     if (notes.length) toast(`${notes.join(" ")} The files are still in your Uploads.`);
@@ -566,6 +582,7 @@ export function ControlPanel({
     !submitting &&
     !uploading &&
     badMentions.length === 0 &&
+    !refProblem &&
     (!editing || (!!editItem?.key && !editProblem && prompt.trim().length > 0)) &&
     (prompt.trim().length > 0 ||
       (!model.promptRequired && (effectiveMode === "frames" ? !!framePayload(firstFrame) : perKind.Image > 0)));
@@ -788,17 +805,19 @@ export function ControlPanel({
                 }}
               />
             </Section>
-            <ReferenceBox
-              label="Reference images (optional)"
-              hint="Drop images or pick from Uploads. Click a label to mention it, like @Image 1."
-              blocks={blocks}
-              max={caps.edit?.images ?? 0}
-              onAddFiles={(files) => void addFiles(files)}
-              onOpenLibrary={onOpenLibrary}
-              onRemove={removeRef}
-              onMove={moveRef}
-              onMention={mentionRef}
-            />
+            {editImages > 0 && (
+              <ReferenceBox
+                label="Reference images (optional)"
+                hint="Drop images or pick from Uploads. Click a label to mention it, like @Image 1."
+                blocks={blocks}
+                max={editImages}
+                onAddFiles={(files) => void addFiles(files)}
+                onOpenLibrary={onOpenLibrary}
+                onRemove={removeRef}
+                onMove={moveRef}
+                onMention={mentionRef}
+              />
+            )}
           </div>
         ) : effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (
@@ -866,15 +885,22 @@ export function ControlPanel({
             </div>
           )
         ) : (
-          <ReferenceBox
-            blocks={blocks}
-            max={caps.references.total}
-            onAddFiles={(files) => void addFiles(files)}
-            onOpenLibrary={onOpenLibrary}
-            onRemove={removeRef}
-            onMove={moveRef}
-            onMention={mentionRef}
-          />
+          <div className="space-y-2">
+            <ReferenceBox
+              blocks={blocks}
+              max={caps.references.total}
+              onAddFiles={(files) => void addFiles(files)}
+              onOpenLibrary={onOpenLibrary}
+              onRemove={removeRef}
+              onMove={moveRef}
+              onMention={mentionRef}
+            />
+            {refProblem && (
+              <p data-testid="reference-clip-error" className="text-xs text-red-300">
+                {refProblem}
+              </p>
+            )}
+          </div>
         )}
 
         <Section label="Prompt" aside={model.promptRequired || editing ? undefined : "optional with an image"}>

@@ -10,6 +10,7 @@
 // are not followed automatically: a 3xx Location is fetched again under the same rule,
 // so the key cannot ride along to a CDN or another host.
 
+import { openRouterBalance, type ProviderBalance } from "../balance";
 import type { OpenRouterImageCall } from "../registry/bodies";
 import type { GenerateRequest, TaskStatus } from "../types";
 import { ProviderError, type ProviderFactory, type TaskSnapshot } from "./types";
@@ -224,6 +225,20 @@ export async function openRouterImageFile(apiKey: string, item: OpenRouterImageI
   }
   if (!item.url) throw new ProviderError("OpenRouter returned an image without data", 502);
   return fetchOpenRouterMedia(apiKey, item.url);
+}
+
+/**
+ * What is left on this key, or on the account when the key has no limit of its own.
+ * The account call needs a management key; an ordinary key's refusal is not an error.
+ */
+export async function openRouterKeyBalance(apiKey: string): Promise<ProviderBalance> {
+  const key = await openRouterJson<{ data?: { limit_remaining?: number | null } }>(apiKey, "/key");
+  if (typeof key.data?.limit_remaining === "number") return openRouterBalance(key.data, undefined);
+  const credits = await openRouterJson<{ data?: { total_credits?: number; total_usage?: number } }>(
+    apiKey,
+    "/credits",
+  ).catch(() => undefined);
+  return openRouterBalance(key.data, credits?.data);
 }
 
 export const openRouterProvider: ProviderFactory = (creds) => ({

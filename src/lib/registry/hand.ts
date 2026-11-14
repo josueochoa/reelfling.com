@@ -45,6 +45,18 @@ const argolinkCaps = {
   frames: { start: true, middle: false, end: true },
 } as const;
 
+// Wan 3.0 and 3.0 Prime: reference videos and audio clips are 1–15 s each and 15 s per
+// kind together, and the output plus the reference videos may not pass 30 s.
+// https://argolink.io/en/models/wan-3, https://argolink.io/en/models/wan-3-prime
+const WAN_REFERENCES = {
+  image: 10,
+  video: 5,
+  audio: 5,
+  total: 20,
+  clipSeconds: { video: { min: 1, max: 15, total: 15 }, audio: { min: 1, max: 15, total: 15 } },
+  outputPlusVideoSeconds: 30,
+} as const;
+
 function video(model: VideoModel & { price: NonNullable<VideoModel["price"]> }): VideoModel {
   return model;
 }
@@ -245,8 +257,8 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       frames: { start: true, middle: false, end: true, adaptiveOnly: true },
       resolutions: ["720p", "1080p"],
       durations: { min: 3, max: 30, default: 5 },
-      // No reference audio: ArgoLink answers 400.
-      references: { image: 10, video: 5, audio: 0, total: 15 },
+      // No reference audio: ArgoLink answers 400. Reference videos: 3–30 s each, 30 s together.
+      references: { image: 10, video: 5, audio: 0, total: 15, clipSeconds: { video: { min: 3, max: 30, total: 30 } } },
       edit: { images: 10, seconds: { min: 3, max: 30 } },
     },
     // https://argolink.io/en/models/kling-4.0 — with-video rates are the lower tier.
@@ -275,7 +287,7 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       seed: true,
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 2, max: 30, default: 5 },
-      references: { image: 10, video: 5, audio: 5, total: 20 },
+      references: WAN_REFERENCES,
       edit: { images: 10, seconds: { min: 1, max: 15 } },
     },
     // https://argolink.io/en/models/wan-3 — one rate with or without a reference video.
@@ -305,12 +317,41 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       frames: { start: false, middle: false, end: false },
       resolutions: ["480p", "720p", "1080p"],
       durations: { min: 4, max: 30, default: 5 },
-      references: { image: 10, video: 5, audio: 5, total: 20 },
+      references: WAN_REFERENCES,
     },
     // https://argolink.io/en/models/wan-3-prime — billed like Wan 3.0.
     price: {
       type: "per_second",
       byResolution: { "480p": 0.051, "720p": 0.11, "1080p": 0.21 },
+      referenceBilling: "add-floor",
+    },
+  }),
+  video({
+    id: "gemini-omni-1.2-flash",
+    family: "Gemini",
+    name: "Gemini Omni 1.2 Flash",
+    description: "Google's video model: up to 15s and 4K with audio, 10 reference images and 3 videos, video editing",
+    group: "video",
+    task: "t2v",
+    tasks: ["t2v", "i2v", "ref2v"],
+    routes: [{ provider: "argolink", endpoint: "gemini-omni-1.2-flash", mapper: "argolink.video" }],
+    promptRequired: true,
+    refSyntax: "at",
+    capabilities: {
+      ...argolinkCaps,
+      ratios: ["16:9", "9:16", "adaptive"],
+      resolutions: ["720p", "1080p", "4k"],
+      durations: { min: 3, max: 15, default: 5 },
+      // No reference audio and no seed: ArgoLink answers 400 to both.
+      references: { image: 10, video: 3, audio: 0, total: 13 },
+      // An edit takes the video alone: reference images are not accepted with it.
+      edit: { images: 0, seconds: { min: 3, max: 15 } },
+    },
+    // https://argolink.io/en/models/gemini-omni-1.2-flash — one rate with or without a
+    // reference video. Billed seconds are the output plus the reference videos, fractions dropped.
+    price: {
+      type: "per_second",
+      byResolution: { "720p": 0.0455, "1080p": 0.0676, "4k": 0.13585 },
       referenceBilling: "add-floor",
     },
   }),

@@ -33,7 +33,7 @@ export const PROVIDER_INFO: Record<ProviderId, { label: string; keyUrl: string; 
   argolink: {
     label: "ArgoLink",
     keyUrl: "https://argolink.io",
-    blurb: "Prepaid gateway with Seedance, Kling 4.0 and Wan 3.0.",
+    blurb: "Prepaid gateway with Seedance, Kling 4.0, Wan 3.0 and Gemini Omni.",
   },
   modelark: {
     label: "BytePlus ModelArk",
@@ -101,11 +101,23 @@ export interface Route {
 /** How the provider wants @-mentions rewritten. */
 export type RefSyntax = "at" | "brackets" | "plain";
 
+/** Length limits for one kind of reference clip, in seconds. */
+export interface ClipSeconds {
+  min: number;
+  max: number;
+  /** All clips of this kind together. */
+  total?: number;
+}
+
 export interface RefLimits {
   image: number;
   video: number;
   audio: number;
   total: number;
+  /** How long each reference video or audio clip may be, when the provider publishes it. */
+  clipSeconds?: { video?: ClipSeconds; audio?: ClipSeconds };
+  /** Output seconds plus reference video seconds may not pass this. */
+  outputPlusVideoSeconds?: number;
 }
 
 export interface DurationCap {
