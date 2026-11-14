@@ -47,6 +47,7 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 - **Sign-in** (`AUTH_MODE`): `access` (default) puts Cloudflare Access in front of the app. Access decides who gets in, and the app verifies the JWT it adds to every request (signature, issuer, audience, expiry) before trusting the email in it. `google` switches to built-in Google sign-in with cookie sessions; set `GOOGLE_CLIENT_ID` (var) and `GOOGLE_CLIENT_SECRET` (secret), with redirect URI `https://<domain>/api/auth/google/callback`.
 - Accounts are keyed by email, so switching sign-in methods keeps everyone's keys and videos.
 - Each user adds their own ArgoLink and/or ModelArk key under **API keys** in the account menu. A key is checked against the provider before it's saved, then stored AES-256-GCM encrypted. The server never uses keys of its own.
+- **Balances**: the top bar and the account menu show what each provider says is left on the user's key (`GET /api/balances`). ArgoLink reports the account balance; OpenRouter reports what is left of the key's spending limit, or the account's credits when the key may read them (a management key); fal reports account credits when the key can read billing; BytePlus reports nothing. The page reads them again every 30 s while visible, on focus, and after anything that can spend.
 - Generations and videos belong to the user who made them; every query is scoped by user.
 - D1 has point-in-time restore (Time Travel) for the last 30 days: `npx wrangler d1 time-travel`.
 

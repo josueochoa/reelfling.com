@@ -11,6 +11,7 @@
 // A bad key against GET https://api.fal.ai/v1/models is 401
 // `{ error: { type: "authorization_error", message } }`.
 
+import { falBalance, type ProviderBalance } from "../balance";
 import type { FalFieldError, FalJobStatus } from "../falTypes";
 import type { FalInputMap } from "../registry/types";
 import { ProviderError } from "./types";
@@ -187,6 +188,16 @@ export async function verifyFalKey(apiKey: string): Promise<{ detail?: string }>
   const { status, body } = await falCall(apiKey, VERIFY_URL);
   if (status < 200 || status >= 300) throw httpFailure(status, body, apiKey);
   return {};
+}
+
+const BILLING_URL = "https://api.fal.ai/v1/account/billing?expand=credits";
+
+/** The account's credit balance. A key without billing access gets a note, not an error. */
+export async function falAccountBalance(apiKey: string): Promise<ProviderBalance> {
+  const { status, body } = await falCall(apiKey, BILLING_URL);
+  if (status === 401) throw httpFailure(status, body, apiKey);
+  if (status < 200 || status >= 300) return { provider: "fal", note: "This fal key can't read the account balance" };
+  return falBalance(asRecord(body));
 }
 
 export async function submitFal(apiKey: string, endpointId: string, input: unknown): Promise<FalSubmission> {

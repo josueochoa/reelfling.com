@@ -2,6 +2,7 @@
 // Docs: https://argolink.io/en/docs, https://argolink.io/en/models/seedance-2.5,
 // https://argolink.io/en/models/kling-4.0, https://argolink.io/en/models/wan-3
 
+import { argoLinkBalance, type ProviderBalance } from "../balance";
 import type { ProviderCredentials } from "../keys";
 import type { GenerateRequest } from "../types";
 import { uploadBody } from "../uploadBody";
@@ -130,6 +131,11 @@ export async function buildArgoVideoBody(creds: ProviderCredentials, req: Genera
     ...(!frames && req.referenceVideos?.length && { reference_videos: req.referenceVideos.map((url) => ({ url })) }),
     ...(!frames && req.referenceAudios?.length && { reference_audios: req.referenceAudios.map((url) => ({ url })) }),
   };
+}
+
+/** The account's prepaid balance. */
+export async function argoBalance(creds: ProviderCredentials): Promise<ProviderBalance> {
+  return argoLinkBalance(await argo<{ available?: number; currency?: string }>(creds, "/v1/account/balance"));
 }
 
 export const argoLink: ProviderFactory = (creds) => ({

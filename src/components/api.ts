@@ -16,9 +16,15 @@ export interface Me {
   auth: { mode: AuthMode; signOutUrl: string };
 }
 
+/** Fired on `window` after a request that can spend or change a key, so balances are read again. */
+export const BALANCE_EVENT = "reelfling:balance";
+const SPENDS = /^\/api\/(generations|images|fal|keys|enhance)(\/|\?|$)/;
+
 /** fetch() for our own API: a 401 (signed out, or Access couldn't be verified) goes to /login. */
 export async function api(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(path, init);
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (res.ok && method !== "GET" && SPENDS.test(path)) window.dispatchEvent(new Event(BALANCE_EVENT));
   if (res.status === 401) {
     // Full reload on purpose: drops all signed-in client state.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
