@@ -17,6 +17,8 @@ npm run preview                  # the real Workers runtime, locally (http://loc
 
 ## Deploying
 
+Pushing to `main` deploys: `.github/workflows/deploy.yml` runs the tests, typecheck and lint, then `npm run deploy` (build, D1 migrations, Worker upload). Deploys run one at a time, and the Actions tab can redeploy `main` by hand. It needs a `production` environment in the repository settings, limited to the `main` branch, with one secret, `CLOUDFLARE_API_TOKEN`: a Cloudflare API token from the *Edit Cloudflare Workers* template plus *D1: Edit* and *Queues: Edit*. Worker secrets (`wrangler secret put`) are not part of a deploy and stay as they are.
+
 One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU limit is too low for Next.js):
 
 1. `npx wrangler login`, then `npx wrangler d1 create seedance-studio` and put the `database_id` into `wrangler.jsonc`.

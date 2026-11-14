@@ -1,0 +1,63 @@
+name: Deploy
+
+# Production deploy. Every push to main runs the checks, then `npm run deploy`:
+# OpenNext build, D1 migrations on the production database, Worker upload.
+#
+# The Cloudflare token is a secret of the `production` environment, not of the
+# repository, so pull request workflows (ci.yml, or one edited on a branch) can't
+# read it. Restrict that environment to main in the repository settings.
+on:
+  push:
+    branches: [main]
+  # Redeploy main by hand from the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancel one halfway through its migrations.
+# A newer push waits its turn and replaces any older push still waiting.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Check and deploy
+    # workflow_dispatch can be started from any branch; only main ships.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: https://reelfling.com
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          # Same as ci.yml.
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Pushes straight to main skip pull request CI, so check here too.
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Deploy
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Not a secret: the same id as R2_ACCOUNT_ID in wrangler.jsonc.
+          CLOUDFLARE_ACCOUNT_ID: fca019314f738e7878872679ea3604c6
