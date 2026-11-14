@@ -52,8 +52,8 @@ One-time setup (needs the Workers Paid plan, $5/month; the free plan's 10 ms CPU
 
 | | ModelArk | ArgoLink |
 |---|---|---|
-| Models | Seedance 2.0, 1.0 Pro | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini; Kling 4.0; Wan 3.0, 3.0 Prime |
-| Edit video | no | Seedance 2.5 (4–30 s), Kling 4.0 (3–30 s), Wan 3.0 (1–15 s) |
+| Models | Seedance 2.0, 1.0 Pro | Seedance 2.5, 2.0, 2.0 Fast, 2.0 Mini; Kling 4.0; Wan 3.0, 3.0 Prime; Gemini Omni 1.2 Flash |
+| Edit video | no | Seedance 2.5 (4–30 s), Kling 4.0 (3–30 s), Wan 3.0 (1–15 s), Gemini Omni 1.2 Flash (3–15 s, no reference images) |
 | Seed / watermark / fixed camera | yes | seed on Wan 3.0 only; the rest are rejected upstream, so hidden |
 | Continue from last frame | yes | yes |
 | Progress % | no | yes |

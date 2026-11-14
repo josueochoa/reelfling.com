@@ -326,6 +326,35 @@ export const HAND_MODELS: Array<VideoModel | ImageModel> = [
       referenceBilling: "add-floor",
     },
   }),
+  video({
+    id: "gemini-omni-1.2-flash",
+    family: "Gemini",
+    name: "Gemini Omni 1.2 Flash",
+    description: "Google's video model: up to 15s and 4K with audio, 10 reference images and 3 videos, video editing",
+    group: "video",
+    task: "t2v",
+    tasks: ["t2v", "i2v", "ref2v"],
+    routes: [{ provider: "argolink", endpoint: "gemini-omni-1.2-flash", mapper: "argolink.video" }],
+    promptRequired: true,
+    refSyntax: "at",
+    capabilities: {
+      ...argolinkCaps,
+      ratios: ["16:9", "9:16", "adaptive"],
+      resolutions: ["720p", "1080p", "4k"],
+      durations: { min: 3, max: 15, default: 5 },
+      // No reference audio and no seed: ArgoLink answers 400 to both.
+      references: { image: 10, video: 3, audio: 0, total: 13 },
+      // An edit takes the video alone: reference images are not accepted with it.
+      edit: { images: 0, seconds: { min: 3, max: 15 } },
+    },
+    // https://argolink.io/en/models/gemini-omni-1.2-flash — one rate with or without a
+    // reference video. Billed seconds are the output plus the reference videos, fractions dropped.
+    price: {
+      type: "per_second",
+      byResolution: { "720p": 0.0455, "1080p": 0.0676, "4k": 0.13585 },
+      referenceBilling: "add-floor",
+    },
+  }),
   image({
     id: "nano-banana-2.1",
     family: "Nano Banana",

@@ -291,8 +291,9 @@ export function ControlPanel({
       const item = byId.get(id);
       return item ? [{ id, kind: KIND[item.kind], item }] : [];
     });
-  // Editing takes reference images only; the video to edit is @Video 1.
-  const refList = tag(refIds).filter((r) => !editing || r.item.kind === "image");
+  // Editing takes reference images only, when the model takes any; the video to edit is @Video 1.
+  const editImages = caps.edit?.images ?? 0;
+  const refList = tag(refIds).filter((r) => !editing || (r.item.kind === "image" && editImages > 0));
   const editItem = editing && editVideoId ? byId.get(editVideoId) : undefined;
   const editProblem =
     editItem && editItem.status !== "error" && caps.edit
@@ -416,7 +417,12 @@ export function ControlPanel({
     if (added.length) updateRefs([...refsNow.current, ...added]);
     if (video) setEditVideoId(video.id);
     const notes: string[] = [];
-    if (images.length > room) notes.push(`${model.name} takes up to ${caps.edit?.images ?? 0} reference images when editing.`);
+    if (images.length > room)
+      notes.push(
+        editImages > 0
+          ? `${model.name} takes up to ${editImages} reference images when editing.`
+          : `${model.name} edits the video alone, without reference images.`,
+      );
     if (items.some((item) => item.kind === "audio")) notes.push("Editing doesn't take audio.");
     if (items.filter((item) => item.kind === "video").length > 1) notes.push("Only one video can be edited at a time.");
     if (notes.length) toast(`${notes.join(" ")} The files are still in your Uploads.`);
@@ -799,17 +805,19 @@ export function ControlPanel({
                 }}
               />
             </Section>
-            <ReferenceBox
-              label="Reference images (optional)"
-              hint="Drop images or pick from Uploads. Click a label to mention it, like @Image 1."
-              blocks={blocks}
-              max={caps.edit?.images ?? 0}
-              onAddFiles={(files) => void addFiles(files)}
-              onOpenLibrary={onOpenLibrary}
-              onRemove={removeRef}
-              onMove={moveRef}
-              onMention={mentionRef}
-            />
+            {editImages > 0 && (
+              <ReferenceBox
+                label="Reference images (optional)"
+                hint="Drop images or pick from Uploads. Click a label to mention it, like @Image 1."
+                blocks={blocks}
+                max={editImages}
+                onAddFiles={(files) => void addFiles(files)}
+                onOpenLibrary={onOpenLibrary}
+                onRemove={removeRef}
+                onMove={moveRef}
+                onMention={mentionRef}
+              />
+            )}
           </div>
         ) : effectiveMode === "frames" ? (
           (caps.frames.start || caps.frames.end) && (
