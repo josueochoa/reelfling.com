@@ -51,6 +51,6 @@
     "R2_ACCOUNT_ID": "fca019314f738e7878872679ea3604c6",
     // One bucket. Objects are "<user id>/<key>" (a personal workspace id is the user id).
     "R2_BUCKET": "reelfling-media",
-    "STORAGE_QUOTA_GB": "2"
+    "STORAGE_QUOTA_GB": "5"
   }
 }
